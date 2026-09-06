@@ -25,12 +25,17 @@ There are no automated tests, linters, or CLI build commands in this project.
 ## Architecture
 
 **Autoload singleton (`scripts/autoload/game_manager.gd`, registered as `GameManager`)** is the
-single source of truth for game state: current wave, currency, skill points, enemy counts, and the
-`State` enum (`INTRO`, `PLAYING`, `GAME_OVER`, `WON`). Almost every gameplay script gates its
-`_process` logic behind `if GameManager.state != GameManager.State.PLAYING: return`. Wave
+single source of truth for game state: current wave, currency, XP/level/ability ranks, enemy counts,
+and the `State` enum (`INTRO`, `PLAYING`, `GAME_OVER`, `WON`). Almost every gameplay script gates
+its `_process` logic behind `if GameManager.state != GameManager.State.PLAYING: return`. Wave
 progression is continuous — clearing a wave immediately calls `start_next_wave()`, there is no
-forced pause between waves. Player upgrades bought via the HUD are stored here
-(`player_upgrades` dict) and read by `player.gd`, not stored on the player itself.
+forced pause between waves. All player progression lives here, not on the player node.
+
+**`reset_game()` must be called from `main.gd`'s `_enter_tree()`, not `_ready()`.** Godot calls a
+parent's `_ready()` *after* its children's, so resetting in `_ready()` would let `player.gd` and
+`hud.gd` initialize from the *previous* run's level/ability ranks — visible as wrong stats after the
+Game Over auto-restart (`reload_current_scene()`), since `GameManager` is an autoload and survives
+the reload.
 
 **`scenes/main.gd`** owns wave spawning only (enemy count/timing per wave, spawn position). It does
 not own wave progression or rewards — those events come back from `GameManager` via signals
@@ -86,19 +91,60 @@ rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact
 There are no sprite assets to manage; if you need to change how something looks, look for a
 `_draw()` override or `Polygon2D` node rather than an image file.
 
-**Stats/upgrades flow**: base stats live as `@export` vars on `player.gd`
-(`base_damage`, `base_attack_speed`, `base_attack_range`, `base_max_hp`). Effective stats are
-computed via getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`,
-`get_target_count()`) that add `GameManager.player_upgrades[...]`. The HUD
-(`scenes/ui/hud.gd`) spends skill points through `GameManager.spend_skill_point(upgrade_id, amount)`
-and then calls `player_ref.on_upgrade_applied()` to make the player recompute derived stats
-immediately; it never mutates player stats directly.
+**Progression (XP → levels → abilities)**: enemies grant `reward` (gold) *and* `xp_reward` on death
+via `GameManager.enemy_defeated(reward, xp_reward)`. XP accumulates toward
+`xp_for_next_level()` (`XP_BASE + (level - 1) * XP_PER_LEVEL_GROWTH`); `add_xp()` loops so one big
+XP chunk can grant several levels at once. Each level raises every base stat automatically by
+`LEVEL_STAT_GROWTH` and grants 1 ability point. The player starts at level 1 *with 1 point already
+banked*, so the first click always unlocks one ability — matching the MOBA rule the design is based
+on ("at the start you have exactly one ability"). There is no per-stat purchasing anymore.
+
+**Stats flow**: base stats live as `@export` vars on `player.gd` (`base_damage`,
+`base_attack_speed`, `base_attack_range`, `base_max_hp`). Effective stats come from getters
+(`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`) that add
+`GameManager.get_stat_bonus(stat_id)` — **the single place where progression turns into numbers**
+(level growth + ability ranks summed together). The player recomputes on the `level_changed` and
+`ability_rank_changed` signals; the HUD never touches player stats, it only calls
+`GameManager.spend_ability_point(ability_id)` and re-reads the getters for display.
+
+**Abilities are placeholders**: `GameManager.ABILITIES` defines four abilities (Q/W/E/R) with a
+`stat` + `per_rank` pair instead of real active effects — a rank currently just adds passively to a
+stat, so spending points has a gameplay effect while actual spells don't exist yet. Ranks cap at
+`MAX_ABILITY_RANK`. When real active abilities get built, that table and `get_stat_bonus()` are the
+only things that need to change; the HUD iterates `ABILITY_ORDER` and reads `ABILITIES` generically,
+so adding/renaming abilities does not require touching UI code (only the matching
+`Ability<KEY>` / `AbilityRank<KEY>` nodes in `hud.tscn`).
+
+**Auto ability-point assignment**: the "Auto" toggle button in `hud.gd` (default ON) spends new
+ability points for the player automatically - `_maybe_auto_assign()` picks uniformly at random
+among abilities not yet at `MAX_ABILITY_RANK` and calls `GameManager.spend_ability_point()` in a
+loop until points run out or every ability is maxed. **This is a deliberately temporary/placeholder
+rule** (no weighting, no preference for unlocking a new ability over ranking up an existing one) -
+it's flagged to be revisited once real active abilities exist and some builds become better than
+others. Toggling Auto off just stops the auto-spend; points bank up and go back to manual clicking,
+same as before this feature existed. The reentrancy guard (`_auto_assigning`) exists because
+`spend_ability_point()` emits `ability_points_changed` synchronously, which would otherwise call
+`_maybe_auto_assign()` again mid-loop.
+
+**HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
+portrait with a level badge, HP bar, XP bar, the four ability buttons with rank labels, six
+(currently decorative) item slots, gold, and the shop button. Right-side elements are anchored to
+the right edge and the bars stretch, so the bar survives window resizing. The old "Upgrade" button
+and its stats panel are gone — ability points are spent by clicking the ability buttons directly.
+
+**Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
+`process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
+along with the game. The pause is deliberate *for now*; the user has flagged that they may later
+want the game to keep running while the shop is open, so the pause lives only in
+`_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` in `hud.gd` and nothing
+else depends on it. The shop is intentionally empty apart from its close button.
 
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `camera_left_margin`, base stats, fall/intro animation params
 - `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`
-- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `min_spacing`
+- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `min_spacing`, `reward`, `xp_reward`
 - `scenes/levels/level_01.tscn` — `LevelEnd` marker position = level length
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `total_width` (must cover past `LevelEnd` or the floor visibly ends early)
-- `scripts/autoload/game_manager.gd` — upgrade amounts, skill points per wave
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`
+- `scenes/ui/hud.gd` — `GAME_OVER_RESTART_DELAY`

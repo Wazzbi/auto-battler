@@ -11,6 +11,8 @@ extends Node2D
 @export var attack_interval: float = 1.0
 @export var melee_range: float = 60.0
 @export var reward: int = 10
+## Zkušenosti za zabití - hráč z nich sbírá úrovně a body do schopností
+@export var xp_reward: int = 12
 ## Minimální odstup od dalšího nepřítele, který je blíž hráči
 @export var min_spacing: float = 45.0
 
@@ -68,5 +70,5 @@ func take_damage(amount: float) -> void:
 
 
 func _die() -> void:
-	GameManager.enemy_defeated(reward)
+	GameManager.enemy_defeated(reward, xp_reward)
 	queue_free()

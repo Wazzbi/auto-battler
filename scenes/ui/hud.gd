@@ -1,37 +1,40 @@
 extends CanvasLayer
-## HUD - zobrazuje HP, vlnu, měnu a nabízí panel pro utrácení skill pointů
-## za upgrady. Panel se otevírá/zavírá tlačítkem, hru neblokuje.
-
-const DAMAGE_INCREASE: float = 5.0
-const ATTACK_SPEED_INCREASE: float = 0.2
-const MAX_HP_INCREASE: float = 20.0
-const RANGE_INCREASE: float = 50.0
-const MULTISHOT_INCREASE: float = 1.0
+## HUD - spodní lišta ve stylu MOBA her: staty, portrét s úrovní, HP a XP bar,
+## čtyři schopnosti (Q/W/E/R), sloty na předměty, zlato a tlačítko obchodu.
+## Body se neutrácí za jednotlivé staty (ty rostou samy s úrovní), ale klikáním
+## přímo na schopnosti - kliknutí odemkne zamčenou nebo zvýší rank odemčené.
+##
+## Uzel má process_mode = ALWAYS (nastaveno ve scéně), aby lišta i obchod
+## reagovaly i když je strom pozastavený přes get_tree().paused (otevřený obchod).
 
 ## Za kolik sekund se hra po Game Over automaticky restartuje, pokud kurzor
 ## nestojí nad GameOverPanel (viz _process a _on_game_over_panel_mouse_entered/exited).
 const GAME_OVER_RESTART_DELAY: float = 10.0
 
-@onready var hp_bar: ProgressBar = $Control/HPBar
+## Ztlumení ikony schopnosti, která ještě není odemčená
+const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
+
 @onready var wave_label: Label = $Control/WaveLabel
-@onready var currency_label: Label = $Control/CurrencyLabel
 @onready var wave_cleared_label: Label = $Control/WaveClearedLabel
 @onready var wave_cleared_timer: Timer = $WaveClearedTimer
 
-@onready var upgrade_button: Button = $Control/UpgradeButton
-@onready var stats_panel: Panel = $Control/StatsPanel
-@onready var points_label: Label = $Control/StatsPanel/VBoxContainer/PointsLabel
-@onready var damage_label: Label = $Control/StatsPanel/VBoxContainer/DamageRow/DamageLabel
-@onready var speed_label: Label = $Control/StatsPanel/VBoxContainer/SpeedRow/SpeedLabel
-@onready var hp_label: Label = $Control/StatsPanel/VBoxContainer/HPRow/HPLabel
-@onready var range_label: Label = $Control/StatsPanel/VBoxContainer/RangeRow/RangeLabel
-@onready var multishot_label: Label = $Control/StatsPanel/VBoxContainer/MultishotRow/MultishotLabel
-@onready var damage_plus: Button = $Control/StatsPanel/VBoxContainer/DamageRow/DamagePlus
-@onready var speed_plus: Button = $Control/StatsPanel/VBoxContainer/SpeedRow/SpeedPlus
-@onready var hp_plus: Button = $Control/StatsPanel/VBoxContainer/HPRow/HPPlus
-@onready var range_plus: Button = $Control/StatsPanel/VBoxContainer/RangeRow/RangePlus
-@onready var multishot_plus: Button = $Control/StatsPanel/VBoxContainer/MultishotRow/MultishotPlus
-@onready var close_button: Button = $Control/StatsPanel/VBoxContainer/CloseButton
+@onready var bottom_bar: ColorRect = $Control/BottomBar
+@onready var stat_damage: Label = $Control/BottomBar/StatDamage
+@onready var stat_speed: Label = $Control/BottomBar/StatSpeed
+@onready var stat_range: Label = $Control/BottomBar/StatRange
+@onready var stat_hp: Label = $Control/BottomBar/StatHP
+@onready var level_label: Label = $Control/BottomBar/LevelBadge/LevelLabel
+@onready var hp_bar: ProgressBar = $Control/BottomBar/HPBar
+@onready var hp_label: Label = $Control/BottomBar/HPBar/HPLabel
+@onready var xp_bar: ProgressBar = $Control/BottomBar/XPBar
+@onready var xp_label: Label = $Control/BottomBar/XPBar/XPLabel
+@onready var ability_points_label: Label = $Control/BottomBar/AbilityPointsLabel
+@onready var auto_assign_toggle: Button = $Control/BottomBar/AutoAssignToggle
+@onready var gold_label: Label = $Control/BottomBar/GoldLabel
+@onready var shop_button: Button = $Control/BottomBar/ShopButton
+
+@onready var shop_panel: Panel = $Control/ShopPanel
+@onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
 
 @onready var game_over_panel: Panel = $Control/GameOverPanel
 @onready var game_over_label: Label = $Control/GameOverPanel/Label
@@ -48,32 +51,44 @@ var player_ref: Node2D = null
 var _game_over_countdown: float = 0.0
 var _game_over_countdown_active: bool = false
 
+var _ability_buttons := {}
+var _ability_rank_labels := {}
+
+## Dokud je zapnuté, nově získané body do schopností se rozdají samy - viz
+## _maybe_auto_assign(). _auto_assigning hlídá reentranci, protože
+## spend_ability_point() synchronně emituje signály zpátky do tohoto skriptu.
+var _auto_assign_enabled: bool = true
+var _auto_assigning: bool = false
+
 
 func _ready() -> void:
 	GameManager.wave_started.connect(_on_wave_started)
 	GameManager.currency_changed.connect(_on_currency_changed)
-	GameManager.skill_points_changed.connect(_on_skill_points_changed)
+	GameManager.xp_changed.connect(_on_xp_changed)
+	GameManager.level_changed.connect(_on_level_changed)
+	GameManager.ability_points_changed.connect(_on_ability_points_changed)
+	GameManager.ability_rank_changed.connect(_on_ability_rank_changed)
 
 	game_over_panel.hide()
 	victory_panel.hide()
-	stats_panel.hide()
+	shop_panel.hide()
 	wave_cleared_label.hide()
 
-	currency_label.text = "Měna: 0"
-	points_label.text = "Body: 0"
+	_cache_ability_nodes()
 
-	upgrade_button.pressed.connect(_on_upgrade_button_pressed)
-	damage_plus.pressed.connect(_on_damage_plus_pressed)
-	speed_plus.pressed.connect(_on_speed_plus_pressed)
-	hp_plus.pressed.connect(_on_hp_plus_pressed)
-	range_plus.pressed.connect(_on_range_plus_pressed)
-	multishot_plus.pressed.connect(_on_multishot_plus_pressed)
-	close_button.pressed.connect(_on_close_pressed)
+	auto_assign_toggle.button_pressed = _auto_assign_enabled
+	auto_assign_toggle.toggled.connect(_on_auto_assign_toggled)
+
+	shop_button.pressed.connect(_on_shop_button_pressed)
+	shop_close_button.pressed.connect(_on_shop_close_pressed)
 	wave_cleared_timer.timeout.connect(func(): wave_cleared_label.hide())
 
 	game_over_continue_button.pressed.connect(_on_game_over_continue_pressed)
 	game_over_panel.mouse_entered.connect(_on_game_over_panel_mouse_entered)
 	game_over_panel.mouse_exited.connect(_on_game_over_panel_mouse_exited)
+
+	_refresh_progression()
+	_maybe_auto_assign()
 
 
 func _process(delta: float) -> void:
@@ -87,6 +102,15 @@ func _process(delta: float) -> void:
 		_update_game_over_countdown_label()
 
 
+func _cache_ability_nodes() -> void:
+	for ability_id in GameManager.ABILITY_ORDER:
+		var suffix: String = ability_id.to_upper()
+		var button: Button = bottom_bar.get_node("Ability" + suffix)
+		_ability_buttons[ability_id] = button
+		_ability_rank_labels[ability_id] = bottom_bar.get_node("AbilityRank" + suffix)
+		button.pressed.connect(_on_ability_pressed.bind(ability_id))
+
+
 ## Zavolá Main po vytvoření hráče, aby se HUD napojil na jeho signály a staty.
 func connect_player(player: Node2D) -> void:
 	player_ref = player
@@ -97,6 +121,8 @@ func connect_player(player: Node2D) -> void:
 func _on_hp_changed(current_hp: float, max_hp: float) -> void:
 	hp_bar.max_value = max_hp
 	hp_bar.value = current_hp
+	hp_label.text = "%.0f / %.0f" % [current_hp, max_hp]
+	_refresh_stat_labels()
 
 
 func _on_wave_started(wave_number: int) -> void:
@@ -104,21 +130,128 @@ func _on_wave_started(wave_number: int) -> void:
 
 
 func _on_currency_changed(new_amount: int) -> void:
-	currency_label.text = "Měna: %d" % new_amount
+	gold_label.text = "Zlato: %d" % new_amount
 
 
-func _on_skill_points_changed(new_amount: int) -> void:
-	points_label.text = "Body: %d" % new_amount
+func _on_xp_changed(current_xp: int, xp_needed: int) -> void:
+	xp_bar.max_value = xp_needed
+	xp_bar.value = current_xp
+	xp_label.text = "XP %d / %d" % [current_xp, xp_needed]
+
+
+func _on_level_changed(new_level: int) -> void:
+	level_label.text = str(new_level)
+	_refresh_stat_labels()
+
+
+func _on_ability_points_changed(_amount: int) -> void:
+	_refresh_abilities()
+	_maybe_auto_assign()
+
+
+func _on_ability_rank_changed(_ability_id: String, _new_rank: int) -> void:
+	_refresh_abilities()
+	_refresh_stat_labels()
+
+
+func _on_ability_pressed(ability_id: String) -> void:
+	GameManager.spend_ability_point(ability_id)
+
+
+func _on_auto_assign_toggled(enabled: bool) -> void:
+	_auto_assign_enabled = enabled
+	_maybe_auto_assign()
+
+
+## Náhodně rozdá všechny nevyužité body do schopností, které ještě nejsou na
+## maximálním ranku. PROZATÍMNÍ pravidlo bez váhování/priorit - jen rovnoměrně
+## náhodné mezi způsobilými schopnostmi. Bude se dál vylepšovat (např. váhy
+## podle buildu, preferovat odemykání nových před navyšováním ranku, ...).
+func _maybe_auto_assign() -> void:
+	if not _auto_assign_enabled or _auto_assigning:
+		return
+
+	_auto_assigning = true
+	while GameManager.ability_points > 0:
+		var eligible: Array = []
+		for ability_id in GameManager.ABILITY_ORDER:
+			if GameManager.ability_ranks[ability_id] < GameManager.MAX_ABILITY_RANK:
+				eligible.append(ability_id)
+		if eligible.is_empty():
+			break
+		var pick: String = eligible[randi() % eligible.size()]
+		GameManager.spend_ability_point(pick)
+	_auto_assigning = false
+
+
+## Přenačte všechno, co se odvíjí od progrese. Volá se v _ready(), protože
+## GameManager přežívá restart scény a HUD se s jeho stavem musí srovnat sám -
+## signály při resetu už proběhly dřív, než se HUD stihl připojit.
+func _refresh_progression() -> void:
+	level_label.text = str(GameManager.player_level)
+	gold_label.text = "Zlato: %d" % GameManager.currency
+	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())
+	_refresh_abilities()
+	_refresh_stat_labels()
+
+
+func _refresh_abilities() -> void:
+	ability_points_label.text = "Body schopností: %d" % GameManager.ability_points
+
+	for ability_id in GameManager.ABILITY_ORDER:
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
+		var rank: int = GameManager.ability_ranks[ability_id]
+		var button: Button = _ability_buttons[ability_id]
+
+		var can_upgrade: bool = (
+			GameManager.ability_points > 0 and rank < GameManager.MAX_ABILITY_RANK
+		)
+
+		button.disabled = not can_upgrade
+		# Ztlumená je jen schopnost, se kterou teď nejde nic dělat - zamčená
+		# s volným bodem musí být vidět jako nabídka, ne jako neaktivní prvek
+		button.modulate = Color.WHITE if rank > 0 or can_upgrade else LOCKED_ABILITY_MODULATE
+		button.tooltip_text = "%s (%s)\n%s" % [definition["name"], definition["key"], definition["desc"]]
+
+		var rank_text := "%d/%d" % [rank, GameManager.MAX_ABILITY_RANK]
+		_ability_rank_labels[ability_id].text = rank_text + " +" if can_upgrade else rank_text
+
+
+func _refresh_stat_labels() -> void:
+	if player_ref == null:
+		return
+	stat_damage.text = "Poškození: %.0f" % player_ref.get_damage()
+	stat_speed.text = "Rychlost: %.1f/s" % player_ref.get_attack_speed()
+	stat_range.text = "Dostřel: %.0f" % player_ref.get_attack_range()
+	stat_hp.text = "Max HP: %.0f" % player_ref.max_hp
 
 
 func show_wave_cleared_message(wave_number: int) -> void:
-	wave_cleared_label.text = "Vlna %d splněna! +1 bod" % wave_number
+	wave_cleared_label.text = "Vlna %d splněna!" % wave_number
 	wave_cleared_label.show()
 	wave_cleared_timer.start()
 
 
+## Obchod hru pozastaví přes get_tree().paused. HUD má process_mode ALWAYS,
+## takže jeho UI dál reaguje. Pauza je zatím záměrná, ale počítá se s tím, že
+## se může zrušit - pak stačí vypustit řádky s `paused` (viz CLAUDE.md).
+func _on_shop_button_pressed() -> void:
+	if GameManager.state != GameManager.State.PLAYING:
+		return
+	shop_panel.show()
+	get_tree().paused = true
+
+
+func _on_shop_close_pressed() -> void:
+	shop_panel.hide()
+	get_tree().paused = false
+
+
 func show_game_over(wave_reached: int, currency: int) -> void:
-	game_over_label.text = "Game Over!\nDosažená vlna: %d\nMěna: %d" % [wave_reached, currency]
+	_close_shop()
+	game_over_label.text = "Game Over!\nDosažená vlna: %d\nÚroveň: %d\nZlato: %d" % [
+		wave_reached, GameManager.player_level, currency
+	]
 	game_over_panel.show()
 	_game_over_countdown = GAME_OVER_RESTART_DELAY
 	_game_over_countdown_active = true
@@ -126,47 +259,14 @@ func show_game_over(wave_reached: int, currency: int) -> void:
 
 
 func show_victory(currency: int) -> void:
-	victory_label.text = "Level dokončen!\nMěna: %d" % currency
+	_close_shop()
+	victory_label.text = "Level dokončen!\nÚroveň: %d\nZlato: %d" % [GameManager.player_level, currency]
 	victory_panel.show()
 
 
-func _on_upgrade_button_pressed() -> void:
-	_refresh_stat_labels()
-	stats_panel.visible = not stats_panel.visible
-
-
-func _on_close_pressed() -> void:
-	stats_panel.hide()
-
-
-func _on_damage_plus_pressed() -> void:
-	if GameManager.spend_skill_point("damage", DAMAGE_INCREASE):
-		player_ref.on_upgrade_applied()
-		_refresh_stat_labels()
-
-
-func _on_speed_plus_pressed() -> void:
-	if GameManager.spend_skill_point("attack_speed", ATTACK_SPEED_INCREASE):
-		player_ref.on_upgrade_applied()
-		_refresh_stat_labels()
-
-
-func _on_hp_plus_pressed() -> void:
-	if GameManager.spend_skill_point("max_hp", MAX_HP_INCREASE):
-		player_ref.on_upgrade_applied()
-		_refresh_stat_labels()
-
-
-func _on_range_plus_pressed() -> void:
-	if GameManager.spend_skill_point("attack_range", RANGE_INCREASE):
-		player_ref.on_upgrade_applied()
-		_refresh_stat_labels()
-
-
-func _on_multishot_plus_pressed() -> void:
-	if GameManager.spend_skill_point("multishot", MULTISHOT_INCREASE):
-		player_ref.on_upgrade_applied()
-		_refresh_stat_labels()
+func _close_shop() -> void:
+	shop_panel.hide()
+	get_tree().paused = false
 
 
 func _on_game_over_panel_mouse_entered() -> void:
@@ -188,15 +288,5 @@ func _update_game_over_countdown_label() -> void:
 func _restart_game() -> void:
 	_game_over_countdown_active = false
 	game_over_panel.hide()
+	get_tree().paused = false
 	get_tree().reload_current_scene()
-
-
-func _refresh_stat_labels() -> void:
-	points_label.text = "Body: %d" % GameManager.skill_points
-	if player_ref == null:
-		return
-	damage_label.text = "Poškození: %.0f" % player_ref.get_damage()
-	speed_label.text = "Rychlost útoku: %.1f/s" % player_ref.get_attack_speed()
-	hp_label.text = "Max HP: %.0f" % player_ref.max_hp
-	range_label.text = "Dostřel: %.0f" % player_ref.get_attack_range()
-	multishot_label.text = "Cílů najednou: %d" % player_ref.get_target_count()
