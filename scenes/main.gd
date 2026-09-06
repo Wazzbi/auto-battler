@@ -40,6 +40,7 @@ func _ready() -> void:
 	GameManager.game_won_triggered.connect(_on_game_won)
 
 	hud.connect_player(player)
+	hud.connect_main(self)
 
 	GameManager.start_next_wave()
 
@@ -65,13 +66,21 @@ func _spawn_enemy() -> void:
 	else:
 		enemies_left_to_spawn -= 1
 
-	var enemy: Node2D = scene_to_spawn.instantiate()
+	_spawn_at_edge(scene_to_spawn)
+	GameManager.enemies_remaining_to_spawn = enemies_left_to_spawn + elites_left_to_spawn
+
+
+## Vytvoří a umístí nepřítele kousek za pravým okrajem aktuálního záběru
+## kamery. Sdílené jádro pro běžné spawnování z fronty vlny i pro
+## debug_spawn_elite() - obě cesty musí dopadnout stejně (naškálované HP,
+## správně zapsaný GameManager.enemies_alive).
+func _spawn_at_edge(scene: PackedScene) -> Node2D:
+	var enemy: Node2D = scene.instantiate()
 	# Musí se stát PŘED add_child() - enemy.gd nastavuje hp = max_hp ve svém
 	# _ready(), který proběhne synchronně při vstupu do stromu.
 	enemy.max_hp *= GameManager.get_enemy_hp_multiplier()
 	add_child(enemy)
 
-	# Spawn vždy kousek za pravým okrajem aktuálního záběru kamery.
 	# Kamera NENÍ vystředěná na hráči (je posunutá, aby hráč byl vlevo),
 	# takže tady vycházíme z pozice kamery, ne z pozice hráče.
 	var half_width: float = get_viewport().get_visible_rect().size.x / 2.0
@@ -79,7 +88,7 @@ func _spawn_enemy() -> void:
 	enemy.global_position = Vector2(spawn_x, player.global_position.y)
 
 	GameManager.register_enemy_spawned()
-	GameManager.enemies_remaining_to_spawn = enemies_left_to_spawn + elites_left_to_spawn
+	return enemy
 
 
 func _on_wave_started(wave_number: int) -> void:
@@ -103,3 +112,31 @@ func _on_game_over() -> void:
 
 func _on_game_won() -> void:
 	hud.show_victory(GameManager.currency)
+
+
+# --- Debug panel ---------------------------------------------------------
+
+## DEBUG: okamžitě dobije všechny živé nepřátele (přes jejich normální
+## take_damage(), aby dostali odměnu/XP stejnou cestou jako v běžné hře) a
+## vyprázdní frontu zbytku vlny. Pokud v tu chvíli náhodou nikdo naživu
+## nebyl (např. mezi vlnami), smrt posledního nepřítele wave-clear sama
+## nevyvolá - o to se pak postará GameManager.debug_force_wave_clear().
+func debug_skip_wave() -> void:
+	var had_enemies_alive: bool = GameManager.enemies_alive > 0
+
+	enemies_left_to_spawn = 0
+	elites_left_to_spawn = 0
+	GameManager.enemies_remaining_to_spawn = 0
+
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(enemy):
+			enemy.take_damage(999999.0)
+
+	if not had_enemies_alive:
+		GameManager.debug_force_wave_clear()
+
+
+## DEBUG: spawne jednoho Elite nepřítele na vyžádání, mimo běžnou frontu vln
+func debug_spawn_elite() -> void:
+	if elite_enemy_scene != null:
+		_spawn_at_edge(elite_enemy_scene)

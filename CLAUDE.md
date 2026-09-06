@@ -231,6 +231,35 @@ want the game to keep running while the shop is open, so the pause lives only in
 `_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` in `hud.gd` and nothing
 else depends on it. The shop is intentionally empty apart from its close button.
 
+**Debug panel** (`hud.gd`, `scenes/ui/eye_icon.gd`): a dev-only panel toggled by the `DebugButton`
+in the top-right corner, which shows "Debug" plus a procedurally-drawn eye icon (open/closed,
+`eye_icon.gd` — no image asset, consistent with the rest of the project's visuals) that mirrors
+whether the panel is open. Unlike the shop, opening it does **not** pause the game — the point is
+to see the effect of an action (kill, skip wave, spawn Elite, ...) happen live. Every action on the
+panel is a thin call into a method explicitly named/commented `DEBUG:` on `GameManager`, `player.gd`,
+or `main.gd` — the panel itself (`_setup_debug_panel()` and its handlers in `hud.gd`) holds no game
+logic of its own, just wiring. A few of these are worth knowing about because they deliberately
+reuse the *real* code paths rather than shortcutting past them:
+- **Nesmrtelnost** sets `player.debug_invincible`, checked in `take_damage()` right after the
+  existing `state != PLAYING` guard — resets to `false` automatically on any scene reload since it
+  lives on the player instance, not `GameManager`.
+- **Přeskočit vlnu** (`main.gd`'s `debug_skip_wave()`) kills every currently-alive enemy through
+  their normal `take_damage()` (so they still grant currency/XP and go through the
+  double-kill-safe `_is_dead` guard from `enemy.gd`) rather than just clearing counters directly.
+  It only calls `GameManager.debug_force_wave_clear()` — which itself refuses to act unless
+  `enemies_alive`/`enemies_remaining_to_spawn` are already both zero — to cover the edge case where
+  no enemy was alive to begin with (so no death naturally triggered the wave-clear check).
+- **Spawnout Elite** shares `_spawn_at_edge()` with the normal wave spawner (extracted from
+  `_spawn_enemy()` during this work) so a debug-spawned Elite gets the same HP-multiplier-before-
+  `add_child()` treatment as one spawned by wave 10 for real.
+- **Rychlost** cycles `Engine.time_scale` through `1x/2x/5x/10x` — this is global engine state, so
+  it also speeds up Timers, Tweens, and the Game Over/Victory countdown, and (unlike everything
+  else on this panel) is **not** reset by a scene reload; the button re-syncs its own label from
+  the actual `Engine.time_scale` in `_setup_debug_panel()` so it doesn't lie after a restart.
+- **Max/Reset schopností** double as a quick respec tool — reset refunds every spent point rather
+  than just zeroing ranks, so ability point math stays internally consistent (verified in tests: HP
+  regen bonus stays derivable the same way, nothing about `get_stat_bonus()` needed to change).
+
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `camera_left_margin`, `base_hp_regen`, base stats, fall/intro animation params
@@ -240,4 +269,4 @@ else depends on it. The shop is intentionally empty apart from its close button.
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops)
-- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`
+- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)
