@@ -75,42 +75,57 @@ generic "hit whatever's in range" fallback would let enemies shoot each other in
 projectiles fired *by* enemies must pass through other enemies untouched and only ever resolve
 against the player.
 
-**Level end detection**: `player.gd` finds the level-end X coordinate by looking up a node in the
-`level_end` group (`get_tree().get_first_node_in_group("level_end")`) at `_ready()`. The `LevelEnd`
-marker in `scenes/levels/level_01.tscn` must belong to that group or `level_end_x` stays `INF`. If a
-hand-edited `.tscn` loses this group membership, re-add it in the editor: select the marker → Node
-tab → Groups → add `level_end`. **`level_end_x` is now just a movement cap, not a win trigger** —
-the player stops advancing there (`global_position.x = min(..., level_end_x)`) but reaching it does
-nothing else. This is deliberate: see the win-condition note below.
+**Level01 is boundless — there is no level-end marker.** `player.gd` still supports finding one
+(`level_end_x` looks up a node in the `level_end` group via
+`get_tree().get_first_node_in_group("level_end")` at `_ready()`, capping forward movement at
+`global_position.x = min(..., level_end_x)`), but `level_01.tscn` deliberately has no `LevelEnd`
+node anymore, so `level_end_x` stays at its default `INF` and the player always keeps walking
+right. This machinery is kept (not deleted) specifically so a *future*, genuinely finite
+planet/level can reuse it — add a `Marker2D` in the `level_end` group to any new level scene to cap
+movement there again. `ground.gd`'s `total_width` export is gone for the same reason — see below.
 
-**Reaching `level_end_x` is a movement cap, not a win trigger** (removed from `player.gd` on
-purpose): with a wave-based campaign structure (see below), letting position also trigger
-progress-ending behavior risked the player short-circuiting a wave by outrunning combat. If the
-level length or enemy count ever changes, keep `Level01/Ground`
-(`scenes/levels/level_01.tscn` + `ground.gd`'s `total_width`) comfortably longer than however far
-the player can realistically walk across `GameManager.FINAL_WAVE` waves — right now both were sized
-20% longer than the original single-screen-ish layout to give that room.
+**Ground renders infinitely, tracking the camera** (`ground.gd`): instead of drawing a fixed set of
+tiles up front, `_process()` calls `queue_redraw()` every frame and `_draw()` recomputes which tile
+indices are currently visible from `Camera2D.get_screen_center_position()` (± half the viewport
+width, plus `tile_margin_count` tiles of buffer) and draws only that window. Tile color alternates
+on the tile's *absolute* index (`posmod(i, 2)`), not drawing order, so the checkerboard pattern
+never shifts or flickers as the visible window scrolls. **Use `get_screen_center_position()`, not
+`camera.global_position`** — the Camera2D has `position_smoothing_enabled = true`, so
+`global_position` is the raw, un-smoothed transform while `get_screen_center_position()` is what's
+actually rendered; a large/instant position change (only really happens in tests, not real gradual
+gameplay movement) makes those two diverge, and computing the visible tile range from the wrong one
+draws tiles for a region the camera isn't actually showing yet — the ground appeared to vanish
+entirely during testing until this was fixed.
 
 **The game loops instead of ending at `GameManager.FINAL_WAVE`**: clearing wave 10
 (`FINAL_WAVE`) doesn't call `trigger_win()` anymore — `_on_wave_cleared()` calls
 `_start_new_loop()` instead, which increments `loop_count`, resets `current_wave` to 0, and calls
-`start_next_wave()` to jump straight back into wave 1. **Player progression persists across
-loops** — level, XP, ability ranks/points, and currency are untouched (there is no `reset_game()`
-call anywhere in this path) — only wave-scoped state resets. `player.gd` listens for the
-`loop_changed` signal and teleports back to its captured spawn position (`_spawn_position`, set
-once in `_ready()`) with HP restored to full; without this the player would start loop 2 wherever
-it happened to be standing at the end of loop 1 (typically pinned against `level_end_x`) with
-whatever HP was left. Newly spawned enemies get more HP per loop via
-`GameManager.get_enemy_hp_multiplier()` (`1.0 + (loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP`,
-currently +50%/loop) — `main.gd`'s `_spawn_enemy()` applies it to `enemy.max_hp` *before*
-`add_child()`, since `enemy.gd`'s `_ready()` sets `hp = max_hp` synchronously on entering the tree.
-**This is deliberately the simplest possible version** (linear, HP-only scaling) to prototype
-whether repeated 10-wave loops are fun at all before investing in more planets/levels or a richer
-scaling system (new enemy types, other stats, per-loop modifiers, etc.) — see the brainstorm this
-came from. `GameManager.State.WON` and `VictoryPanel` still exist and work exactly as before, but
-are currently unreachable through normal play (nothing calls `trigger_win()`); they're intentionally
-kept for a real future ending (e.g. after the last planet). Only a true Game Over
-(`reset_game()`) resets `loop_count` back to 1.
+`start_next_wave()` to jump straight back into wave 1. **Both player progression AND position/HP
+persist across loops** — level, XP, ability ranks/points, currency, world position, and current HP
+are all untouched by a loop transition (there is no `reset_game()` call anywhere in this path, and
+`player.gd` no longer reacts to `loop_changed` at all). Since the level is boundless, the player
+just keeps walking forward through loop after loop rather than restarting from the spawn point.
+Newly spawned enemies get more HP per loop via `GameManager.get_enemy_hp_multiplier()`
+(`1.0 + (loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP`, currently +50%/loop) — `main.gd`'s
+`_spawn_enemy()` applies it to `enemy.max_hp` *before* `add_child()`, since `enemy.gd`'s `_ready()`
+sets `hp = max_hp` synchronously on entering the tree. **This is deliberately the simplest possible
+version** (linear, HP-only scaling) to prototype whether repeated 10-wave loops are fun at all
+before investing in more planets/levels or a richer scaling system (new enemy types, other stats,
+per-loop modifiers, etc.) — see the brainstorm this came from. `GameManager.State.WON` and
+`VictoryPanel` still exist and work exactly as before, but are currently unreachable through normal
+play (nothing calls `trigger_win()`); they're intentionally kept for a real future ending (e.g.
+after the last planet). Only a true Game Over (`reset_game()`) resets `loop_count` back to 1 and
+teleports the player back to spawn (via the normal scene reload, not anything loop-specific).
+
+**Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
+Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
+alive and `PLAYING` — not just after a loop transition, and not paused by combat. Routed through
+`get_hp_regen()` = `base_hp_regen + GameManager.get_stat_bonus("hp_regen")`, mirroring every other
+stat getter, even though nothing currently grants an `"hp_regen"` bonus — free to hook up later
+without touching this getter. The HUD shows it as a small green `+X.X/s` label
+(`Control/BottomBar/HPBar/RegenLabel`) anchored to the right end of the HP bar, hidden whenever HP
+is already full (`_update_hp_regen_label()` in `hud.gd`) so it doesn't clutter the bar when it isn't
+doing anything.
 
 **HUD "Kolo" vs. "Úroveň"**: the top-of-screen `LoopLabel` ("Kolo N") is the loop counter above;
 it's deliberately *not* called "Úroveň" even though that's the literal translation, because
@@ -205,11 +220,11 @@ else depends on it. The shop is intentionally empty apart from its close button.
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `camera_left_margin`, base stats, fall/intro animation params
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `camera_left_margin`, `base_hp_regen`, base stats, fall/intro animation params
 - `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `reward`, `xp_reward`
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range) and visual scale, node properties only (script is shared with `enemy.gd`)
-- `scenes/levels/level_01.tscn` — `LevelEnd` marker position = level length (movement cap, no longer a win trigger)
-- `scenes/levels/ground.gd` — `tile_size`, tile colors, `total_width` (must cover past `LevelEnd` or the floor visibly ends early)
+- `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
+- `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops)
-- `scenes/ui/hud.gd` — `GAME_OVER_RESTART_DELAY`
+- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`

@@ -143,11 +143,11 @@ func start_next_wave() -> void:
 	wave_started.emit(current_wave)
 
 
-## Vyčištěním FINAL_WAVE hra nekončí - vrátí se na vlnu 1 se silnějšími
-## nepřáteli (viz get_enemy_hp_multiplier()), ale hráčova progrese zůstává.
-## player.gd na loop_changed reaguje přesunem zpátky na spawn pozici a
-## doplněním HP na max - bez toho by druhé kolo začínalo tam, kde skončilo
-## první (typicky až u level_end_x), s poškozeným HP z konce předchozího kola.
+## Vyčištěním FINAL_WAVE hra nekončí - vlny se vrátí na 1 se silnějšími
+## nepřáteli (viz get_enemy_hp_multiplier()), ale hráčova progrese (úroveň,
+## XP, schopnosti, měna) i pozice a HP zůstávají přesně tak, jak byly - level
+## je bezkonečný, takže postava jen pokračuje dál dopředu (viz player.gd,
+## HP se doplňuje pasivní regenerací, ne skokově při každém kole).
 func _start_new_loop() -> void:
 	loop_count += 1
 	current_wave = 0
