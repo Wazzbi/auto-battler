@@ -17,6 +17,11 @@ extends Node2D
 @export var reward: int = 10
 ## Zkušenosti za zabití - hráč z nich sbírá úrovně a body do schopností
 @export var xp_reward: int = 12
+## Jak blízko svého STŘEDU musí projektil dolétnout, aby se počítal zásah.
+## Musí zhruba odpovídat polovině šířky vizuálu (Polygon2D), jinak zásah
+## vypadá, že se stane příliš brzy/pozdě vůči tomu, co je vidět na obrazovce -
+## viz projectile.gd, které čte tuhle hodnotu místo vlastní pevné konstanty.
+@export var hit_radius: float = 20.0
 
 var hp: float
 var player_ref: Node2D = null

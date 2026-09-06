@@ -44,13 +44,26 @@ uses a square-root curve (`enemies_base_count + sqrt(wave_number - 1) * difficul
 difficulty ramps gradually, and `max_concurrent_enemies` caps how many can be alive at once
 regardless of how many are left to spawn.
 
-**Camera/scrolling model**: the `Camera2D` is a *child of the player* (`scenes/player/player.tscn`)
-but offset horizontally by `camera_left_margin` so the player renders near the left edge, not
-centered. Because of this offset, anything that needs "the visible screen area" (enemy spawn
-position in `main.gd`, projectile off-screen cleanup in `projectile.gd`) must compute it from
-`camera.global_position`, **not** from the player's position or a fixed viewport size — that
-mismatch was a real bug once (projectiles get cleaned up using world-space camera position, not a
-static viewport coordinate). The offset is recalculated on `get_viewport().size_changed` too.
+**Camera/scrolling model**: the `Camera2D` (`Main/Camera2D` in `main.tscn`, script
+`scenes/camera_follow.gd`) is an **independent sibling node, not a child of the player**. It tracks
+the player's X position with its own exponential lerp (`follow_speed`, default 5.0) offset
+horizontally by `camera_left_margin` so the player renders near the left edge, not centered; Y is
+copied from the player with no lag (needed for the drop-in animation and shake to look right).
+`main.gd`'s `_ready()` wires it up explicitly: `camera.set_target(player)` (which snaps instantly,
+so there's no visible "flying in" on start) and `player.landed.connect(camera.shake)` — the player
+only emits a `landed` signal and has no reference to the camera at all. **This decoupling was a
+deliberate fix**, not the original design: when the camera was a rigid child, its X velocity
+matched the player's exactly, so the *instant* the player stopped walking (an enemy came into
+`attack_range`) the camera's on-screen pan also stopped instantly — collapsing the *apparent*
+closing speed of an approaching enemy from `enemy.speed + player.move_speed` down to just
+`enemy.speed` in a single frame (a real, measured ~43% perceived slowdown, not a change to
+`enemy.speed` itself). The lerp-follow smooths that transition away. Anything that needs "the
+visible screen area" (enemy spawn position in `main.gd`, projectile off-screen cleanup in
+`projectile.gd`, infinite ground tiling in `ground.gd`) still computes it from `camera.global_position`
+— that stays correct because this camera has no *additional* built-in smoothing layered on top
+(`position_smoothing_enabled` is intentionally not used; the manual lerp *is* the smoothing, so
+`global_position` is always exactly what's rendered, same reasoning as the `get_screen_center_position()`
+note in ground.gd below). The horizontal offset is recalculated on `get_viewport().size_changed` too.
 
 **Combat resolution is distance-based, not physics-based.** Player attacks, enemy melee, and
 projectile hits all use `global_position.distance_to(...)` checks against exported range
@@ -65,6 +78,17 @@ enemies could have different speeds (a slow Elite would back up fast normal enem
 stalling them). Visual overlap between enemies is an accepted trade-off — there's no collision
 layer to prevent it anyway (see "Combat resolution is distance-based" below). `melee_range_jitter`
 still exists purely so enemies of the *same* type don't all stop at the exact same pixel.
+
+**Projectile hit radius lives on the enemy, not the projectile**: `enemy.gd` exports `hit_radius`
+(20.0, matching its 18px `Polygon2D` half-width plus a small margin); `elite_enemy.tscn` overrides
+it to 58.0 to match its 3x-scaled 54px half-width. `projectile.gd` reads `target.hit_radius` (and
+`enemy.hit_radius` in its "target lost" fallback scan) instead of carrying its own fixed radius.
+This was a real, measured visual bug: with a single shared radius, a normal enemy (visual
+half-width 18) registered a hit while the projectile was still ~6px short of its visible edge, and
+an Elite (half-width 54) would have needed a projectile to fly *30px into* its silhouette before
+registering — both because a flat hit radius doesn't scale with an enemy's actual size. If a new
+enemy type gets a different visual scale, give it its own `hit_radius` override the same way
+Elite does, rather than tuning `projectile.gd`.
 
 **Design constraint for future enemy projectiles**: enemies are melee-only right now
 (`contact_damage`), but if ranged enemies get added later, their projectiles must only ever check
@@ -262,10 +286,11 @@ reuse the *real* code paths rather than shortcutting past them:
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `camera_left_margin`, `base_hp_regen`, base stats, fall/intro animation params
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, base stats, fall/intro animation params
+- `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
 - `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`
-- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `reward`, `xp_reward`
-- `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range) and visual scale, node properties only (script is shared with `enemy.gd`)
+- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`
+- `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops)

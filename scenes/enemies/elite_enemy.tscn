@@ -10,6 +10,7 @@ reward = 10
 xp_reward = 12
 attack_interval = 1.0
 melee_range = 100.0
+hit_radius = 58.0
 
 [node name="Polygon2D" type="Polygon2D" parent="."]
 color = Color(0.55, 0.1, 0.65, 1)
