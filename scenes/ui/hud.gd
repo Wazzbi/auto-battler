@@ -7,9 +7,11 @@ extends CanvasLayer
 ## Uzel má process_mode = ALWAYS (nastaveno ve scéně), aby lišta i obchod
 ## reagovaly i když je strom pozastavený přes get_tree().paused (otevřený obchod).
 
-## Za kolik sekund se hra po Game Over automaticky restartuje, pokud kurzor
-## nestojí nad GameOverPanel (viz _process a _on_game_over_panel_mouse_entered/exited).
-const GAME_OVER_RESTART_DELAY: float = 10.0
+## Za kolik sekund se hra po Game Over nebo výhře automaticky restartuje,
+## pokud kurzor nestojí nad příslušným panelem (viz _process a
+## _on_end_panel_mouse_entered/exited). Stejná logika pro oba konce hry -
+## jen jeden z panelů může být zobrazený najednou (GAME_OVER, nebo WON).
+const END_SCREEN_RESTART_DELAY: float = 10.0
 
 ## Ztlumení ikony schopnosti, která ještě není odemčená
 const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
@@ -42,14 +44,20 @@ const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var game_over_continue_button: Button = $Control/GameOverPanel/ContinueButton
 @onready var victory_panel: Panel = $Control/VictoryPanel
 @onready var victory_label: Label = $Control/VictoryPanel/Label
+@onready var victory_countdown_label: Label = $Control/VictoryPanel/CountdownLabel
+@onready var victory_continue_button: Button = $Control/VictoryPanel/ContinueButton
 
 var player_ref: Node2D = null
 
-## Zbývající čas do auto-restartu po Game Over. Počítá se ručně (ne přes Timer
-## uzel), protože potřebujeme jednoduše pozastavit/obnovit odpočet podle toho,
-## jestli je kurzor nad panelem - viz CLAUDE.md poznámku k mobilnímu portu.
-var _game_over_countdown: float = 0.0
-var _game_over_countdown_active: bool = false
+## Zbývající čas do auto-restartu po Game Over/výhře. Počítá se ručně (ne přes
+## Timer uzel), protože potřebujeme jednoduše pozastavit/obnovit odpočet podle
+## toho, jestli je kurzor nad panelem - viz CLAUDE.md poznámku k mobilnímu portu.
+var _end_screen_countdown: float = 0.0
+var _end_screen_countdown_active: bool = false
+## Label aktuálně zobrazeného konečného panelu (Game Over, nebo Victory) -
+## nastaví ho show_game_over()/show_victory() při spuštění odpočtu.
+var _active_countdown_label: Label = null
+var _countdown_label_prefix: String = ""
 
 var _ability_buttons := {}
 var _ability_rank_labels := {}
@@ -83,23 +91,27 @@ func _ready() -> void:
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
 	wave_cleared_timer.timeout.connect(func(): wave_cleared_label.hide())
 
-	game_over_continue_button.pressed.connect(_on_game_over_continue_pressed)
-	game_over_panel.mouse_entered.connect(_on_game_over_panel_mouse_entered)
-	game_over_panel.mouse_exited.connect(_on_game_over_panel_mouse_exited)
+	game_over_continue_button.pressed.connect(_restart_game)
+	game_over_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
+	game_over_panel.mouse_exited.connect(_on_end_panel_mouse_exited)
+
+	victory_continue_button.pressed.connect(_restart_game)
+	victory_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
+	victory_panel.mouse_exited.connect(_on_end_panel_mouse_exited)
 
 	_refresh_progression()
 	_maybe_auto_assign()
 
 
 func _process(delta: float) -> void:
-	if not _game_over_countdown_active:
+	if not _end_screen_countdown_active:
 		return
-	_game_over_countdown -= delta
-	if _game_over_countdown <= 0.0:
-		_game_over_countdown_active = false
+	_end_screen_countdown -= delta
+	if _end_screen_countdown <= 0.0:
+		_end_screen_countdown_active = false
 		_restart_game()
 	else:
-		_update_game_over_countdown_label()
+		_update_end_screen_countdown_label()
 
 
 func _cache_ability_nodes() -> void:
@@ -253,15 +265,14 @@ func show_game_over(wave_reached: int, currency: int) -> void:
 		wave_reached, GameManager.player_level, currency
 	]
 	game_over_panel.show()
-	_game_over_countdown = GAME_OVER_RESTART_DELAY
-	_game_over_countdown_active = true
-	_update_game_over_countdown_label()
+	_start_end_screen_countdown(game_over_countdown_label, "Restart za")
 
 
 func show_victory(currency: int) -> void:
 	_close_shop()
 	victory_label.text = "Level dokončen!\nÚroveň: %d\nZlato: %d" % [GameManager.player_level, currency]
 	victory_panel.show()
+	_start_end_screen_countdown(victory_countdown_label, "Nová hra za")
 
 
 func _close_shop() -> void:
@@ -269,24 +280,29 @@ func _close_shop() -> void:
 	get_tree().paused = false
 
 
-func _on_game_over_panel_mouse_entered() -> void:
-	_game_over_countdown_active = false
+func _start_end_screen_countdown(countdown_label: Label, prefix: String) -> void:
+	_active_countdown_label = countdown_label
+	_countdown_label_prefix = prefix
+	_end_screen_countdown = END_SCREEN_RESTART_DELAY
+	_end_screen_countdown_active = true
+	_update_end_screen_countdown_label()
 
 
-func _on_game_over_panel_mouse_exited() -> void:
-	_game_over_countdown_active = true
+func _on_end_panel_mouse_entered() -> void:
+	_end_screen_countdown_active = false
 
 
-func _on_game_over_continue_pressed() -> void:
-	_restart_game()
+func _on_end_panel_mouse_exited() -> void:
+	_end_screen_countdown_active = true
 
 
-func _update_game_over_countdown_label() -> void:
-	game_over_countdown_label.text = "Restart za: %d s" % int(ceil(_game_over_countdown))
+func _update_end_screen_countdown_label() -> void:
+	_active_countdown_label.text = "%s: %d s" % [_countdown_label_prefix, int(ceil(_end_screen_countdown))]
 
 
 func _restart_game() -> void:
-	_game_over_countdown_active = false
+	_end_screen_countdown_active = false
 	game_over_panel.hide()
+	victory_panel.hide()
 	get_tree().paused = false
 	get_tree().reload_current_scene()

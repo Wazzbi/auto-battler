@@ -12,4 +12,4 @@ script = ExtResource("1_ground_script")
 position = Vector2(150, 500)
 
 [node name="LevelEnd" type="Marker2D" parent="." groups=["level_end"]]
-position = Vector2(5000, 500)
+position = Vector2(6000, 500)

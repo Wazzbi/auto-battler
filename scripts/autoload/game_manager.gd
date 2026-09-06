@@ -15,6 +15,9 @@ signal ability_rank_changed(ability_id: String, new_rank: int)
 
 enum State { INTRO, PLAYING, GAME_OVER, WON }
 
+## Hra končí výhrou po vyčištění téhle vlny - viz _on_wave_cleared()
+const FINAL_WAVE: int = 10
+
 ## XP potřebné na 2. úroveň; každá další úroveň stojí o XP_PER_LEVEL_GROWTH víc
 const XP_BASE: int = 60
 const XP_PER_LEVEL_GROWTH: int = 40
@@ -113,8 +116,11 @@ func enemy_defeated(reward: int, xp_reward: int) -> void:
 
 func _on_wave_cleared() -> void:
 	wave_cleared.emit(current_wave)
-	# Žádné čekání na vynucený výběr - hra plynule pokračuje další vlnou
-	start_next_wave()
+	if current_wave >= FINAL_WAVE:
+		trigger_win()
+	else:
+		# Žádné čekání na vynucený výběr - hra plynule pokračuje další vlnou
+		start_next_wave()
 
 
 func start_next_wave() -> void:

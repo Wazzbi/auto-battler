@@ -1,9 +1,13 @@
 extends Node2D
 ## Základní nepřítel. Pohybuje se doleva směrem k hráči; jakmile je
-## dostatečně blízko, zastaví se a útočí v pravidelných intervalech.
-## Rozestup od ostatních nepřátel řeší _get_effective_stop_distance() -
-## bez toho by se všichni zastavili přesně na stejné pozici a vizuálně
-## by se překrývali v jedné hromadě.
+## dostatečně blízko (podle svého vlastního melee_range), zastaví se a útočí
+## v pravidelných intervalech.
+##
+## Nepřátelé se navzájem NEBLOKUJÍ - každý počítá svou stop distanci nezávisle
+## na ostatních, takže se klidně vizuálně překryjí (žádná Area2D/collision
+## řešená spacing logika, viz "combat resolution is distance-based" v
+## CLAUDE.md). To je záměr: jednotky s různou rychlostí (např. pomalý Elite
+## a rychlí normální nepřátelé) se tak nezasekávají jedna za druhou.
 
 @export var speed: float = 80.0
 @export var max_hp: float = 20.0
@@ -13,8 +17,6 @@ extends Node2D
 @export var reward: int = 10
 ## Zkušenosti za zabití - hráč z nich sbírá úrovně a body do schopností
 @export var xp_reward: int = 12
-## Minimální odstup od dalšího nepřítele, který je blíž hráči
-@export var min_spacing: float = 45.0
 
 var hp: float
 var player_ref: Node2D = null
@@ -37,7 +39,7 @@ func _process(delta: float) -> void:
 		return
 
 	var distance: float = global_position.distance_to(player_ref.global_position)
-	var stop_distance: float = _get_effective_stop_distance(distance)
+	var stop_distance: float = melee_range + melee_range_jitter
 
 	if distance > stop_distance:
 		global_position.x -= speed * delta
@@ -46,21 +48,6 @@ func _process(delta: float) -> void:
 		if attack_timer <= 0.0:
 			player_ref.take_damage(contact_damage)
 			attack_timer = attack_interval
-
-
-## Pokud je jiný nepřítel blíž hráči než já, zastavím se o kus dál za ním
-## namísto na stejné pozici - vytváří to přirozenou "frontu" místo hromady.
-func _get_effective_stop_distance(my_distance: float) -> float:
-	var my_target: float = melee_range + melee_range_jitter
-
-	for other in get_tree().get_nodes_in_group("enemies"):
-		if other == self or not is_instance_valid(other):
-			continue
-		var other_distance: float = other.global_position.distance_to(player_ref.global_position)
-		if other_distance < my_distance and other_distance > my_target - min_spacing:
-			my_target = other_distance + min_spacing
-
-	return my_target
 
 
 func take_damage(amount: float) -> void:

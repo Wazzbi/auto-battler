@@ -6,7 +6,7 @@ extends Node2D
 
 @export var tile_size: float = 150.0
 @export var height: float = 100.0
-@export var total_width: float = 5400.0
+@export var total_width: float = 6480.0
 @export var color_a: Color = Color(0.36, 0.24, 0.14, 1.0)
 @export var color_b: Color = Color(0.46, 0.32, 0.18, 1.0)
 ## Tenký zvýrazněný pruh navrchu podlahy (jako "tráva"/okraj)
