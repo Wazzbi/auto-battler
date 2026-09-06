@@ -1,0 +1,181 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/ui/hud.gd" id="1_hud_script"]
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("1_hud_script")
+
+[node name="WaveClearedTimer" type="Timer" parent="."]
+wait_time = 2.0
+one_shot = true
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="HPBar" type="ProgressBar" parent="Control"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 260.0
+offset_bottom = 44.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+
+[node name="WaveLabel" type="Label" parent="Control"]
+layout_mode = 0
+offset_left = 560.0
+offset_top = 20.0
+offset_right = 760.0
+offset_bottom = 44.0
+text = "Vlna 1"
+horizontal_alignment = 1
+
+[node name="CurrencyLabel" type="Label" parent="Control"]
+layout_mode = 0
+offset_left = 950.0
+offset_top = 20.0
+offset_right = 1120.0
+offset_bottom = 44.0
+text = "Měna: 0"
+horizontal_alignment = 2
+
+[node name="UpgradeButton" type="Button" parent="Control"]
+layout_mode = 0
+offset_left = 1140.0
+offset_top = 16.0
+offset_right = 1260.0
+offset_bottom = 48.0
+text = "Upgrade"
+
+[node name="WaveClearedLabel" type="Label" parent="Control"]
+layout_mode = 0
+offset_left = 500.0
+offset_top = 70.0
+offset_right = 800.0
+offset_bottom = 100.0
+text = "Vlna splněna!"
+horizontal_alignment = 1
+visible = false
+
+[node name="StatsPanel" type="Panel" parent="Control"]
+layout_mode = 0
+offset_left = 440.0
+offset_top = 120.0
+offset_right = 840.0
+offset_bottom = 560.0
+visible = false
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/StatsPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 380.0
+offset_bottom = 420.0
+
+[node name="PointsLabel" type="Label" parent="Control/StatsPanel/VBoxContainer"]
+layout_mode = 2
+text = "Body: 0"
+horizontal_alignment = 1
+
+[node name="DamageRow" type="HBoxContainer" parent="Control/StatsPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="DamageLabel" type="Label" parent="Control/StatsPanel/VBoxContainer/DamageRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Poškození: 10"
+
+[node name="DamagePlus" type="Button" parent="Control/StatsPanel/VBoxContainer/DamageRow"]
+layout_mode = 2
+text = "+5"
+
+[node name="SpeedRow" type="HBoxContainer" parent="Control/StatsPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="SpeedLabel" type="Label" parent="Control/StatsPanel/VBoxContainer/SpeedRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Rychlost útoku: 1.0/s"
+
+[node name="SpeedPlus" type="Button" parent="Control/StatsPanel/VBoxContainer/SpeedRow"]
+layout_mode = 2
+text = "+0.2"
+
+[node name="HPRow" type="HBoxContainer" parent="Control/StatsPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="HPLabel" type="Label" parent="Control/StatsPanel/VBoxContainer/HPRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Max HP: 100"
+
+[node name="HPPlus" type="Button" parent="Control/StatsPanel/VBoxContainer/HPRow"]
+layout_mode = 2
+text = "+20"
+
+[node name="RangeRow" type="HBoxContainer" parent="Control/StatsPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="RangeLabel" type="Label" parent="Control/StatsPanel/VBoxContainer/RangeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Dostřel: 400"
+
+[node name="RangePlus" type="Button" parent="Control/StatsPanel/VBoxContainer/RangeRow"]
+layout_mode = 2
+text = "+50"
+
+[node name="MultishotRow" type="HBoxContainer" parent="Control/StatsPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="MultishotLabel" type="Label" parent="Control/StatsPanel/VBoxContainer/MultishotRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cílů najednou: 1"
+
+[node name="MultishotPlus" type="Button" parent="Control/StatsPanel/VBoxContainer/MultishotRow"]
+layout_mode = 2
+text = "+1"
+
+[node name="CloseButton" type="Button" parent="Control/StatsPanel/VBoxContainer"]
+layout_mode = 2
+text = "Zavřít"
+
+[node name="GameOverPanel" type="Panel" parent="Control"]
+layout_mode = 0
+offset_left = 440.0
+offset_top = 260.0
+offset_right = 840.0
+offset_bottom = 460.0
+visible = false
+
+[node name="Label" type="Label" parent="Control/GameOverPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 380.0
+offset_bottom = 180.0
+text = "Game Over!"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="VictoryPanel" type="Panel" parent="Control"]
+layout_mode = 0
+offset_left = 440.0
+offset_top = 260.0
+offset_right = 840.0
+offset_bottom = 460.0
+visible = false
+
+[node name="Label" type="Label" parent="Control/VictoryPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 380.0
+offset_bottom = 180.0
+text = "Level dokončen!"
+horizontal_alignment = 1
+vertical_alignment = 1

@@ -1,0 +1,18 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/player/player.gd" id="1_player_script"]
+[ext_resource type="PackedScene" path="res://scenes/projectiles/projectile.tscn" id="2_projectile"]
+[ext_resource type="PackedScene" path="res://scenes/effects/impact_effect.tscn" id="3_impact_effect"]
+
+[node name="Player" type="Node2D"]
+script = ExtResource("1_player_script")
+projectile_scene = ExtResource("2_projectile")
+impact_effect_scene = ExtResource("3_impact_effect")
+
+[node name="Polygon2D" type="Polygon2D" parent="."]
+color = Color(0.2, 0.6, 1, 1)
+polygon = PackedVector2Array(-20, -30, 20, -30, 20, 30, -20, 30)
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position_smoothing_enabled = true
+position_smoothing_speed = 5.0
