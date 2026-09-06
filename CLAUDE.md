@@ -57,16 +57,50 @@ projectile hits all use `global_position.distance_to(...)` checks against export
 constants — there are no `Area2D`/`CollisionShape2D` hit layers. This is intentional for prototype
 simplicity per the README; if collision performance ever matters, this is the layer to revisit.
 
-**Enemy queueing**: enemies move left toward the player and stop at `melee_range` (plus a random
-per-enemy jitter). `enemy.gd`'s `_get_effective_stop_distance()` checks other enemies' distance to
-the player and increases its own stop distance if another enemy is already closer, so enemies form
-a natural queue instead of stacking on the same pixel.
+**Enemies don't block each other**: each enemy moves left toward the player and stops purely at its
+own `melee_range` (plus a random per-enemy jitter) — it never looks at other enemies' positions.
+This is deliberate, not an oversight: an earlier version made each enemy stop farther back if
+another enemy was already closer to the player (a "queueing" effect), but that broke down once
+enemies could have different speeds (a slow Elite would back up fast normal enemies behind it,
+stalling them). Visual overlap between enemies is an accepted trade-off — there's no collision
+layer to prevent it anyway (see "Combat resolution is distance-based" below). `melee_range_jitter`
+still exists purely so enemies of the *same* type don't all stop at the exact same pixel.
+
+**Design constraint for future enemy projectiles**: enemies are melee-only right now
+(`contact_damage`), but if ranged enemies get added later, their projectiles must only ever check
+distance against the player — never scan the `enemies` group the way `projectile.gd`'s
+"target lost" fallback does for the player's own projectiles (see `_process()` in
+`scenes/projectiles/projectile.gd`). Since enemies can now stand on top of each other, a
+generic "hit whatever's in range" fallback would let enemies shoot each other in the back;
+projectiles fired *by* enemies must pass through other enemies untouched and only ever resolve
+against the player.
 
 **Level end detection**: `player.gd` finds the level-end X coordinate by looking up a node in the
 `level_end` group (`get_tree().get_first_node_in_group("level_end")`) at `_ready()`. The `LevelEnd`
-marker in `scenes/levels/level_01.tscn` must belong to that group or `level_end_x` stays `INF` and
-the player walks forever without ever triggering a win. If a hand-edited `.tscn` loses this group
-membership, re-add it in the editor: select the marker → Node tab → Groups → add `level_end`.
+marker in `scenes/levels/level_01.tscn` must belong to that group or `level_end_x` stays `INF`. If a
+hand-edited `.tscn` loses this group membership, re-add it in the editor: select the marker → Node
+tab → Groups → add `level_end`. **`level_end_x` is now just a movement cap, not a win trigger** —
+the player stops advancing there (`global_position.x = min(..., level_end_x)`) but reaching it does
+nothing else. This is deliberate: see the win-condition note below.
+
+**Win condition is wave-based, not position-based**: the game ends in victory when
+`GameManager.FINAL_WAVE` (10) is cleared — `_on_wave_cleared()` calls `trigger_win()` instead of
+`start_next_wave()` once `current_wave >= FINAL_WAVE`. This *replaced* the old "player walks to
+`level_end_x`" win condition, which was removed from `player.gd` on purpose: with a fixed 10-wave
+campaign, letting position also trigger a win risked the player winning early by outrunning combat
+before wave 10 was actually cleared. If the level length or enemy count ever changes, make sure
+`Level01/Ground` (`scenes/levels/level_01.tscn` + `ground.gd`'s `total_width`) stays comfortably
+longer than however far the player can realistically walk across 10 waves — right now both were
+sized 20% longer than the original single-screen-ish layout to give the fixed campaign room.
+
+**Elite enemy (final wave only)**: `scenes/enemies/elite_enemy.tscn` reuses `enemy.gd` (it's fully
+data-driven via `@export` vars, so no new script was needed) with `speed` halved, `max_hp` tripled,
+and the `Polygon2D` visual scaled 3x — `melee_range` was also bumped (60 → 100) so the much bigger
+sprite doesn't visually overlap the player before it stops to attack. `main.gd`'s
+`elite_count_final_wave` (default 1) controls how many spawn; `_on_wave_started()` only queues
+Elites when `wave_number == GameManager.FINAL_WAVE`, and `_spawn_enemy()` always drains the Elite
+queue before falling back to normal enemies, so the Elite(s) appear first in wave 10, with regular
+enemies filling out the rest of the wave's usual sqrt-curve count.
 
 **Intro/drop-in sequence**: on start, the player falls from above into position
 (`_play_drop_in_animation` in `player.gd`) while `GameManager.state == State.INTRO`, which blocks
@@ -74,14 +108,19 @@ all gameplay `_process` logic automatically. `_on_landed()` triggers a screen sh
 tween, a procedural impact ring (`scenes/effects/impact_effect.gd`), and finally
 `GameManager.finish_intro()` to switch state to `PLAYING`.
 
-**Game Over / auto-restart flow**: `hud.gd`'s `GameOverPanel` counts down
-`GAME_OVER_RESTART_DELAY` (10s) via a manually decremented float in `_process`, not a `Timer`
-node — `_game_over_countdown_active` gets flipped off/on by the panel's `mouse_entered`/
-`mouse_exited` signals so hovering the panel pauses the countdown and moving off resumes it.
-Reaching zero, or pressing the panel's "Pokračovat" button, both call `_restart_game()`, which
-just does `get_tree().reload_current_scene()` — `GameManager` is an autoload so it survives the
-reload untouched, and `main.gd`'s `_ready()` calls `GameManager.reset_game()` on the way back up,
-so that's the only reset path; there's no separate "restart" signal or function on `GameManager`
+**Game Over / Victory auto-restart flow**: `hud.gd` drives both `GameOverPanel` and `VictoryPanel`
+with the *same* countdown mechanism — `_end_screen_countdown` ticks down via a manually decremented
+float in `_process` (not a `Timer` node), and `_active_countdown_label` points at whichever panel's
+`CountdownLabel` is currently showing (`show_game_over()`/`show_victory()` set it, along with a
+prefix string — "Restart za" vs. "Nová hra za" — since the two panels only differ in copy, not
+behavior). This works because the two panels are mutually exclusive: `GameManager.state` is either
+`GAME_OVER` or `WON`, never both, so there's never a question of *which* panel's countdown is
+running. Both panels' `mouse_entered`/`mouse_exited` connect to the same
+`_on_end_panel_mouse_entered`/`_exited` handlers (hovering pauses, moving off resumes), and both
+"Pokračovat" buttons connect to the same `_restart_game()`, which just calls
+`get_tree().reload_current_scene()` — `GameManager` is an autoload so it survives the reload
+untouched, and `main.gd`'s `_enter_tree()` calls `GameManager.reset_game()` on the way back up, so
+that's the only reset path; there's no separate "restart" signal or function on `GameManager`
 itself. **Mobile port note**: the pause-on-hover mechanic has no equivalent on touch (no hover
 state), so this will need a different interaction — e.g. pause while a finger is down, or drop the
 pause and just show the countdown — when a mobile port is attempted.
@@ -142,9 +181,10 @@ else depends on it. The shop is intentionally empty apart from its close button.
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `camera_left_margin`, base stats, fall/intro animation params
-- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`
-- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `min_spacing`, `reward`, `xp_reward`
-- `scenes/levels/level_01.tscn` — `LevelEnd` marker position = level length
+- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`
+- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `reward`, `xp_reward`
+- `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range) and visual scale, node properties only (script is shared with `enemy.gd`)
+- `scenes/levels/level_01.tscn` — `LevelEnd` marker position = level length (movement cap, no longer a win trigger)
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `total_width` (must cover past `LevelEnd` or the floor visibly ends early)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`, `FINAL_WAVE` (which wave ends the game)
 - `scenes/ui/hud.gd` — `GAME_OVER_RESTART_DELAY`

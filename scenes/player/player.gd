@@ -162,11 +162,11 @@ func _process(delta: float) -> void:
 				_shoot(target)
 			cooldown_timer = 1.0 / max(get_attack_speed(), 0.01)
 	else:
-		# Nikdo v dosahu - postupuj dál k cíli levelu
+		# Nikdo v dosahu - postupuj dál k cíli levelu. level_end_x je teď jen
+		# vizuální strop pohybu - výhra se váže na dokončení GameManager.FINAL_WAVE,
+		# ne na dosažení konce mapy (viz GameManager._on_wave_cleared()).
 		if global_position.x < level_end_x:
-			global_position.x += move_speed * delta
-		if global_position.x >= level_end_x:
-			GameManager.trigger_win()
+			global_position.x = min(global_position.x + move_speed * delta, level_end_x)
 
 
 ## Vrátí až `count` nejbližších nepřátel v dosahu, seřazené od nejbližšího.
