@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://ly7hjb0bk35a"]
 
-[ext_resource type="Script" path="res://scenes/ui/hud.gd" id="1_hud_script"]
+[ext_resource type="Script" uid="uid://bpq8pxfiyscu2" path="res://scenes/ui/hud.gd" id="1_hud_script"]
+[ext_resource type="Script" path="res://scenes/ui/eye_icon.gd" id="2_eye_icon_script"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bar_bg"]
 bg_color = Color(0.09, 0.1, 0.13, 0.95)
@@ -11,20 +12,21 @@ bg_color = Color(0.25, 0.72, 0.33, 1)
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
 bg_color = Color(0.85, 0.68, 0.24, 1)
 
-[node name="HUD" type="CanvasLayer"]
+[node name="HUD" type="CanvasLayer" unique_id=730099689]
 process_mode = 3
 script = ExtResource("1_hud_script")
 
-[node name="WaveClearedTimer" type="Timer" parent="."]
+[node name="WaveClearedTimer" type="Timer" parent="." unique_id=1417595786]
 wait_time = 2.0
 one_shot = true
 
-[node name="Control" type="Control" parent="."]
-layout_mode = 1
+[node name="Control" type="Control" parent="." unique_id=276225287]
+layout_mode = 3
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
-[node name="LoopLabel" type="Label" parent="Control"]
+[node name="LoopLabel" type="Label" parent="Control" unique_id=525284411]
 layout_mode = 0
 offset_left = 460.0
 offset_top = 20.0
@@ -33,7 +35,7 @@ offset_bottom = 44.0
 text = "Kolo 1"
 horizontal_alignment = 1
 
-[node name="WaveLabel" type="Label" parent="Control"]
+[node name="WaveLabel" type="Label" parent="Control" unique_id=439171733]
 layout_mode = 0
 offset_left = 560.0
 offset_top = 20.0
@@ -42,7 +44,38 @@ offset_bottom = 44.0
 text = "Vlna 1"
 horizontal_alignment = 1
 
-[node name="WaveClearedLabel" type="Label" parent="Control"]
+[node name="DebugButton" type="Button" parent="Control"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -140.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 42.0
+text = ""
+
+[node name="Label" type="Label" parent="Control/DebugButton"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 6.0
+offset_right = 70.0
+offset_bottom = 26.0
+mouse_filter = 2
+text = "Debug"
+vertical_alignment = 1
+
+[node name="EyeIcon" type="Control" parent="Control/DebugButton"]
+layout_mode = 0
+offset_left = 96.0
+offset_top = 6.0
+offset_right = 122.0
+offset_bottom = 26.0
+mouse_filter = 2
+script = ExtResource("2_eye_icon_script")
+
+[node name="WaveClearedLabel" type="Label" parent="Control" unique_id=748529714]
+visible = false
 layout_mode = 0
 offset_left = 500.0
 offset_top = 70.0
@@ -50,17 +83,17 @@ offset_right = 800.0
 offset_bottom = 100.0
 text = "Vlna splněna!"
 horizontal_alignment = 1
-visible = false
 
-[node name="BottomBar" type="ColorRect" parent="Control"]
+[node name="BottomBar" type="ColorRect" parent="Control" unique_id=1243818576]
 layout_mode = 1
+anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_top = -140.0
 color = Color(0.07, 0.08, 0.11, 0.94)
 
-[node name="StatDamage" type="Label" parent="Control/BottomBar"]
+[node name="StatDamage" type="Label" parent="Control/BottomBar" unique_id=1729872004]
 layout_mode = 0
 offset_left = 14.0
 offset_top = 10.0
@@ -69,7 +102,7 @@ offset_bottom = 34.0
 theme_override_font_sizes/font_size = 14
 text = "Poškození: 10"
 
-[node name="StatSpeed" type="Label" parent="Control/BottomBar"]
+[node name="StatSpeed" type="Label" parent="Control/BottomBar" unique_id=853616865]
 layout_mode = 0
 offset_left = 14.0
 offset_top = 38.0
@@ -78,7 +111,7 @@ offset_bottom = 62.0
 theme_override_font_sizes/font_size = 14
 text = "Rychlost: 1.0/s"
 
-[node name="StatRange" type="Label" parent="Control/BottomBar"]
+[node name="StatRange" type="Label" parent="Control/BottomBar" unique_id=1513748572]
 layout_mode = 0
 offset_left = 14.0
 offset_top = 66.0
@@ -87,7 +120,7 @@ offset_bottom = 90.0
 theme_override_font_sizes/font_size = 14
 text = "Dostřel: 400"
 
-[node name="StatHP" type="Label" parent="Control/BottomBar"]
+[node name="StatHP" type="Label" parent="Control/BottomBar" unique_id=1334704326]
 layout_mode = 0
 offset_left = 14.0
 offset_top = 94.0
@@ -96,7 +129,7 @@ offset_bottom = 118.0
 theme_override_font_sizes/font_size = 14
 text = "Max HP: 100"
 
-[node name="Portrait" type="ColorRect" parent="Control/BottomBar"]
+[node name="Portrait" type="ColorRect" parent="Control/BottomBar" unique_id=873193496]
 layout_mode = 0
 offset_left = 212.0
 offset_top = 24.0
@@ -104,7 +137,7 @@ offset_right = 288.0
 offset_bottom = 100.0
 color = Color(0.18, 0.22, 0.32, 1)
 
-[node name="LevelBadge" type="ColorRect" parent="Control/BottomBar"]
+[node name="LevelBadge" type="ColorRect" parent="Control/BottomBar" unique_id=1753874969]
 layout_mode = 0
 offset_left = 262.0
 offset_top = 74.0
@@ -112,16 +145,18 @@ offset_right = 296.0
 offset_bottom = 108.0
 color = Color(0.12, 0.13, 0.17, 1)
 
-[node name="LevelLabel" type="Label" parent="Control/BottomBar/LevelBadge"]
+[node name="LevelLabel" type="Label" parent="Control/BottomBar/LevelBadge" unique_id=1468170134]
 layout_mode = 1
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 text = "1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="HPBar" type="ProgressBar" parent="Control/BottomBar"]
+[node name="HPBar" type="ProgressBar" parent="Control/BottomBar" unique_id=1511595178]
 layout_mode = 1
+anchors_preset = 10
 anchor_right = 1.0
 offset_left = 310.0
 offset_top = 14.0
@@ -129,37 +164,37 @@ offset_right = -350.0
 offset_bottom = 40.0
 theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_hp_fill")
-max_value = 100.0
 value = 100.0
 show_percentage = false
 
-[node name="HPLabel" type="Label" parent="Control/BottomBar/HPBar"]
+[node name="HPLabel" type="Label" parent="Control/BottomBar/HPBar" unique_id=1948315369]
 layout_mode = 1
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-mouse_filter = 2
 theme_override_font_sizes/font_size = 14
 text = "100 / 100"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="RegenLabel" type="Label" parent="Control/BottomBar/HPBar"]
+[node name="RegenLabel" type="Label" parent="Control/BottomBar/HPBar" unique_id=1491881007]
+visible = false
 layout_mode = 1
+anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -56.0
 offset_right = -6.0
-mouse_filter = 2
+theme_override_colors/font_color = Color(0.65, 1, 0.65, 1)
 theme_override_font_sizes/font_size = 12
-theme_override_colors/font_color = Color(0.65, 1.0, 0.65, 1)
 text = "+1.0/s"
 horizontal_alignment = 2
 vertical_alignment = 1
-visible = false
 
-[node name="XPBar" type="ProgressBar" parent="Control/BottomBar"]
+[node name="XPBar" type="ProgressBar" parent="Control/BottomBar" unique_id=1291597266]
 layout_mode = 1
+anchors_preset = 10
 anchor_right = 1.0
 offset_left = 310.0
 offset_top = 44.0
@@ -168,20 +203,19 @@ offset_bottom = 62.0
 theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_xp_fill")
 max_value = 60.0
-value = 0.0
 show_percentage = false
 
-[node name="XPLabel" type="Label" parent="Control/BottomBar/XPBar"]
+[node name="XPLabel" type="Label" parent="Control/BottomBar/XPBar" unique_id=1999327039]
 layout_mode = 1
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-mouse_filter = 2
 theme_override_font_sizes/font_size = 12
 text = "XP 0 / 60"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="AbilityQ" type="Button" parent="Control/BottomBar"]
+[node name="AbilityQ" type="Button" parent="Control/BottomBar" unique_id=1513587782]
 layout_mode = 0
 offset_left = 310.0
 offset_top = 66.0
@@ -189,7 +223,7 @@ offset_right = 364.0
 offset_bottom = 114.0
 text = "Q"
 
-[node name="AbilityRankQ" type="Label" parent="Control/BottomBar"]
+[node name="AbilityRankQ" type="Label" parent="Control/BottomBar" unique_id=1848530176]
 layout_mode = 0
 offset_left = 310.0
 offset_top = 116.0
@@ -199,7 +233,7 @@ theme_override_font_sizes/font_size = 12
 text = "0/5"
 horizontal_alignment = 1
 
-[node name="AbilityW" type="Button" parent="Control/BottomBar"]
+[node name="AbilityW" type="Button" parent="Control/BottomBar" unique_id=772805137]
 layout_mode = 0
 offset_left = 372.0
 offset_top = 66.0
@@ -207,7 +241,7 @@ offset_right = 426.0
 offset_bottom = 114.0
 text = "W"
 
-[node name="AbilityRankW" type="Label" parent="Control/BottomBar"]
+[node name="AbilityRankW" type="Label" parent="Control/BottomBar" unique_id=1351965033]
 layout_mode = 0
 offset_left = 372.0
 offset_top = 116.0
@@ -217,7 +251,7 @@ theme_override_font_sizes/font_size = 12
 text = "0/5"
 horizontal_alignment = 1
 
-[node name="AbilityE" type="Button" parent="Control/BottomBar"]
+[node name="AbilityE" type="Button" parent="Control/BottomBar" unique_id=130705754]
 layout_mode = 0
 offset_left = 434.0
 offset_top = 66.0
@@ -225,7 +259,7 @@ offset_right = 488.0
 offset_bottom = 114.0
 text = "E"
 
-[node name="AbilityRankE" type="Label" parent="Control/BottomBar"]
+[node name="AbilityRankE" type="Label" parent="Control/BottomBar" unique_id=413486792]
 layout_mode = 0
 offset_left = 434.0
 offset_top = 116.0
@@ -235,7 +269,7 @@ theme_override_font_sizes/font_size = 12
 text = "0/5"
 horizontal_alignment = 1
 
-[node name="AbilityR" type="Button" parent="Control/BottomBar"]
+[node name="AbilityR" type="Button" parent="Control/BottomBar" unique_id=1811252626]
 layout_mode = 0
 offset_left = 496.0
 offset_top = 66.0
@@ -243,7 +277,7 @@ offset_right = 550.0
 offset_bottom = 114.0
 text = "R"
 
-[node name="AbilityRankR" type="Label" parent="Control/BottomBar"]
+[node name="AbilityRankR" type="Label" parent="Control/BottomBar" unique_id=268516881]
 layout_mode = 0
 offset_left = 496.0
 offset_top = 116.0
@@ -253,7 +287,7 @@ theme_override_font_sizes/font_size = 12
 text = "0/5"
 horizontal_alignment = 1
 
-[node name="AbilityPointsLabel" type="Label" parent="Control/BottomBar"]
+[node name="AbilityPointsLabel" type="Label" parent="Control/BottomBar" unique_id=552703743]
 layout_mode = 0
 offset_left = 566.0
 offset_top = 78.0
@@ -262,7 +296,7 @@ offset_bottom = 104.0
 theme_override_font_sizes/font_size = 14
 text = "Body schopností: 1"
 
-[node name="AutoAssignToggle" type="Button" parent="Control/BottomBar"]
+[node name="AutoAssignToggle" type="Button" parent="Control/BottomBar" unique_id=93625391]
 layout_mode = 0
 offset_left = 748.0
 offset_top = 66.0
@@ -272,8 +306,9 @@ toggle_mode = true
 button_pressed = true
 text = "Auto"
 
-[node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar"]
+[node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -330.0
@@ -282,8 +317,9 @@ offset_right = -286.0
 offset_bottom = 58.0
 color = Color(0.14, 0.15, 0.19, 1)
 
-[node name="ItemSlot2" type="ColorRect" parent="Control/BottomBar"]
+[node name="ItemSlot2" type="ColorRect" parent="Control/BottomBar" unique_id=162173072]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -280.0
@@ -292,8 +328,9 @@ offset_right = -236.0
 offset_bottom = 58.0
 color = Color(0.14, 0.15, 0.19, 1)
 
-[node name="ItemSlot3" type="ColorRect" parent="Control/BottomBar"]
+[node name="ItemSlot3" type="ColorRect" parent="Control/BottomBar" unique_id=113830123]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -230.0
@@ -302,8 +339,9 @@ offset_right = -186.0
 offset_bottom = 58.0
 color = Color(0.14, 0.15, 0.19, 1)
 
-[node name="ItemSlot4" type="ColorRect" parent="Control/BottomBar"]
+[node name="ItemSlot4" type="ColorRect" parent="Control/BottomBar" unique_id=558387754]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -330.0
@@ -312,8 +350,9 @@ offset_right = -286.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
-[node name="ItemSlot5" type="ColorRect" parent="Control/BottomBar"]
+[node name="ItemSlot5" type="ColorRect" parent="Control/BottomBar" unique_id=1839271119]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -280.0
@@ -322,8 +361,9 @@ offset_right = -236.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
-[node name="ItemSlot6" type="ColorRect" parent="Control/BottomBar"]
+[node name="ItemSlot6" type="ColorRect" parent="Control/BottomBar" unique_id=146363010]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -230.0
@@ -332,8 +372,9 @@ offset_right = -186.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
-[node name="ShopButton" type="Button" parent="Control/BottomBar"]
+[node name="ShopButton" type="Button" parent="Control/BottomBar" unique_id=1143364953]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -166.0
@@ -342,8 +383,9 @@ offset_right = -16.0
 offset_bottom = 58.0
 text = "Obchod"
 
-[node name="GoldLabel" type="Label" parent="Control/BottomBar"]
+[node name="GoldLabel" type="Label" parent="Control/BottomBar" unique_id=1910423879]
 layout_mode = 1
+anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -166.0
@@ -354,8 +396,10 @@ theme_override_font_sizes/font_size = 15
 text = "Zlato: 0"
 horizontal_alignment = 1
 
-[node name="ShopPanel" type="Panel" parent="Control"]
+[node name="ShopPanel" type="Panel" parent="Control" unique_id=460703985]
+visible = false
 layout_mode = 1
+anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
@@ -364,9 +408,8 @@ offset_left = -320.0
 offset_top = -220.0
 offset_right = 320.0
 offset_bottom = 180.0
-visible = false
 
-[node name="Title" type="Label" parent="Control/ShopPanel"]
+[node name="Title" type="Label" parent="Control/ShopPanel" unique_id=1857439836]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 20.0
@@ -376,7 +419,7 @@ theme_override_font_sizes/font_size = 24
 text = "Obchod"
 horizontal_alignment = 1
 
-[node name="Info" type="Label" parent="Control/ShopPanel"]
+[node name="Info" type="Label" parent="Control/ShopPanel" unique_id=765786391]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 80.0
@@ -386,7 +429,7 @@ text = "Obchod je zatím prázdný - předměty přibudou později."
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CloseButton" type="Button" parent="Control/ShopPanel"]
+[node name="CloseButton" type="Button" parent="Control/ShopPanel" unique_id=1539487263]
 layout_mode = 0
 offset_left = 230.0
 offset_top = 330.0
@@ -394,15 +437,15 @@ offset_right = 410.0
 offset_bottom = 374.0
 text = "Zavřít obchod"
 
-[node name="GameOverPanel" type="Panel" parent="Control"]
+[node name="GameOverPanel" type="Panel" parent="Control" unique_id=2052936013]
+visible = false
 layout_mode = 0
 offset_left = 440.0
 offset_top = 200.0
 offset_right = 840.0
 offset_bottom = 460.0
-visible = false
 
-[node name="Label" type="Label" parent="Control/GameOverPanel"]
+[node name="Label" type="Label" parent="Control/GameOverPanel" unique_id=537843179]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 15.0
@@ -412,7 +455,7 @@ text = "Game Over!"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CountdownLabel" type="Label" parent="Control/GameOverPanel"]
+[node name="CountdownLabel" type="Label" parent="Control/GameOverPanel" unique_id=35545436]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 140.0
@@ -421,7 +464,7 @@ offset_bottom = 170.0
 text = "Restart za: 10 s"
 horizontal_alignment = 1
 
-[node name="ContinueButton" type="Button" parent="Control/GameOverPanel"]
+[node name="ContinueButton" type="Button" parent="Control/GameOverPanel" unique_id=1943306772]
 layout_mode = 0
 offset_left = 130.0
 offset_top = 180.0
@@ -429,15 +472,15 @@ offset_right = 270.0
 offset_bottom = 220.0
 text = "Pokračovat"
 
-[node name="VictoryPanel" type="Panel" parent="Control"]
+[node name="VictoryPanel" type="Panel" parent="Control" unique_id=700294823]
+visible = false
 layout_mode = 0
 offset_left = 440.0
 offset_top = 200.0
 offset_right = 840.0
 offset_bottom = 460.0
-visible = false
 
-[node name="Label" type="Label" parent="Control/VictoryPanel"]
+[node name="Label" type="Label" parent="Control/VictoryPanel" unique_id=555602903]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 15.0
@@ -447,7 +490,7 @@ text = "Level dokončen!"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CountdownLabel" type="Label" parent="Control/VictoryPanel"]
+[node name="CountdownLabel" type="Label" parent="Control/VictoryPanel" unique_id=1611986447]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 140.0
@@ -456,10 +499,144 @@ offset_bottom = 170.0
 text = "Nová hra za: 10 s"
 horizontal_alignment = 1
 
-[node name="ContinueButton" type="Button" parent="Control/VictoryPanel"]
+[node name="ContinueButton" type="Button" parent="Control/VictoryPanel" unique_id=199531267]
 layout_mode = 0
 offset_left = 130.0
 offset_top = 180.0
 offset_right = 270.0
 offset_bottom = 220.0
 text = "Pokračovat"
+
+[node name="DebugPanel" type="Panel" parent="Control"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -490.0
+offset_top = 50.0
+offset_right = -10.0
+offset_bottom = 530.0
+
+[node name="Title" type="Label" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 14.0
+offset_right = 460.0
+offset_bottom = 46.0
+theme_override_font_sizes/font_size = 22
+text = "Debug panel"
+horizontal_alignment = 1
+
+[node name="KillButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 58.0
+offset_right = 230.0
+offset_bottom = 94.0
+text = "Zabít postavu"
+
+[node name="InvincibleToggle" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 58.0
+offset_right = 460.0
+offset_bottom = 94.0
+toggle_mode = true
+text = "Nesmrtelnost: Vypnuto"
+
+[node name="SkipWaveButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 102.0
+offset_right = 460.0
+offset_bottom = 138.0
+text = "Přeskočit vlnu"
+
+[node name="AddXpSmallButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 146.0
+offset_right = 230.0
+offset_bottom = 182.0
+text = "+100 XP"
+
+[node name="AddXpBigButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 146.0
+offset_right = 460.0
+offset_bottom = 182.0
+text = "+500 XP"
+
+[node name="AddGoldSmallButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 190.0
+offset_right = 230.0
+offset_bottom = 226.0
+text = "+100 Zlato"
+
+[node name="AddGoldBigButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 190.0
+offset_right = 460.0
+offset_bottom = 226.0
+text = "+1000 Zlato"
+
+[node name="AddAbilityPointsButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 234.0
+offset_right = 230.0
+offset_bottom = 270.0
+text = "+5 bodů schopností"
+
+[node name="MaxAbilitiesButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 234.0
+offset_right = 460.0
+offset_bottom = 270.0
+text = "Max schopnosti"
+
+[node name="ResetAbilitiesButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 278.0
+offset_right = 230.0
+offset_bottom = 314.0
+text = "Reset schopností"
+
+[node name="AddLoopButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 278.0
+offset_right = 460.0
+offset_bottom = 314.0
+text = "+1 Kolo"
+
+[node name="SpawnEliteButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 322.0
+offset_right = 460.0
+offset_bottom = 358.0
+text = "Spawnout Elite"
+
+[node name="SpeedButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 366.0
+offset_right = 460.0
+offset_bottom = 402.0
+text = "Rychlost: 1x"
+
+[node name="CloseButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 420.0
+offset_right = 330.0
+offset_bottom = 456.0
+text = "Zavřít"

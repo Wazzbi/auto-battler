@@ -49,7 +49,36 @@ const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var victory_countdown_label: Label = $Control/VictoryPanel/CountdownLabel
 @onready var victory_continue_button: Button = $Control/VictoryPanel/ContinueButton
 
+@onready var debug_button: Button = $Control/DebugButton
+@onready var debug_eye_icon: Control = $Control/DebugButton/EyeIcon
+@onready var debug_panel: Panel = $Control/DebugPanel
+@onready var debug_kill_button: Button = $Control/DebugPanel/KillButton
+@onready var debug_invincible_toggle: Button = $Control/DebugPanel/InvincibleToggle
+@onready var debug_skip_wave_button: Button = $Control/DebugPanel/SkipWaveButton
+@onready var debug_add_xp_small_button: Button = $Control/DebugPanel/AddXpSmallButton
+@onready var debug_add_xp_big_button: Button = $Control/DebugPanel/AddXpBigButton
+@onready var debug_add_gold_small_button: Button = $Control/DebugPanel/AddGoldSmallButton
+@onready var debug_add_gold_big_button: Button = $Control/DebugPanel/AddGoldBigButton
+@onready var debug_add_ability_points_button: Button = $Control/DebugPanel/AddAbilityPointsButton
+@onready var debug_max_abilities_button: Button = $Control/DebugPanel/MaxAbilitiesButton
+@onready var debug_reset_abilities_button: Button = $Control/DebugPanel/ResetAbilitiesButton
+@onready var debug_add_loop_button: Button = $Control/DebugPanel/AddLoopButton
+@onready var debug_spawn_elite_button: Button = $Control/DebugPanel/SpawnEliteButton
+@onready var debug_speed_button: Button = $Control/DebugPanel/SpeedButton
+@onready var debug_close_button: Button = $Control/DebugPanel/CloseButton
+
 var player_ref: Node2D = null
+## Main uzel (scenes/main.gd) - jen pro Debug panel (přeskočit vlnu, spawn
+## Elite na vyžádání), nastaví ho connect_main(). Zbytek HUD s ním nepočítá,
+## normální tok jde přes GameManager.
+var main_ref: Node = null
+
+## Kroky rychlosti hry pro Debug panel - cyklické tlačítko prochází tímhle
+## polem. Mění Engine.time_scale globálně (zpomalí/zrychlí i Timery,
+## Tweeny a countdown na Game Over/Victory panelu - to je záměr).
+const DEBUG_SPEED_STEPS: Array[float] = [1.0, 2.0, 5.0, 10.0]
+var _debug_speed_index: int = 0
+var _debug_panel_open: bool = false
 
 ## Zbývající čas do auto-restartu po Game Over/výhře. Počítá se ručně (ne přes
 ## Timer uzel), protože potřebujeme jednoduše pozastavit/obnovit odpočet podle
@@ -102,6 +131,8 @@ func _ready() -> void:
 	victory_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
 	victory_panel.mouse_exited.connect(_on_end_panel_mouse_exited)
 
+	_setup_debug_panel()
+
 	_refresh_progression()
 	_maybe_auto_assign()
 
@@ -131,6 +162,12 @@ func connect_player(player: Node2D) -> void:
 	player_ref = player
 	player.hp_changed.connect(_on_hp_changed)
 	_refresh_stat_labels()
+
+
+## Zavolá Main na sebe - Debug panel potřebuje volat main.gd's
+## debug_skip_wave()/debug_spawn_elite() (main.gd vlastní frontu spawnování).
+func connect_main(main: Node) -> void:
+	main_ref = main
 
 
 func _on_hp_changed(current_hp: float, max_hp: float) -> void:
@@ -326,3 +363,81 @@ func _restart_game() -> void:
 	victory_panel.hide()
 	get_tree().paused = false
 	get_tree().reload_current_scene()
+
+
+# --- Debug panel ---------------------------------------------------------
+# Vývojářský panel pro rychlé testování - žádná herní logika tu nežije,
+# jen zkratky volající metody v GameManageru/main.gd/player.gd označené
+# jako "DEBUG:". Otevírá/zavírá se tlačítkem s ikonkou oka (eye_icon.gd)
+# v pravém horním rohu; panel hru nepozastavuje (na rozdíl od Obchodu), ať
+# je vidět efekt akcí v reálném čase.
+
+func _setup_debug_panel() -> void:
+	debug_panel.hide()
+	debug_eye_icon.is_open = false
+
+	debug_button.pressed.connect(_on_debug_toggle_pressed)
+	debug_close_button.pressed.connect(_on_debug_close_pressed)
+
+	debug_kill_button.pressed.connect(_on_debug_kill_pressed)
+	debug_invincible_toggle.toggled.connect(_on_debug_invincible_toggled)
+	debug_skip_wave_button.pressed.connect(_on_debug_skip_wave_pressed)
+	debug_add_xp_small_button.pressed.connect(func(): GameManager.add_xp(100))
+	debug_add_xp_big_button.pressed.connect(func(): GameManager.add_xp(500))
+	debug_add_gold_small_button.pressed.connect(func(): GameManager.debug_add_currency(100))
+	debug_add_gold_big_button.pressed.connect(func(): GameManager.debug_add_currency(1000))
+	debug_add_ability_points_button.pressed.connect(func(): GameManager.debug_add_ability_points(5))
+	debug_max_abilities_button.pressed.connect(func(): GameManager.debug_max_abilities())
+	debug_reset_abilities_button.pressed.connect(func(): GameManager.debug_reset_abilities())
+	debug_add_loop_button.pressed.connect(func(): GameManager.debug_add_loop())
+	debug_spawn_elite_button.pressed.connect(_on_debug_spawn_elite_pressed)
+	debug_speed_button.pressed.connect(_on_debug_speed_pressed)
+
+	# Engine.time_scale je globální a restart scény ho sám neresetuje - popisek
+	# tlačítka rychlosti se proto při startu musí srovnat s tím, co skutečně
+	# platí (jinak by po restartu ukazoval "1x", i když hra běží rychleji).
+	_debug_speed_index = maxi(DEBUG_SPEED_STEPS.find(Engine.time_scale), 0)
+	_update_debug_speed_label()
+
+
+func _on_debug_toggle_pressed() -> void:
+	_debug_panel_open = not _debug_panel_open
+	debug_panel.visible = _debug_panel_open
+	debug_eye_icon.is_open = _debug_panel_open
+
+
+func _on_debug_close_pressed() -> void:
+	_debug_panel_open = false
+	debug_panel.hide()
+	debug_eye_icon.is_open = false
+
+
+func _on_debug_kill_pressed() -> void:
+	if player_ref != null:
+		player_ref.take_damage(999999.0)
+
+
+func _on_debug_invincible_toggled(enabled: bool) -> void:
+	if player_ref != null:
+		player_ref.debug_invincible = enabled
+	debug_invincible_toggle.text = "Nesmrtelnost: %s" % ("Zapnuto" if enabled else "Vypnuto")
+
+
+func _on_debug_skip_wave_pressed() -> void:
+	if main_ref != null:
+		main_ref.debug_skip_wave()
+
+
+func _on_debug_spawn_elite_pressed() -> void:
+	if main_ref != null:
+		main_ref.debug_spawn_elite()
+
+
+func _on_debug_speed_pressed() -> void:
+	_debug_speed_index = (_debug_speed_index + 1) % DEBUG_SPEED_STEPS.size()
+	Engine.time_scale = DEBUG_SPEED_STEPS[_debug_speed_index]
+	_update_debug_speed_label()
+
+
+func _update_debug_speed_label() -> void:
+	debug_speed_button.text = "Rychlost: %dx" % int(DEBUG_SPEED_STEPS[_debug_speed_index])

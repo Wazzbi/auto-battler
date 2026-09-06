@@ -239,3 +239,60 @@ func trigger_win() -> void:
 	state = State.WON
 	game_won_triggered.emit()
 	print("Level dokončen! Vlna: ", current_wave, " | Úroveň: ", player_level)
+
+
+# --- Debug panel ---------------------------------------------------------
+# Metody pro vývojářský Debug panel v HUD (scenes/ui/hud.gd). Jsou to jen
+# přímé zkratky/manipulace stavu bez herního zdůvodnění (žádná odměna za
+# "boj") - jasně oddělené v sekci, ať je zřejmé, že se nemají volat odjinud
+# než z debug UI.
+
+## DEBUG: přidá měnu bez zabití nepřítele - pro rychlé testování obchodu
+func debug_add_currency(amount: int) -> void:
+	currency += amount
+	currency_changed.emit(currency)
+
+
+## DEBUG: přidá body do schopností bez nutnosti levelovat
+func debug_add_ability_points(amount: int) -> void:
+	ability_points += amount
+	ability_points_changed.emit(ability_points)
+
+
+## DEBUG: nastaví všechny schopnosti rovnou na maximální rank
+func debug_max_abilities() -> void:
+	for ability_id in ABILITY_ORDER:
+		if ability_ranks[ability_id] < MAX_ABILITY_RANK:
+			ability_ranks[ability_id] = MAX_ABILITY_RANK
+			ability_rank_changed.emit(ability_id, MAX_ABILITY_RANK)
+
+
+## DEBUG: vynuluje ranky schopností a vrátí za ně body zpět (respec) - pro
+## rychlé vyzkoušení jiného buildu
+func debug_reset_abilities() -> void:
+	for ability_id in ABILITY_ORDER:
+		var rank: int = ability_ranks[ability_id]
+		if rank > 0:
+			ability_points += rank
+			ability_ranks[ability_id] = 0
+			ability_rank_changed.emit(ability_id, 0)
+	ability_points_changed.emit(ability_points)
+
+
+## DEBUG: přeskočí rovnou na další kolo (jen zvýší multiplikátor HP
+## nepřátel přes get_enemy_hp_multiplier()) - na vlnovém postupu nic nemění
+func debug_add_loop() -> void:
+	loop_count += 1
+	loop_changed.emit(loop_count)
+
+
+## DEBUG: force-dokončí aktuální vlnu. main.gd před zavoláním musí sám dobít
+## všechny živé nepřátele přes jejich normální take_damage() (aby dostali
+## odměnu/XP a započítali se přes enemy_defeated() stejnou cestou jako v
+## běžné hře) - smrt posledního z nich už tak _on_wave_cleared() spustí sama.
+## Tahle metoda pak řeší jen okrajový případ, kdy mezi vlnami zrovna nikdo
+## naživu nebyl, takže žádná smrt neproběhla a wave-clear se nespustil.
+func debug_force_wave_clear() -> void:
+	if enemies_alive > 0 or enemies_remaining_to_spawn > 0:
+		return
+	_on_wave_cleared()

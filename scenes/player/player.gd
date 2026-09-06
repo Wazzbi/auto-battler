@@ -40,6 +40,10 @@ var cooldown_timer: float = 0.0
 ## Level01 už žádný takový marker nemá (level je bezkonečný), takže tohle
 ## zůstává na výchozím INF a pohyb hráče se nikdy neomezí - viz CLAUDE.md.
 var level_end_x: float = INF
+## DEBUG: dokud je zapnuté, take_damage() nic neudělá. Ovládá se z Debug
+## panelu v HUD (viz hud.gd), na resetu hry (nová instance hráče) se sama
+## vrátí na false.
+var debug_invincible: bool = false
 
 
 func _ready() -> void:
@@ -217,6 +221,8 @@ func _shoot(target: Node2D) -> void:
 
 func take_damage(amount: float) -> void:
 	if GameManager.state != GameManager.State.PLAYING:
+		return
+	if debug_invincible:
 		return
 	# Ořez na nulu musí být před emitem - HUD ukazuje HP i číselně a jinak by
 	# na okamžik problikla záporná hodnota
