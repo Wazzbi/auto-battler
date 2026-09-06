@@ -83,15 +83,40 @@ tab → Groups → add `level_end`. **`level_end_x` is now just a movement cap, 
 the player stops advancing there (`global_position.x = min(..., level_end_x)`) but reaching it does
 nothing else. This is deliberate: see the win-condition note below.
 
-**Win condition is wave-based, not position-based**: the game ends in victory when
-`GameManager.FINAL_WAVE` (10) is cleared — `_on_wave_cleared()` calls `trigger_win()` instead of
-`start_next_wave()` once `current_wave >= FINAL_WAVE`. This *replaced* the old "player walks to
-`level_end_x`" win condition, which was removed from `player.gd` on purpose: with a fixed 10-wave
-campaign, letting position also trigger a win risked the player winning early by outrunning combat
-before wave 10 was actually cleared. If the level length or enemy count ever changes, make sure
-`Level01/Ground` (`scenes/levels/level_01.tscn` + `ground.gd`'s `total_width`) stays comfortably
-longer than however far the player can realistically walk across 10 waves — right now both were
-sized 20% longer than the original single-screen-ish layout to give the fixed campaign room.
+**Reaching `level_end_x` is a movement cap, not a win trigger** (removed from `player.gd` on
+purpose): with a wave-based campaign structure (see below), letting position also trigger
+progress-ending behavior risked the player short-circuiting a wave by outrunning combat. If the
+level length or enemy count ever changes, keep `Level01/Ground`
+(`scenes/levels/level_01.tscn` + `ground.gd`'s `total_width`) comfortably longer than however far
+the player can realistically walk across `GameManager.FINAL_WAVE` waves — right now both were sized
+20% longer than the original single-screen-ish layout to give that room.
+
+**The game loops instead of ending at `GameManager.FINAL_WAVE`**: clearing wave 10
+(`FINAL_WAVE`) doesn't call `trigger_win()` anymore — `_on_wave_cleared()` calls
+`_start_new_loop()` instead, which increments `loop_count`, resets `current_wave` to 0, and calls
+`start_next_wave()` to jump straight back into wave 1. **Player progression persists across
+loops** — level, XP, ability ranks/points, and currency are untouched (there is no `reset_game()`
+call anywhere in this path) — only wave-scoped state resets. `player.gd` listens for the
+`loop_changed` signal and teleports back to its captured spawn position (`_spawn_position`, set
+once in `_ready()`) with HP restored to full; without this the player would start loop 2 wherever
+it happened to be standing at the end of loop 1 (typically pinned against `level_end_x`) with
+whatever HP was left. Newly spawned enemies get more HP per loop via
+`GameManager.get_enemy_hp_multiplier()` (`1.0 + (loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP`,
+currently +50%/loop) — `main.gd`'s `_spawn_enemy()` applies it to `enemy.max_hp` *before*
+`add_child()`, since `enemy.gd`'s `_ready()` sets `hp = max_hp` synchronously on entering the tree.
+**This is deliberately the simplest possible version** (linear, HP-only scaling) to prototype
+whether repeated 10-wave loops are fun at all before investing in more planets/levels or a richer
+scaling system (new enemy types, other stats, per-loop modifiers, etc.) — see the brainstorm this
+came from. `GameManager.State.WON` and `VictoryPanel` still exist and work exactly as before, but
+are currently unreachable through normal play (nothing calls `trigger_win()`); they're intentionally
+kept for a real future ending (e.g. after the last planet). Only a true Game Over
+(`reset_game()`) resets `loop_count` back to 1.
+
+**HUD "Kolo" vs. "Úroveň"**: the top-of-screen `LoopLabel` ("Kolo N") is the loop counter above;
+it's deliberately *not* called "Úroveň" even though that's the literal translation, because
+"Úroveň" is already used in the bottom bar for the player's XP-based character level (the badge
+over the portrait). Reusing the same word for two different counters on screen at once would be
+confusing — rename both consistently if this ever needs to change.
 
 **Elite enemy (final wave only)**: `scenes/enemies/elite_enemy.tscn` reuses `enemy.gd` (it's fully
 data-driven via `@export` vars, so no new script was needed) with `speed` halved, `max_hp` tripled,
@@ -186,5 +211,5 @@ else depends on it. The shop is intentionally empty apart from its close button.
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/levels/level_01.tscn` — `LevelEnd` marker position = level length (movement cap, no longer a win trigger)
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `total_width` (must cover past `LevelEnd` or the floor visibly ends early)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`, `FINAL_WAVE` (which wave ends the game)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops)
 - `scenes/ui/hud.gd` — `GAME_OVER_RESTART_DELAY`

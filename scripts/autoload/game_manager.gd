@@ -12,11 +12,21 @@ signal xp_changed(current_xp: int, xp_needed: int)
 signal level_changed(new_level: int)
 signal ability_points_changed(amount: int)
 signal ability_rank_changed(ability_id: String, new_rank: int)
+signal loop_changed(new_loop: int)
 
 enum State { INTRO, PLAYING, GAME_OVER, WON }
 
-## Hra končí výhrou po vyčištění téhle vlny - viz _on_wave_cleared()
+## Po vyčištění téhle vlny se hra NEKONČÍ, ale spustí se další "kolo" (loop) -
+## viz _on_wave_cleared()/_start_new_loop(). State.WON a VictoryPanel jsou teď
+## nedosažitelné běžnou hrou, ale záměrně ponechané pro budoucí skutečný konec
+## (např. až budou existovat i další planety/levely).
 const FINAL_WAVE: int = 10
+
+## O kolik procent víc HP dostanou nově spawnutí nepřátelé za každé další
+## odehrané kolo (kolo 1 = žádný bonus). PROZATÍMNÍ jednoduché lineární
+## škálování jen přes HP - do budoucna se čeká na komplexnější systém
+## (nové typy nepřátel, jiné staty, ...), viz get_enemy_hp_multiplier().
+const ENEMY_HP_GROWTH_PER_LOOP: float = 0.5
 
 ## XP potřebné na 2. úroveň; každá další úroveň stojí o XP_PER_LEVEL_GROWTH víc
 const XP_BASE: int = 60
@@ -71,6 +81,10 @@ const ABILITIES := {
 const ABILITY_ORDER: Array[String] = ["q", "w", "e", "r"]
 
 var current_wave: int = 0
+## Kolikáté kolo (průchod 10 vlnami) hráč zrovna hraje. Roste, hráčova
+## progrese (úroveň/XP/schopnosti/měna) se ale mezi koly NERESETUJE -
+## viz _start_new_loop(). Resetuje se jen na skutečný Game Over (reset_game()).
+var loop_count: int = 1
 var currency: int = 0
 var enemies_alive: int = 0
 var enemies_remaining_to_spawn: int = 0
@@ -88,6 +102,7 @@ var ability_ranks := {"q": 0, "w": 0, "e": 0, "r": 0}
 ## hráč by se po restartu naskočil se staty z předchozí hry.
 func reset_game() -> void:
 	current_wave = 0
+	loop_count = 1
 	currency = 0
 	enemies_alive = 0
 	enemies_remaining_to_spawn = 0
@@ -117,7 +132,7 @@ func enemy_defeated(reward: int, xp_reward: int) -> void:
 func _on_wave_cleared() -> void:
 	wave_cleared.emit(current_wave)
 	if current_wave >= FINAL_WAVE:
-		trigger_win()
+		_start_new_loop()
 	else:
 		# Žádné čekání na vynucený výběr - hra plynule pokračuje další vlnou
 		start_next_wave()
@@ -126,6 +141,25 @@ func _on_wave_cleared() -> void:
 func start_next_wave() -> void:
 	current_wave += 1
 	wave_started.emit(current_wave)
+
+
+## Vyčištěním FINAL_WAVE hra nekončí - vrátí se na vlnu 1 se silnějšími
+## nepřáteli (viz get_enemy_hp_multiplier()), ale hráčova progrese zůstává.
+## player.gd na loop_changed reaguje přesunem zpátky na spawn pozici a
+## doplněním HP na max - bez toho by druhé kolo začínalo tam, kde skončilo
+## první (typicky až u level_end_x), s poškozeným HP z konce předchozího kola.
+func _start_new_loop() -> void:
+	loop_count += 1
+	current_wave = 0
+	loop_changed.emit(loop_count)
+	start_next_wave()
+
+
+## Násobitel HP nově spawnutých nepřátel pro aktuální kolo - main.gd ho
+## aplikuje v _spawn_enemy() ještě před tím, než nepřítel vstoupí do stromu
+## (aby _ready() v enemy.gd nastavil hp = max_hp už se správnou hodnotou).
+func get_enemy_hp_multiplier() -> float:
+	return 1.0 + float(loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP
 
 
 ## Kolik XP je potřeba na další úroveň (roste lineárně s úrovní)

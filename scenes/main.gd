@@ -66,6 +66,9 @@ func _spawn_enemy() -> void:
 		enemies_left_to_spawn -= 1
 
 	var enemy: Node2D = scene_to_spawn.instantiate()
+	# Musí se stát PŘED add_child() - enemy.gd nastavuje hp = max_hp ve svém
+	# _ready(), který proběhne synchronně při vstupu do stromu.
+	enemy.max_hp *= GameManager.get_enemy_hp_multiplier()
 	add_child(enemy)
 
 	# Spawn vždy kousek za pravým okrajem aktuálního záběru kamery.
