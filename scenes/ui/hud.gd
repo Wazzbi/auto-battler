@@ -16,6 +16,7 @@ const END_SCREEN_RESTART_DELAY: float = 10.0
 ## Ztlumení ikony schopnosti, která ještě není odemčená
 const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
 
+@onready var loop_label: Label = $Control/LoopLabel
 @onready var wave_label: Label = $Control/WaveLabel
 @onready var wave_cleared_label: Label = $Control/WaveClearedLabel
 @onready var wave_cleared_timer: Timer = $WaveClearedTimer
@@ -76,6 +77,7 @@ func _ready() -> void:
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.ability_points_changed.connect(_on_ability_points_changed)
 	GameManager.ability_rank_changed.connect(_on_ability_rank_changed)
+	GameManager.loop_changed.connect(_on_loop_changed)
 
 	game_over_panel.hide()
 	victory_panel.hide()
@@ -141,6 +143,10 @@ func _on_wave_started(wave_number: int) -> void:
 	wave_label.text = "Vlna %d" % wave_number
 
 
+func _on_loop_changed(new_loop: int) -> void:
+	loop_label.text = "Kolo %d" % new_loop
+
+
 func _on_currency_changed(new_amount: int) -> void:
 	gold_label.text = "Zlato: %d" % new_amount
 
@@ -200,6 +206,7 @@ func _maybe_auto_assign() -> void:
 ## GameManager přežívá restart scény a HUD se s jeho stavem musí srovnat sám -
 ## signály při resetu už proběhly dřív, než se HUD stihl připojit.
 func _refresh_progression() -> void:
+	loop_label.text = "Kolo %d" % GameManager.loop_count
 	level_label.text = str(GameManager.player_level)
 	gold_label.text = "Zlato: %d" % GameManager.currency
 	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())

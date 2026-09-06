@@ -35,14 +35,19 @@ var hp: float
 var cooldown_timer: float = 0.0
 ## X pozice konce levelu - najde se automaticky přes uzel ve skupině "level_end"
 var level_end_x: float = INF
+## Startovní pozice - kam se hráč vrátí na začátku nového kola (viz _on_loop_changed)
+var _spawn_position: Vector2
 
 
 func _ready() -> void:
 	add_to_group("player")
+	_spawn_position = global_position
+
 	# Progrese (úrovně, ranky schopností) mění staty za běhu - reagujeme na oba
 	# signály, HUD do statů hráče nikdy nesahá přímo.
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.ability_rank_changed.connect(_on_ability_rank_changed)
+	GameManager.loop_changed.connect(_on_loop_changed)
 
 	_recalculate_stats()
 	hp = max_hp
@@ -141,6 +146,16 @@ func _on_level_changed(_new_level: int) -> void:
 
 func _on_ability_rank_changed(_ability_id: String, _new_rank: int) -> void:
 	_apply_progression_changes()
+
+
+## Nové kolo začíná znovu od začátku levelu, ne tam, kde hráč skončil (typicky
+## u level_end_x) - jinak by druhé kolo nemělo prostor k postupu. HP se
+## doplní na plno, aby silnější nepřátelé nezačínali proti zbytku HP z konce
+## předchozího kola.
+func _on_loop_changed(_new_loop: int) -> void:
+	global_position = _spawn_position
+	hp = max_hp
+	hp_changed.emit(hp, max_hp)
 
 
 func _apply_progression_changes() -> void:
