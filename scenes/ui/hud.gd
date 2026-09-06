@@ -8,6 +8,10 @@ const MAX_HP_INCREASE: float = 20.0
 const RANGE_INCREASE: float = 50.0
 const MULTISHOT_INCREASE: float = 1.0
 
+## Za kolik sekund se hra po Game Over automaticky restartuje, pokud kurzor
+## nestojí nad GameOverPanel (viz _process a _on_game_over_panel_mouse_entered/exited).
+const GAME_OVER_RESTART_DELAY: float = 10.0
+
 @onready var hp_bar: ProgressBar = $Control/HPBar
 @onready var wave_label: Label = $Control/WaveLabel
 @onready var currency_label: Label = $Control/CurrencyLabel
@@ -31,10 +35,18 @@ const MULTISHOT_INCREASE: float = 1.0
 
 @onready var game_over_panel: Panel = $Control/GameOverPanel
 @onready var game_over_label: Label = $Control/GameOverPanel/Label
+@onready var game_over_countdown_label: Label = $Control/GameOverPanel/CountdownLabel
+@onready var game_over_continue_button: Button = $Control/GameOverPanel/ContinueButton
 @onready var victory_panel: Panel = $Control/VictoryPanel
 @onready var victory_label: Label = $Control/VictoryPanel/Label
 
 var player_ref: Node2D = null
+
+## Zbývající čas do auto-restartu po Game Over. Počítá se ručně (ne přes Timer
+## uzel), protože potřebujeme jednoduše pozastavit/obnovit odpočet podle toho,
+## jestli je kurzor nad panelem - viz CLAUDE.md poznámku k mobilnímu portu.
+var _game_over_countdown: float = 0.0
+var _game_over_countdown_active: bool = false
 
 
 func _ready() -> void:
@@ -58,6 +70,21 @@ func _ready() -> void:
 	multishot_plus.pressed.connect(_on_multishot_plus_pressed)
 	close_button.pressed.connect(_on_close_pressed)
 	wave_cleared_timer.timeout.connect(func(): wave_cleared_label.hide())
+
+	game_over_continue_button.pressed.connect(_on_game_over_continue_pressed)
+	game_over_panel.mouse_entered.connect(_on_game_over_panel_mouse_entered)
+	game_over_panel.mouse_exited.connect(_on_game_over_panel_mouse_exited)
+
+
+func _process(delta: float) -> void:
+	if not _game_over_countdown_active:
+		return
+	_game_over_countdown -= delta
+	if _game_over_countdown <= 0.0:
+		_game_over_countdown_active = false
+		_restart_game()
+	else:
+		_update_game_over_countdown_label()
 
 
 ## Zavolá Main po vytvoření hráče, aby se HUD napojil na jeho signály a staty.
@@ -93,6 +120,9 @@ func show_wave_cleared_message(wave_number: int) -> void:
 func show_game_over(wave_reached: int, currency: int) -> void:
 	game_over_label.text = "Game Over!\nDosažená vlna: %d\nMěna: %d" % [wave_reached, currency]
 	game_over_panel.show()
+	_game_over_countdown = GAME_OVER_RESTART_DELAY
+	_game_over_countdown_active = true
+	_update_game_over_countdown_label()
 
 
 func show_victory(currency: int) -> void:
@@ -137,6 +167,28 @@ func _on_multishot_plus_pressed() -> void:
 	if GameManager.spend_skill_point("multishot", MULTISHOT_INCREASE):
 		player_ref.on_upgrade_applied()
 		_refresh_stat_labels()
+
+
+func _on_game_over_panel_mouse_entered() -> void:
+	_game_over_countdown_active = false
+
+
+func _on_game_over_panel_mouse_exited() -> void:
+	_game_over_countdown_active = true
+
+
+func _on_game_over_continue_pressed() -> void:
+	_restart_game()
+
+
+func _update_game_over_countdown_label() -> void:
+	game_over_countdown_label.text = "Restart za: %d s" % int(ceil(_game_over_countdown))
+
+
+func _restart_game() -> void:
+	_game_over_countdown_active = false
+	game_over_panel.hide()
+	get_tree().reload_current_scene()
 
 
 func _refresh_stat_labels() -> void:

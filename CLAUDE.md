@@ -69,6 +69,18 @@ all gameplay `_process` logic automatically. `_on_landed()` triggers a screen sh
 tween, a procedural impact ring (`scenes/effects/impact_effect.gd`), and finally
 `GameManager.finish_intro()` to switch state to `PLAYING`.
 
+**Game Over / auto-restart flow**: `hud.gd`'s `GameOverPanel` counts down
+`GAME_OVER_RESTART_DELAY` (10s) via a manually decremented float in `_process`, not a `Timer`
+node — `_game_over_countdown_active` gets flipped off/on by the panel's `mouse_entered`/
+`mouse_exited` signals so hovering the panel pauses the countdown and moving off resumes it.
+Reaching zero, or pressing the panel's "Pokračovat" button, both call `_restart_game()`, which
+just does `get_tree().reload_current_scene()` — `GameManager` is an autoload so it survives the
+reload untouched, and `main.gd`'s `_ready()` calls `GameManager.reset_game()` on the way back up,
+so that's the only reset path; there's no separate "restart" signal or function on `GameManager`
+itself. **Mobile port note**: the pause-on-hover mechanic has no equivalent on touch (no hover
+state), so this will need a different interaction — e.g. pause while a finger is down, or drop the
+pause and just show the countdown — when a mobile port is attempted.
+
 **Visuals are all procedural** — colored `Polygon2D` shapes for characters, and `_draw()`-based
 rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact ring effect.
 There are no sprite assets to manage; if you need to change how something looks, look for a

@@ -149,18 +149,35 @@ layout_mode = 0
 offset_left = 440.0
 offset_top = 260.0
 offset_right = 840.0
-offset_bottom = 460.0
+offset_bottom = 520.0
 visible = false
 
 [node name="Label" type="Label" parent="Control/GameOverPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 20.0
+offset_top = 15.0
 offset_right = 380.0
-offset_bottom = 180.0
+offset_bottom = 135.0
 text = "Game Over!"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="CountdownLabel" type="Label" parent="Control/GameOverPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 140.0
+offset_right = 380.0
+offset_bottom = 170.0
+text = "Restart za: 10 s"
+horizontal_alignment = 1
+
+[node name="ContinueButton" type="Button" parent="Control/GameOverPanel"]
+layout_mode = 0
+offset_left = 130.0
+offset_top = 180.0
+offset_right = 270.0
+offset_bottom = 220.0
+text = "Pokračovat"
 
 [node name="VictoryPanel" type="Panel" parent="Control"]
 layout_mode = 0
