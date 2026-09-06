@@ -10,6 +10,3 @@ script = ExtResource("1_ground_script")
 
 [node name="PlayerSpawn" type="Marker2D" parent="."]
 position = Vector2(150, 500)
-
-[node name="LevelEnd" type="Marker2D" parent="." groups=["level_end"]]
-position = Vector2(6000, 500)

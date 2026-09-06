@@ -29,6 +29,7 @@ const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var level_label: Label = $Control/BottomBar/LevelBadge/LevelLabel
 @onready var hp_bar: ProgressBar = $Control/BottomBar/HPBar
 @onready var hp_label: Label = $Control/BottomBar/HPBar/HPLabel
+@onready var hp_regen_label: Label = $Control/BottomBar/HPBar/RegenLabel
 @onready var xp_bar: ProgressBar = $Control/BottomBar/XPBar
 @onready var xp_label: Label = $Control/BottomBar/XPBar/XPLabel
 @onready var ability_points_label: Label = $Control/BottomBar/AbilityPointsLabel
@@ -136,7 +137,19 @@ func _on_hp_changed(current_hp: float, max_hp: float) -> void:
 	hp_bar.max_value = max_hp
 	hp_bar.value = current_hp
 	hp_label.text = "%.0f / %.0f" % [current_hp, max_hp]
+	_update_hp_regen_label(current_hp, max_hp)
 	_refresh_stat_labels()
+
+
+## Ukazuje se jen když má regen co dohánět (jinak by "+X/s" viselo u HP baru
+## i na plném HP, kde nemá žádný viditelný efekt).
+func _update_hp_regen_label(current_hp: float, max_hp: float) -> void:
+	var regen: float = player_ref.get_hp_regen() if player_ref != null else 0.0
+	if player_ref == null or current_hp >= max_hp or regen <= 0.0:
+		hp_regen_label.hide()
+	else:
+		hp_regen_label.text = "+%.1f/s" % regen
+		hp_regen_label.show()
 
 
 func _on_wave_started(wave_number: int) -> void:

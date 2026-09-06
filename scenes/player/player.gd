@@ -16,6 +16,9 @@ signal died
 @export var base_damage: float = 10.0
 @export var base_attack_speed: float = 1.0 # útoků za sekundu
 @export var base_attack_range: float = 400.0
+## Pasivní regenerace HP za sekundu - tiká pořád, ne jen mimo boj (jako
+## základní HP regen v League of Legends)
+@export var base_hp_regen: float = 1.0
 @export var move_speed: float = 60.0 # px/s postupu, když nikdo není v dosahu
 @export var projectile_scene: PackedScene
 @export var impact_effect_scene: PackedScene
@@ -33,21 +36,19 @@ signal died
 var max_hp: float
 var hp: float
 var cooldown_timer: float = 0.0
-## X pozice konce levelu - najde se automaticky přes uzel ve skupině "level_end"
+## X pozice konce levelu - najde se automaticky přes uzel ve skupině "level_end".
+## Level01 už žádný takový marker nemá (level je bezkonečný), takže tohle
+## zůstává na výchozím INF a pohyb hráče se nikdy neomezí - viz CLAUDE.md.
 var level_end_x: float = INF
-## Startovní pozice - kam se hráč vrátí na začátku nového kola (viz _on_loop_changed)
-var _spawn_position: Vector2
 
 
 func _ready() -> void:
 	add_to_group("player")
-	_spawn_position = global_position
 
 	# Progrese (úrovně, ranky schopností) mění staty za běhu - reagujeme na oba
 	# signály, HUD do statů hráče nikdy nesahá přímo.
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.ability_rank_changed.connect(_on_ability_rank_changed)
-	GameManager.loop_changed.connect(_on_loop_changed)
 
 	_recalculate_stats()
 	hp = max_hp
@@ -140,22 +141,19 @@ func get_target_count() -> int:
 	return 1 + int(GameManager.get_stat_bonus("multishot"))
 
 
+## Kolik HP za sekundu hráč pasivně regeneruje. Stejný vzorec (base + bonus)
+## jako ostatní staty, i když teď žádná úroveň/schopnost regen neovlivňuje -
+## připravené pro budoucí rozšíření (viz GameManager.get_stat_bonus()).
+func get_hp_regen() -> float:
+	return base_hp_regen + GameManager.get_stat_bonus("hp_regen")
+
+
 func _on_level_changed(_new_level: int) -> void:
 	_apply_progression_changes()
 
 
 func _on_ability_rank_changed(_ability_id: String, _new_rank: int) -> void:
 	_apply_progression_changes()
-
-
-## Nové kolo začíná znovu od začátku levelu, ne tam, kde hráč skončil (typicky
-## u level_end_x) - jinak by druhé kolo nemělo prostor k postupu. HP se
-## doplní na plno, aby silnější nepřátelé nezačínali proti zbytku HP z konce
-## předchozího kola.
-func _on_loop_changed(_new_loop: int) -> void:
-	global_position = _spawn_position
-	hp = max_hp
-	hp_changed.emit(hp, max_hp)
 
 
 func _apply_progression_changes() -> void:
@@ -166,6 +164,10 @@ func _apply_progression_changes() -> void:
 func _process(delta: float) -> void:
 	if GameManager.state != GameManager.State.PLAYING:
 		return
+
+	if hp < max_hp and hp > 0.0:
+		hp = minf(hp + get_hp_regen() * delta, max_hp)
+		hp_changed.emit(hp, max_hp)
 
 	cooldown_timer -= delta
 	var targets := _find_nearest_enemies(get_target_count())
