@@ -1,8 +1,11 @@
 extends Node2D
 ## Hráčova postava. Pokud má nepřítele v dosahu, stojí na místě a střílí.
-## Jinak postupuje doprava směrem ke konci levelu. Kamera je child node
-## tohoto uzlu s vodorovným odsazením, takže hráč zůstává poblíž levého
-## okraje obrazovky (ne uprostřed) a je vidět, jak level okolo něj ubíhá.
+## Jinak postupuje doprava směrem ke konci levelu.
+##
+## Kamera NENÍ child tohoto uzlu (viz scenes/camera_follow.gd) - je to
+## nezávislý uzel pod Main, který hráče sleduje vlastní plynulou logikou.
+## Hráč o kameře vůbec neví, jen emituje signály (`landed`), na které
+## kamera podle potřeby reaguje (např. otřesem).
 ##
 ## Na startu hry proběhne krátká "drop-in" animace - postava spadne na
 ## svou pozici shora jako z vesmírné výsadkové kapsle. Dokud animace
@@ -11,6 +14,10 @@ extends Node2D
 
 signal hp_changed(current_hp: float, max_hp: float)
 signal died
+## Emitne se po dopadu drop-in animace - kamera na to reaguje otřesem
+## (main.gd propojuje player.landed -> camera.shake), ale hráč sám o
+## kameře nic neví.
+signal landed
 
 @export var base_max_hp: float = 100.0
 @export var base_damage: float = 10.0
@@ -22,15 +29,12 @@ signal died
 @export var move_speed: float = 60.0 # px/s postupu, když nikdo není v dosahu
 @export var projectile_scene: PackedScene
 @export var impact_effect_scene: PackedScene
-## Kolik px od levého okraje obrazovky má hráč zůstat
-@export var camera_left_margin: float = 220.0
 
 ## Nastavení drop-in animace
 @export var fall_height: float = 900.0
 @export var fall_duration: float = 0.55
 @export var fall_tilt_degrees: float = -10.0
 
-@onready var camera: Camera2D = $Camera2D
 @onready var visual: Polygon2D = $Polygon2D
 
 var max_hp: float
@@ -62,15 +66,7 @@ func _ready() -> void:
 	if end_marker != null:
 		level_end_x = end_marker.global_position.x
 
-	_update_camera_offset()
-	get_viewport().size_changed.connect(_update_camera_offset)
-
 	_play_drop_in_animation()
-
-
-func _update_camera_offset() -> void:
-	var viewport_width: float = get_viewport().get_visible_rect().size.x
-	camera.position.x = (viewport_width / 2.0) - camera_left_margin
 
 
 ## Postava začne vysoko nad svou cílovou pozicí a spadne dolů s lehkým
@@ -91,7 +87,7 @@ func _play_drop_in_animation() -> void:
 
 func _on_landed() -> void:
 	_spawn_impact_effect()
-	_shake_camera()
+	landed.emit()
 	_play_squash_effect()
 	GameManager.finish_intro()
 
@@ -102,15 +98,6 @@ func _spawn_impact_effect() -> void:
 	var effect: Node2D = impact_effect_scene.instantiate()
 	get_tree().current_scene.add_child(effect)
 	effect.global_position = global_position
-
-
-func _shake_camera(strength: float = 10.0, duration: float = 0.22) -> void:
-	var steps := 6
-	var shake_tween := create_tween()
-	for i in range(steps):
-		var offset := Vector2(randf_range(-strength, strength), randf_range(-strength, strength))
-		shake_tween.tween_property(camera, "offset", offset, duration / steps)
-	shake_tween.tween_property(camera, "offset", Vector2.ZERO, duration / steps)
 
 
 func _play_squash_effect() -> void:

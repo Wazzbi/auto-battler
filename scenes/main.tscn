@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main_script"]
 [ext_resource type="PackedScene" path="res://scenes/levels/level_01.tscn" id="2_level"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/enemies/enemy.tscn" id="4_enemy"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="5_hud"]
 [ext_resource type="PackedScene" path="res://scenes/enemies/elite_enemy.tscn" id="6_elite_enemy"]
+[ext_resource type="Script" path="res://scenes/camera_follow.gd" id="7_camera_follow"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main_script")
@@ -16,5 +17,8 @@ elite_enemy_scene = ExtResource("6_elite_enemy")
 
 [node name="Player" parent="." instance=ExtResource("3_player")]
 position = Vector2(150, 500)
+
+[node name="Camera2D" type="Camera2D" parent="."]
+script = ExtResource("7_camera_follow")
 
 [node name="HUD" parent="." instance=ExtResource("5_hud")]

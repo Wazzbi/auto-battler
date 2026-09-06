@@ -17,7 +17,7 @@ extends Node2D
 @export var elite_count_final_wave: int = 1
 
 @onready var player: Node2D = $Player
-@onready var camera: Camera2D = $Player/Camera2D
+@onready var camera: Camera2D = $Camera2D
 @onready var hud: CanvasLayer = $HUD
 
 var spawn_timer: float = 0.0
@@ -41,6 +41,11 @@ func _ready() -> void:
 
 	hud.connect_player(player)
 	hud.connect_main(self)
+
+	# Kamera je nezávislý uzel (viz camera_follow.gd) - hráč jí nic nepředává
+	# přímo, jen emituje signály a Main je propojuje.
+	camera.set_target(player)
+	player.landed.connect(camera.shake)
 
 	GameManager.start_next_wave()
 

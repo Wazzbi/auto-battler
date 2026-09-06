@@ -6,9 +6,13 @@ extends Node2D
 ## projektily mizely téměř okamžitě po vystřelení, jakmile hráč postoupí
 ## dostatečně daleko levelem (world-space X hráče roste, ale porovnávat
 ## ho přímo s velikostí viewportu v pixelech nedává smysl).
+##
+## Dosah zásahu NENÍ pevná konstanta - čte se z `hit_radius` cílového
+## nepřítele (enemy.gd), protože různě velcí nepřátelé (např. 3x větší
+## Elite) potřebují různě velký poloměr, aby zásah vizuálně odpovídal
+## tomu, kdy projektil doopravdy dolétne k okraji jejich siluety.
 
 @export var speed: float = 600.0
-@export var hit_radius: float = 24.0
 ## O kolik px za pravým okrajem AKTUÁLNÍHO záběru kamery se projektil
 ## ještě považuje za platný, než se automaticky zničí
 @export var cleanup_margin: float = 100.0
@@ -29,7 +33,7 @@ func _process(delta: float) -> void:
 	position.x += speed * delta
 
 	if target != null and is_instance_valid(target):
-		if global_position.distance_to(target.global_position) <= hit_radius:
+		if global_position.distance_to(target.global_position) <= target.hit_radius:
 			target.take_damage(damage)
 			queue_free()
 			return
@@ -39,7 +43,7 @@ func _process(delta: float) -> void:
 		for enemy in get_tree().get_nodes_in_group("enemies"):
 			if not is_instance_valid(enemy):
 				continue
-			if global_position.distance_to(enemy.global_position) <= hit_radius:
+			if global_position.distance_to(enemy.global_position) <= enemy.hit_radius:
 				enemy.take_damage(damage)
 				queue_free()
 				return
