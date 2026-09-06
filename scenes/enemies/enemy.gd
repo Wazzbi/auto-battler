@@ -23,6 +23,13 @@ var player_ref: Node2D = null
 var attack_timer: float = 0.0
 ## Náhodná odchylka, díky které se nepřátelé nezastaví přesně na jedné čáře
 var melee_range_jitter: float = 0.0
+## Hlídá dvojité započítání smrti - queue_free() odstraní uzel ze stromu až
+## na konci snímku, takže do té doby je pořád validní. Když dva projektily
+## trefí stejného nepřítele ve stejném snímku (typicky při multishotu nebo
+## rychlé střelbě na nízké HP), take_damage() by se bez tohoto flagu zavolal
+## dvakrát a enemies_alive by kleslo o 2 místo o 1 - ve výsledku hra
+## považovala vlnu za dočištěnou dřív, než byli všichni nepřátelé opravdu mrtví.
+var _is_dead: bool = false
 
 
 func _ready() -> void:
@@ -51,11 +58,16 @@ func _process(delta: float) -> void:
 
 
 func take_damage(amount: float) -> void:
+	if _is_dead:
+		return
 	hp -= amount
 	if hp <= 0:
 		_die()
 
 
 func _die() -> void:
+	if _is_dead:
+		return
+	_is_dead = true
 	GameManager.enemy_defeated(reward, xp_reward)
 	queue_free()
