@@ -39,6 +39,11 @@ var level_end_x: float = INF
 
 func _ready() -> void:
 	add_to_group("player")
+	# Progrese (úrovně, ranky schopností) mění staty za běhu - reagujeme na oba
+	# signály, HUD do statů hráče nikdy nesahá přímo.
+	GameManager.level_changed.connect(_on_level_changed)
+	GameManager.ability_rank_changed.connect(_on_ability_rank_changed)
+
 	_recalculate_stats()
 	hp = max_hp
 	hp_changed.emit(hp, max_hp)
@@ -104,30 +109,43 @@ func _play_squash_effect() -> void:
 	squash_tween.tween_property(visual, "scale", Vector2.ONE, 0.15)
 
 
-## Přepočítá staty na základě base hodnot + upgradů z GameManageru.
-## Voláno při startu a po každém nakoupeném upgradu.
+## Přepočítá staty na základě base hodnot + bonusů za úrovně a schopnosti.
+## Přírůstek max HP se přičte i k aktuálnímu HP, takže level-up trochu vyléčí.
 func _recalculate_stats() -> void:
 	var old_max_hp := max_hp if max_hp > 0 else base_max_hp
-	max_hp = base_max_hp + GameManager.player_upgrades.get("max_hp", 0.0)
+	max_hp = base_max_hp + GameManager.get_stat_bonus("max_hp")
 	if hp > 0:
 		hp += max_hp - old_max_hp
 
 
 func get_damage() -> float:
-	return base_damage + GameManager.player_upgrades.get("damage", 0.0)
+	return base_damage + GameManager.get_stat_bonus("damage")
 
 
 func get_attack_speed() -> float:
-	return base_attack_speed + GameManager.player_upgrades.get("attack_speed", 0.0)
+	return base_attack_speed + GameManager.get_stat_bonus("attack_speed")
 
 
 func get_attack_range() -> float:
-	return base_attack_range + GameManager.player_upgrades.get("attack_range", 0.0)
+	return base_attack_range + GameManager.get_stat_bonus("attack_range")
 
 
-## Kolik cílů hráč zasáhne najednou (1 + úroveň upgradu "multishot")
+## Kolik cílů hráč zasáhne najednou (1 + bonus ze schopnosti Salva)
 func get_target_count() -> int:
-	return 1 + int(GameManager.player_upgrades.get("multishot", 0.0))
+	return 1 + int(GameManager.get_stat_bonus("multishot"))
+
+
+func _on_level_changed(_new_level: int) -> void:
+	_apply_progression_changes()
+
+
+func _on_ability_rank_changed(_ability_id: String, _new_rank: int) -> void:
+	_apply_progression_changes()
+
+
+func _apply_progression_changes() -> void:
+	_recalculate_stats()
+	hp_changed.emit(hp, max_hp)
 
 
 func _process(delta: float) -> void:
@@ -183,15 +201,10 @@ func _shoot(target: Node2D) -> void:
 func take_damage(amount: float) -> void:
 	if GameManager.state != GameManager.State.PLAYING:
 		return
-	hp -= amount
+	# Ořez na nulu musí být před emitem - HUD ukazuje HP i číselně a jinak by
+	# na okamžik problikla záporná hodnota
+	hp = maxf(hp - amount, 0.0)
 	hp_changed.emit(hp, max_hp)
 	if hp <= 0:
-		hp = 0
 		died.emit()
 		GameManager.trigger_game_over()
-
-
-## Zavolá se hned po nákupu upgradu v HUD, aby se projevily nové staty.
-func on_upgrade_applied() -> void:
-	_recalculate_stats()
-	hp_changed.emit(hp, max_hp)

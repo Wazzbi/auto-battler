@@ -20,8 +20,14 @@ var spawn_timer: float = 0.0
 var enemies_left_to_spawn: int = 0
 
 
-func _ready() -> void:
+## Reset musí proběhnout v _enter_tree(), ne v _ready() - _ready() rodiče se volá
+## až PO _ready() dětí, takže hráč i HUD by se stihly nastartovat se stavem
+## z předchozí hry (po restartu přes reload_current_scene).
+func _enter_tree() -> void:
 	GameManager.reset_game()
+
+
+func _ready() -> void:
 	GameManager.wave_started.connect(_on_wave_started)
 	GameManager.wave_cleared.connect(_on_wave_cleared)
 	GameManager.game_over_triggered.connect(_on_game_over)
