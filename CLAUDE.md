@@ -75,6 +75,19 @@ generic "hit whatever's in range" fallback would let enemies shoot each other in
 projectiles fired *by* enemies must pass through other enemies untouched and only ever resolve
 against the player.
 
+**Enemies guard against dying twice in the same frame** (`enemy.gd`'s `_is_dead` flag, checked at
+the top of `take_damage()` and set at the top of `_die()`): `queue_free()` doesn't remove a node
+from the tree/groups until the end of the frame, so an enemy that just died is still a valid,
+`is_instance_valid()`-passing target for that same frame. Two projectiles both aimed at the same
+enemy (easy to hit with multishot, or just two shots in flight close together against a low-HP
+target) could both land in the same frame — without the guard, the second `take_damage()` call
+would push `hp` further negative and call `_die()` again, double-decrementing
+`GameManager.enemies_alive`. That's not just a cosmetic counting error: it could make
+`enemies_alive` hit 0 (or go negative) *before* every wave-10 enemy was actually dead, which
+`enemy_defeated()`'s wave-clear check reads directly — so the game would start the next loop's
+wave 1 while old wave-10 enemies were still alive and on screen. Found via the `enemies_alive`
+counter going to -1 after a deliberate double-hit in a headless test, not via a visible symptom.
+
 **Level01 is boundless — there is no level-end marker.** `player.gd` still supports finding one
 (`level_end_x` looks up a node in the `level_end` group via
 `get_tree().get_first_node_in_group("level_end")` at `_ready()`, capping forward movement at
