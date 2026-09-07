@@ -1,11 +1,13 @@
 extends CanvasLayer
 ## HUD - spodní lišta ve stylu MOBA her: staty, portrét s úrovní, HP a XP bar,
-## čtyři schopnosti (Q/W/E/R), sloty na předměty, zlato a tlačítko obchodu.
-## Body se neutrácí za jednotlivé staty (ty rostou samy s úrovní), ale klikáním
-## přímo na schopnosti - kliknutí odemkne zamčenou nebo zvýší rank odemčené.
+## sloty vybraných itemů, sloty na předměty (budoucí loot), zlato a tlačítko
+## obchodu. Item progrese funguje jako "draft" (viz DraftPanel) - při každém
+## level-upu se nabídnou 3 náhodné itemy a hráč jeden vybere; hráč sám do
+## itemů nic neinvestuje ručně mimo tuhle volbu.
 ##
-## Uzel má process_mode = ALWAYS (nastaveno ve scéně), aby lišta i obchod
-## reagovaly i když je strom pozastavený přes get_tree().paused (otevřený obchod).
+## Uzel má process_mode = ALWAYS (nastaveno ve scéně), aby lišta i
+## obchod/draft panel reagovaly i když je strom pozastavený přes
+## get_tree().paused (otevřený obchod nebo čekající draft nabídka).
 
 ## Za kolik sekund se hra po Game Over nebo výhře automaticky restartuje,
 ## pokud kurzor nestojí nad příslušným panelem (viz _process a
@@ -13,8 +15,8 @@ extends CanvasLayer
 ## jen jeden z panelů může být zobrazený najednou (GAME_OVER, nebo WON).
 const END_SCREEN_RESTART_DELAY: float = 10.0
 
-## Ztlumení ikony schopnosti, která ještě není odemčená
-const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
+## Ztlumení slotu itemu, který ještě nemá žádný rank
+const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 
 @onready var loop_label: Label = $Control/LoopLabel
 @onready var wave_label: Label = $Control/WaveLabel
@@ -32,13 +34,19 @@ const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var hp_regen_label: Label = $Control/BottomBar/HPBar/RegenLabel
 @onready var xp_bar: ProgressBar = $Control/BottomBar/XPBar
 @onready var xp_label: Label = $Control/BottomBar/XPBar/XPLabel
-@onready var ability_points_label: Label = $Control/BottomBar/AbilityPointsLabel
 @onready var auto_assign_toggle: Button = $Control/BottomBar/AutoAssignToggle
 @onready var gold_label: Label = $Control/BottomBar/GoldLabel
 @onready var shop_button: Button = $Control/BottomBar/ShopButton
 
 @onready var shop_panel: Panel = $Control/ShopPanel
 @onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
+
+@onready var draft_panel: Panel = $Control/DraftPanel
+@onready var draft_cards: Array = [
+	$Control/DraftPanel/Card0,
+	$Control/DraftPanel/Card1,
+	$Control/DraftPanel/Card2,
+]
 
 @onready var game_over_panel: Panel = $Control/GameOverPanel
 @onready var game_over_label: Label = $Control/GameOverPanel/Label
@@ -59,9 +67,9 @@ const LOCKED_ABILITY_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var debug_add_xp_big_button: Button = $Control/DebugPanel/AddXpBigButton
 @onready var debug_add_gold_small_button: Button = $Control/DebugPanel/AddGoldSmallButton
 @onready var debug_add_gold_big_button: Button = $Control/DebugPanel/AddGoldBigButton
-@onready var debug_add_ability_points_button: Button = $Control/DebugPanel/AddAbilityPointsButton
-@onready var debug_max_abilities_button: Button = $Control/DebugPanel/MaxAbilitiesButton
-@onready var debug_reset_abilities_button: Button = $Control/DebugPanel/ResetAbilitiesButton
+@onready var debug_force_draft_button: Button = $Control/DebugPanel/ForceDraftButton
+@onready var debug_max_items_button: Button = $Control/DebugPanel/MaxItemsButton
+@onready var debug_reset_items_button: Button = $Control/DebugPanel/ResetItemsButton
 @onready var debug_add_loop_button: Button = $Control/DebugPanel/AddLoopButton
 @onready var debug_spawn_elite_button: Button = $Control/DebugPanel/SpawnEliteButton
 @onready var debug_speed_button: Button = $Control/DebugPanel/SpeedButton
@@ -90,14 +98,18 @@ var _end_screen_countdown_active: bool = false
 var _active_countdown_label: Label = null
 var _countdown_label_prefix: String = ""
 
-var _ability_buttons := {}
-var _ability_rank_labels := {}
+## Sloty vybraných itemů v BottomBaru, indexované stejně jako GameManager.ITEM_ORDER
+var _item_slots: Array = []
 
-## Dokud je zapnuté, nově získané body do schopností se rozdají samy - viz
-## _maybe_auto_assign(). _auto_assigning hlídá reentranci, protože
-## spend_ability_point() synchronně emituje signály zpátky do tohoto skriptu.
-var _auto_assign_enabled: bool = true
-var _auto_assigning: bool = false
+## Dokud je zapnuté, draft nabídky se vyřizují samy (náhodný pick) bez
+## zobrazení DraftPanelu - vypnuto defaultně, protože smysl draftu je, že
+## hráč vidí a dělá skutečnou volbu (na rozdíl od dřívějšího Auto-přiřazení
+## bodů do schopností, kde volba byla plochá a Auto dávalo smysl jako výchozí).
+var _draft_auto_enabled: bool = false
+## Poslední nabídnuté itemy (viz _on_item_draft_ready) - potřeba, aby
+## _on_draft_auto_toggled() mohl doresit nabídku, na kterou hráč zrovna
+## kouká, i když je zrovna otevřená přes DraftPanel, ne přes Auto větev.
+var _last_offered_ids: Array = []
 
 
 func _ready() -> void:
@@ -105,19 +117,20 @@ func _ready() -> void:
 	GameManager.currency_changed.connect(_on_currency_changed)
 	GameManager.xp_changed.connect(_on_xp_changed)
 	GameManager.level_changed.connect(_on_level_changed)
-	GameManager.ability_points_changed.connect(_on_ability_points_changed)
-	GameManager.ability_rank_changed.connect(_on_ability_rank_changed)
+	GameManager.item_draft_ready.connect(_on_item_draft_ready)
+	GameManager.item_rank_changed.connect(_on_item_rank_changed)
 	GameManager.loop_changed.connect(_on_loop_changed)
 
 	game_over_panel.hide()
 	victory_panel.hide()
 	shop_panel.hide()
+	draft_panel.hide()
 	wave_cleared_label.hide()
 
-	_cache_ability_nodes()
+	_cache_item_nodes()
 
-	auto_assign_toggle.button_pressed = _auto_assign_enabled
-	auto_assign_toggle.toggled.connect(_on_auto_assign_toggled)
+	auto_assign_toggle.button_pressed = _draft_auto_enabled
+	auto_assign_toggle.toggled.connect(_on_draft_auto_toggled)
 
 	shop_button.pressed.connect(_on_shop_button_pressed)
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
@@ -134,7 +147,6 @@ func _ready() -> void:
 	_setup_debug_panel()
 
 	_refresh_progression()
-	_maybe_auto_assign()
 
 
 func _process(delta: float) -> void:
@@ -148,13 +160,9 @@ func _process(delta: float) -> void:
 		_update_end_screen_countdown_label()
 
 
-func _cache_ability_nodes() -> void:
-	for ability_id in GameManager.ABILITY_ORDER:
-		var suffix: String = ability_id.to_upper()
-		var button: Button = bottom_bar.get_node("Ability" + suffix)
-		_ability_buttons[ability_id] = button
-		_ability_rank_labels[ability_id] = bottom_bar.get_node("AbilityRank" + suffix)
-		button.pressed.connect(_on_ability_pressed.bind(ability_id))
+func _cache_item_nodes() -> void:
+	for i in GameManager.ITEM_ORDER.size():
+		_item_slots.append(bottom_bar.get_node("PickedItemSlot%d" % i))
 
 
 ## Zavolá Main po vytvoření hráče, aby se HUD napojil na jeho signály a staty.
@@ -212,44 +220,78 @@ func _on_level_changed(new_level: int) -> void:
 	_refresh_stat_labels()
 
 
-func _on_ability_points_changed(_amount: int) -> void:
-	_refresh_abilities()
-	_maybe_auto_assign()
-
-
-func _on_ability_rank_changed(_ability_id: String, _new_rank: int) -> void:
-	_refresh_abilities()
+func _on_item_rank_changed(_item_id: String, _new_rank: int) -> void:
+	_refresh_items()
 	_refresh_stat_labels()
 
 
-func _on_ability_pressed(ability_id: String) -> void:
-	GameManager.spend_ability_point(ability_id)
+## Když hráč zapne Auto výběr zatímco DraftPanel zrovna čeká na jeho volbu,
+## dořešíme ji (a případné další zařazené nabídky) rovnou za něj místo aby
+## panel zůstal viset otevřený, dokud by si toho nevšiml a neklikl sám.
+func _on_draft_auto_toggled(enabled: bool) -> void:
+	_draft_auto_enabled = enabled
+	if enabled and GameManager.pending_drafts > 0:
+		var pick: String = _last_offered_ids[randi() % _last_offered_ids.size()]
+		GameManager.resolve_draft(pick) # se zapnutým Auto se přes _on_item_draft_ready samo prořeže i případné další čekající
+		draft_panel.hide()
+		get_tree().paused = false
 
 
-func _on_auto_assign_toggled(enabled: bool) -> void:
-	_auto_assign_enabled = enabled
-	_maybe_auto_assign()
+## Přijde vždy, když je k dispozici nová draft nabídka (typicky po level-upu).
+## S vypnutým Auto výběrem zobrazí DraftPanel a hru pozastaví (stejně jako
+## Obchod) - hráč musí vybrat, než se hra pustí dál. Se zapnutým Auto výběrem
+## nabídku rovnou vyřídí náhodným pickem bez zastavení hry (viz
+## GameManager.resolve_draft() - samo zavolá další nabídku, pokud nějaká čeká).
+func _on_item_draft_ready(offered_ids: Array) -> void:
+	_last_offered_ids = offered_ids
 
-
-## Náhodně rozdá všechny nevyužité body do schopností, které ještě nejsou na
-## maximálním ranku. PROZATÍMNÍ pravidlo bez váhování/priorit - jen rovnoměrně
-## náhodné mezi způsobilými schopnostmi. Bude se dál vylepšovat (např. váhy
-## podle buildu, preferovat odemykání nových před navyšováním ranku, ...).
-func _maybe_auto_assign() -> void:
-	if not _auto_assign_enabled or _auto_assigning:
+	if _draft_auto_enabled:
+		var pick: String = offered_ids[randi() % offered_ids.size()]
+		GameManager.resolve_draft(pick)
 		return
 
-	_auto_assigning = true
-	while GameManager.ability_points > 0:
-		var eligible: Array = []
-		for ability_id in GameManager.ABILITY_ORDER:
-			if GameManager.ability_ranks[ability_id] < GameManager.MAX_ABILITY_RANK:
-				eligible.append(ability_id)
-		if eligible.is_empty():
-			break
-		var pick: String = eligible[randi() % eligible.size()]
-		GameManager.spend_ability_point(pick)
-	_auto_assigning = false
+	_show_draft_panel(offered_ids)
+
+
+func _show_draft_panel(offered_ids: Array) -> void:
+	for i in draft_cards.size():
+		var card: Panel = draft_cards[i]
+		if i >= offered_ids.size():
+			card.hide()
+			continue
+
+		var item_id: String = offered_ids[i]
+		var definition: Dictionary = GameManager.ITEMS[item_id]
+		var current_rank: int = GameManager.item_ranks[item_id]
+
+		card.show()
+		card.get_node("NameLabel").text = definition["name"]
+		card.get_node("DescLabel").text = definition["desc"]
+		card.get_node("RankLabel").text = "%d/%d -> %d/%d" % [
+			current_rank, GameManager.MAX_ITEM_RANK, current_rank + 1, GameManager.MAX_ITEM_RANK
+		]
+
+		var pick_button: Button = card.get_node("PickButton")
+		# Karty se v draft_cards nemění, jen se přepisuje jejich obsah - proto
+		# je nutné staré spojení nejdřív odpojit, jinak by kliknutí na tutéž
+		# kartu po druhé nabídce zavolalo resolve_draft() se starým item_id.
+		for connection in pick_button.pressed.get_connections():
+			pick_button.pressed.disconnect(connection["callable"])
+		pick_button.pressed.connect(_on_draft_pick_pressed.bind(item_id))
+
+	draft_panel.show()
+	get_tree().paused = true
+
+
+func _on_draft_pick_pressed(item_id: String) -> void:
+	GameManager.resolve_draft(item_id)
+	# resolve_draft() může synchronně vyvolat DALŠÍ item_draft_ready (víc
+	# úrovní najednou z velkého přísunu XP), který už _show_draft_panel()
+	# znovu zavolal a panel nechal otevřený s novým obsahem - tady ho proto
+	# zavíráme jen když už doopravdy nic dalšího nečeká.
+	if GameManager.pending_drafts <= 0:
+		draft_panel.hide()
+		get_tree().paused = false
 
 
 ## Přenačte všechno, co se odvíjí od progrese. Volá se v _ready(), protože
@@ -260,30 +302,21 @@ func _refresh_progression() -> void:
 	level_label.text = str(GameManager.player_level)
 	gold_label.text = "Zlato: %d" % GameManager.currency
 	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())
-	_refresh_abilities()
+	_refresh_items()
 	_refresh_stat_labels()
 
 
-func _refresh_abilities() -> void:
-	ability_points_label.text = "Body schopností: %d" % GameManager.ability_points
+func _refresh_items() -> void:
+	for i in GameManager.ITEM_ORDER.size():
+		var item_id: String = GameManager.ITEM_ORDER[i]
+		var definition: Dictionary = GameManager.ITEMS[item_id]
+		var rank: int = GameManager.item_ranks[item_id]
+		var slot: ColorRect = _item_slots[i]
+		var label: Label = slot.get_node("Label")
 
-	for ability_id in GameManager.ABILITY_ORDER:
-		var definition: Dictionary = GameManager.ABILITIES[ability_id]
-		var rank: int = GameManager.ability_ranks[ability_id]
-		var button: Button = _ability_buttons[ability_id]
-
-		var can_upgrade: bool = (
-			GameManager.ability_points > 0 and rank < GameManager.MAX_ABILITY_RANK
-		)
-
-		button.disabled = not can_upgrade
-		# Ztlumená je jen schopnost, se kterou teď nejde nic dělat - zamčená
-		# s volným bodem musí být vidět jako nabídka, ne jako neaktivní prvek
-		button.modulate = Color.WHITE if rank > 0 or can_upgrade else LOCKED_ABILITY_MODULATE
-		button.tooltip_text = "%s (%s)\n%s" % [definition["name"], definition["key"], definition["desc"]]
-
-		var rank_text := "%d/%d" % [rank, GameManager.MAX_ABILITY_RANK]
-		_ability_rank_labels[ability_id].text = rank_text + " +" if can_upgrade else rank_text
+		label.text = "%s\n%d/%d" % [definition["short_name"], rank, GameManager.MAX_ITEM_RANK]
+		slot.modulate = Color.WHITE if rank > 0 else LOCKED_ITEM_MODULATE
+		slot.tooltip_text = "%s\n%s" % [definition["name"], definition["desc"]]
 
 
 func _refresh_stat_labels() -> void:
@@ -318,6 +351,7 @@ func _on_shop_close_pressed() -> void:
 
 func show_game_over(wave_reached: int, currency: int) -> void:
 	_close_shop()
+	_close_draft_panel()
 	game_over_label.text = "Game Over!\nDosažená vlna: %d\nÚroveň: %d\nZlato: %d" % [
 		wave_reached, GameManager.player_level, currency
 	]
@@ -327,6 +361,7 @@ func show_game_over(wave_reached: int, currency: int) -> void:
 
 func show_victory(currency: int) -> void:
 	_close_shop()
+	_close_draft_panel()
 	victory_label.text = "Level dokončen!\nÚroveň: %d\nZlato: %d" % [GameManager.player_level, currency]
 	victory_panel.show()
 	_start_end_screen_countdown(victory_countdown_label, "Nová hra za")
@@ -334,6 +369,14 @@ func show_victory(currency: int) -> void:
 
 func _close_shop() -> void:
 	shop_panel.hide()
+	get_tree().paused = false
+
+
+## Nouzové zavření - Debug panel má process_mode ALWAYS, takže "Zabít postavu"
+## zafunguje i přes pauzu draftu; kdyby to vyvolalo Game Over uprostřed
+## otevřené nabídky, tohle ji zavře stejně jako _close_shop() dělá pro Obchod.
+func _close_draft_panel() -> void:
+	draft_panel.hide()
 	get_tree().paused = false
 
 
@@ -361,6 +404,7 @@ func _restart_game() -> void:
 	_end_screen_countdown_active = false
 	game_over_panel.hide()
 	victory_panel.hide()
+	draft_panel.hide()
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 
@@ -386,9 +430,9 @@ func _setup_debug_panel() -> void:
 	debug_add_xp_big_button.pressed.connect(func(): GameManager.add_xp(500))
 	debug_add_gold_small_button.pressed.connect(func(): GameManager.debug_add_currency(100))
 	debug_add_gold_big_button.pressed.connect(func(): GameManager.debug_add_currency(1000))
-	debug_add_ability_points_button.pressed.connect(func(): GameManager.debug_add_ability_points(5))
-	debug_max_abilities_button.pressed.connect(func(): GameManager.debug_max_abilities())
-	debug_reset_abilities_button.pressed.connect(func(): GameManager.debug_reset_abilities())
+	debug_force_draft_button.pressed.connect(func(): GameManager.debug_force_draft())
+	debug_max_items_button.pressed.connect(func(): GameManager.debug_max_items())
+	debug_reset_items_button.pressed.connect(func(): GameManager.debug_reset_items())
 	debug_add_loop_button.pressed.connect(func(): GameManager.debug_add_loop())
 	debug_spawn_elite_button.pressed.connect(_on_debug_spawn_elite_pressed)
 	debug_speed_button.pressed.connect(_on_debug_speed_pressed)
