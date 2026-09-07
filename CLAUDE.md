@@ -94,13 +94,28 @@ Elite does, rather than tuning `projectile.gd`.
 like Elite it reuses `enemy.gd` rather than needing its own script — `is_ranged = true` switches the
 attack branch in `_process()` from a direct `player_ref.take_damage(contact_damage)` call to
 `_shoot_projectile()`, which instantiates `projectile_scene` aimed at the player.
-`melee_range` doubles as engagement/firing range for a ranged enemy (350, vs. 60 for the melee
-enemy and 100 for Elite) — it's the same "how close before I stop and attack" field either way, just
-interpreted as "how far I can shoot" instead of "how close I need to be to hit." Same size
-`Polygon2D` as the base enemy, just a different color (orange vs. red), per how it was specced.
-`main.gd`'s `ranged_enemy_chance` (0.3) mixes it into the *regular* wave spawn queue (not
-wave-10-exclusive like Elite) — each non-Elite spawn independently rolls whether to use
-`enemy_scene` or `ranged_enemy_scene`.
+`melee_range` doubles as engagement/firing range for a ranged enemy — it's the same "how close
+before I stop and attack" field either way, just interpreted as "how far I can shoot" instead of
+"how close I need to be to hit." Same size `Polygon2D` as the base enemy, just a different color.
+`main.gd`'s `ranged_enemy_chance`/`sniper_enemy_chance` mix ranged variants into the *regular* wave
+spawn queue (not wave-10-exclusive like Elite) via one shared `randf()` roll per non-Elite spawn
+(`_spawn_enemy()`) — checking `sniper_enemy_chance` first, then `sniper_enemy_chance +
+ranged_enemy_chance` for the ranged tier, falling through to the normal melee enemy otherwise. A
+single shared roll (not independent per-type rolls) is deliberate: independent rolls could both
+succeed for the same spawn with no defined precedence, silently favoring whichever `if` happened to
+be checked last.
+
+**Sniper enemies** (`scenes/enemies/sniper_enemy.tscn`): the third variant, same pattern as ranged
+(`is_ranged = true`, shares `enemy_projectile.tscn`) but with `melee_range` (550) set *higher than
+the player's own base `attack_range`* (400) — this is the entire mechanic, no new code. Since
+`player.gd` only advances (`global_position.x += move_speed * delta`) when **nothing** is within its
+own `get_attack_range()`, and a sniper's engagement range exceeds that, the player can never reach a
+sniper to fight back while *any other, closer* enemy is still alive and holding the player in place —
+the sniper keeps landing free hits until the player clears the field enough to advance into its own
+range. This emergent "protected artillery" behavior wasn't purpose-built; it falls directly out of
+the existing move-when-clear logic once an enemy's range is allowed to exceed the player's, which is
+exactly why `sniper_enemy_chance` (0.15) is set lower than `ranged_enemy_chance` (0.3) — snipers are
+meant to read as a rarer, more dangerous variant, not a routine replacement for the base enemy.
 
 **Enemy projectiles are their own script, never the player's** (`scenes/enemies/enemy_projectile.gd`,
 instantiated by `enemy.gd`'s `_shoot_projectile()`) — this satisfies a constraint flagged before any
@@ -336,9 +351,10 @@ reuse the *real* code paths rather than shortcutting past them:
   It only calls `GameManager.debug_force_wave_clear()` — which itself refuses to act unless
   `enemies_alive`/`enemies_remaining_to_spawn` are already both zero — to cover the edge case where
   no enemy was alive to begin with (so no death naturally triggered the wave-clear check).
-- **Spawnout Elite** / **Spawnout dálkového** both share `_spawn_at_edge()` with the normal wave
-  spawner (extracted from `_spawn_enemy()` during the Elite work) so a debug-spawned enemy gets the
-  same HP-multiplier-before-`add_child()` treatment as one spawned by the real wave queue.
+- **Spawnout Elite** / **Spawnout dálkového** / **Spawnout snipera** all share `_spawn_at_edge()`
+  with the normal wave spawner (extracted from `_spawn_enemy()` during the Elite work) so a
+  debug-spawned enemy gets the same HP-multiplier-before-`add_child()` treatment as one spawned by
+  the real wave queue.
 - **Rychlost** cycles `Engine.time_scale` through `1x/2x/5x/10x` — this is global engine state, so
   it also speeds up Timers, Tweens, and the Game Over/Victory countdown, and (unlike everything
   else on this panel) is **not** reset by a scene reload; the button re-syncs its own label from
@@ -354,10 +370,10 @@ reuse the *real* code paths rather than shortcutting past them:
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, base stats, fall/intro animation params
 - `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
-- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`
+- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `is_ranged`/`projectile_scene`
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
-- `scenes/enemies/ranged_enemy.tscn` — ranged enemy's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`
+- `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) is the one that matters most — it must stay above the player's base `attack_range` (400) for the "protected artillery" behavior described above to hold
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)

@@ -9,6 +9,10 @@ extends Node2D
 ## běžném spawnu z fronty vlny (Elite frontu neovlivňuje - ta má vlastní
 ## pořadí, viz _spawn_enemy())
 @export var ranged_enemy_chance: float = 0.3
+@export var sniper_enemy_scene: PackedScene
+## Nižší než ranged_enemy_chance - sniper (dostřel přes hráčův attack_range)
+## je vzácnější a nebezpečnější varianta, ne běžná náhrada za normálního nepřítele
+@export var sniper_enemy_chance: float = 0.15
 @export var enemies_base_count: int = 4
 ## Násobitel odmocninové křivky obtížnosti - růst je postupný, ne skokový
 @export var difficulty_growth: float = 1.2
@@ -75,7 +79,13 @@ func _spawn_enemy() -> void:
 		elites_left_to_spawn -= 1
 	else:
 		enemies_left_to_spawn -= 1
-		if ranged_enemy_scene != null and randf() < ranged_enemy_chance:
+		# Jeden společný hod rozhoduje mezi variantami - nezávislé hody by se
+		# mohly obě "trefit" najednou a bez smyslu upřednostnit tu poslední
+		# zkontrolovanou podmínku.
+		var roll: float = randf()
+		if sniper_enemy_scene != null and roll < sniper_enemy_chance:
+			scene_to_spawn = sniper_enemy_scene
+		elif ranged_enemy_scene != null and roll < sniper_enemy_chance + ranged_enemy_chance:
 			scene_to_spawn = ranged_enemy_scene
 
 	_spawn_at_edge(scene_to_spawn)
@@ -158,3 +168,9 @@ func debug_spawn_elite() -> void:
 func debug_spawn_ranged_enemy() -> void:
 	if ranged_enemy_scene != null:
 		_spawn_at_edge(ranged_enemy_scene)
+
+
+## DEBUG: spawne jednoho snipera na vyžádání, mimo běžnou frontu vln
+func debug_spawn_sniper_enemy() -> void:
+	if sniper_enemy_scene != null:
+		_spawn_at_edge(sniper_enemy_scene)
