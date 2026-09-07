@@ -352,22 +352,30 @@ sequentially, not simultaneously.
 
 **Draft pauses the game, unlike the old ability buttons did** (`_show_draft_panel()` /
 `_on_draft_pick_pressed()` in `hud.gd`, mirroring the Shop's `get_tree().paused` pattern) — a
-level-up card is meant to be a deliberate stop-and-choose moment. The "Auto" toggle
-(`Control/BottomBar/AutoAssignToggle`, **default OFF** — this is a deliberate flip from the old
-ability system's default-ON Auto, see below) resolves offers with a uniformly random pick and skips
-the panel/pause entirely. Toggling Auto **on** while a draft is already showing must proactively
-resolve it (`_on_draft_auto_toggled()`) — otherwise the panel would stay stuck open forever, since
-nothing else would ever call `resolve_draft()` for it.
+level-up card is meant to be a deliberate stop-and-choose moment. The "Auto vylepšení" toggle
+(`Control/DebugPanel/AutoUpgradeToggle`, **default OFF**) resolves offers with a uniformly random
+pick and skips the panel/pause entirely. Toggling it **on** while a draft is already showing must
+proactively resolve it (`_on_draft_auto_toggled()`) — otherwise the panel would stay stuck open
+forever, since nothing else would ever call `resolve_draft()` for it.
 
-**Why Auto defaults OFF now, unlike the old ability-point Auto-assign (which defaulted ON)**: the
-entire point of switching to randomized item drafts was to give the player a real, visible choice
-each level — defaulting Auto to on would silently defeat that by never showing the player the
-choice is happening at all. Auto is kept as an opt-in convenience for fast playtesting/debugging,
-not as the expected default experience. The random-pick logic itself is still a deliberately
-simple placeholder (no weighting by current build) — same caveat the old ability Auto-assign had.
+**Auto-resolve lives in the Debug panel, not the main HUD** — it started out as a regular
+`Control/BottomBar` button (like the old ability system's Auto-assign), but was moved into
+`DebugPanel` and renamed from "Auto" to "Auto vylepšení": the entire point of switching to
+randomized item drafts was to give the player a real, visible choice each level, so a literal
+random-pick button sitting permanently next to real player-facing controls (Shop, item slots)
+undercut that and only ever made sense as a playtesting/debug convenience anyway — CLAUDE.md already
+described it that way before the move. It defaults OFF for the same reason (deliberate flip from the
+old ability system's default-ON Auto). The random-pick logic itself is still a deliberately simple
+placeholder (no weighting by current build) — same caveat the old ability Auto-assign had.
+**Noted for later**: once the game loops indefinitely past wave 10 (see below), an experienced
+player who already has a settled build might legitimately want to "farm" further loops without
+stopping for every draft card — if that turns out to be a real desired playstyle during a future
+QoL/balance pass, auto-resolve could earn a real, non-debug home again (e.g. only unlocked after
+finishing loop 1, or with build-aware weighting instead of a uniform random pick). Not worth building
+now — just don't be surprised if this resurfaces as a real feature request later.
 
 **HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
-portrait with a level badge, HP bar, XP bar, six picked-item slots (`PickedItemSlot0..5`, indexed
+portrait with a level badge, HP bar, XP bar, seven picked-item slots (`PickedItemSlot0..6`, indexed
 to match `GameManager.ITEM_ORDER` — grayed out at rank 0, shows `short_name` + rank once picked),
 six (currently decorative, unrelated — future equipment loot) `ItemSlot1..6` rects, gold, and the
 shop button. Right-side elements are anchored to the right edge and the bars stretch, so the bar
@@ -412,6 +420,9 @@ reuse the *real* code paths rather than shortcutting past them:
   `MAX_ITEM_RANK`, reset zeroes every rank. Unlike the old ability respec, reset does **not** refund
   anything to re-spend, because items were never bought with a spendable currency in the first
   place — they're free picks from a draft, so "reset" is just a clean slate for the next level-up.
+- **Auto vylepšení** is the moved/renamed old BottomBar "Auto" toggle (see above) — it's here rather
+  than in the main HUD specifically because its only real use is skipping the draft-choice pause
+  during testing.
 
 ## Key tunables when adjusting gameplay
 

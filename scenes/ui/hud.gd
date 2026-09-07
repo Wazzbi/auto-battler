@@ -35,7 +35,6 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var hp_regen_label: Label = $Control/BottomBar/HPBar/RegenLabel
 @onready var xp_bar: ProgressBar = $Control/BottomBar/XPBar
 @onready var xp_label: Label = $Control/BottomBar/XPBar/XPLabel
-@onready var auto_assign_toggle: Button = $Control/BottomBar/AutoAssignToggle
 @onready var gold_label: Label = $Control/BottomBar/GoldLabel
 @onready var shop_button: Button = $Control/BottomBar/ShopButton
 
@@ -75,6 +74,7 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var debug_spawn_elite_button: Button = $Control/DebugPanel/SpawnEliteButton
 @onready var debug_spawn_ranged_button: Button = $Control/DebugPanel/SpawnRangedButton
 @onready var debug_spawn_sniper_button: Button = $Control/DebugPanel/SpawnSniperButton
+@onready var debug_auto_upgrade_toggle: Button = $Control/DebugPanel/AutoUpgradeToggle
 @onready var debug_speed_button: Button = $Control/DebugPanel/SpeedButton
 @onready var debug_close_button: Button = $Control/DebugPanel/CloseButton
 
@@ -108,6 +108,10 @@ var _item_slots: Array = []
 ## zobrazení DraftPanelu - vypnuto defaultně, protože smysl draftu je, že
 ## hráč vidí a dělá skutečnou volbu (na rozdíl od dřívějšího Auto-přiřazení
 ## bodů do schopností, kde volba byla plochá a Auto dávalo smysl jako výchozí).
+## Ovládá se přes "Auto vylepšení" v Debug panelu (`AutoUpgradeToggle`), ne
+## přes tlačítko v běžném HUD - žádný důvod, proč by si "finální" hráč měl
+## chtít nechat vybírat itemy náhodně místo skutečné volby, takže to patří
+## mezi dev/testovací nástroje, ne mezi trvale viditelné ovládací prvky.
 var _draft_auto_enabled: bool = false
 ## Poslední nabídnuté itemy (viz _on_item_draft_ready) - potřeba, aby
 ## _on_draft_auto_toggled() mohl doresit nabídku, na kterou hráč zrovna
@@ -131,9 +135,6 @@ func _ready() -> void:
 	wave_cleared_label.hide()
 
 	_cache_item_nodes()
-
-	auto_assign_toggle.button_pressed = _draft_auto_enabled
-	auto_assign_toggle.toggled.connect(_on_draft_auto_toggled)
 
 	shop_button.pressed.connect(_on_shop_button_pressed)
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
@@ -441,6 +442,8 @@ func _setup_debug_panel() -> void:
 	debug_spawn_elite_button.pressed.connect(_on_debug_spawn_elite_pressed)
 	debug_spawn_ranged_button.pressed.connect(_on_debug_spawn_ranged_pressed)
 	debug_spawn_sniper_button.pressed.connect(_on_debug_spawn_sniper_pressed)
+	debug_auto_upgrade_toggle.button_pressed = _draft_auto_enabled
+	debug_auto_upgrade_toggle.toggled.connect(_on_draft_auto_toggled)
 	debug_speed_button.pressed.connect(_on_debug_speed_pressed)
 
 	# Engine.time_scale je globální a restart scény ho sám neresetuje - popisek
