@@ -106,8 +106,9 @@ func _play_squash_effect() -> void:
 	squash_tween.tween_property(visual, "scale", Vector2.ONE, 0.15)
 
 
-## Přepočítá staty na základě base hodnot + bonusů za úrovně a schopnosti.
-## Přírůstek max HP se přičte i k aktuálnímu HP, takže level-up trochu vyléčí.
+## Přepočítá staty na základě base hodnot + bonusů z vybraných itemů (úroveň
+## sama o sobě už žádný bonus nedává, viz GameManager.get_stat_bonus()).
+## Přírůstek max HP se přičte i k aktuálnímu HP, takže item na max HP trochu vyléčí.
 func _recalculate_stats() -> void:
 	var old_max_hp := max_hp if max_hp > 0 else base_max_hp
 	max_hp = base_max_hp + GameManager.get_stat_bonus("max_hp")
