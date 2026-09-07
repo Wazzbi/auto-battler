@@ -72,6 +72,7 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var debug_reset_items_button: Button = $Control/DebugPanel/ResetItemsButton
 @onready var debug_add_loop_button: Button = $Control/DebugPanel/AddLoopButton
 @onready var debug_spawn_elite_button: Button = $Control/DebugPanel/SpawnEliteButton
+@onready var debug_spawn_ranged_button: Button = $Control/DebugPanel/SpawnRangedButton
 @onready var debug_speed_button: Button = $Control/DebugPanel/SpeedButton
 @onready var debug_close_button: Button = $Control/DebugPanel/CloseButton
 
@@ -435,6 +436,7 @@ func _setup_debug_panel() -> void:
 	debug_reset_items_button.pressed.connect(func(): GameManager.debug_reset_items())
 	debug_add_loop_button.pressed.connect(func(): GameManager.debug_add_loop())
 	debug_spawn_elite_button.pressed.connect(_on_debug_spawn_elite_pressed)
+	debug_spawn_ranged_button.pressed.connect(_on_debug_spawn_ranged_pressed)
 	debug_speed_button.pressed.connect(_on_debug_speed_pressed)
 
 	# Engine.time_scale je globální a restart scény ho sám neresetuje - popisek
@@ -475,6 +477,11 @@ func _on_debug_skip_wave_pressed() -> void:
 func _on_debug_spawn_elite_pressed() -> void:
 	if main_ref != null:
 		main_ref.debug_spawn_elite()
+
+
+func _on_debug_spawn_ranged_pressed() -> void:
+	if main_ref != null:
+		main_ref.debug_spawn_ranged_enemy()
 
 
 func _on_debug_speed_pressed() -> void:

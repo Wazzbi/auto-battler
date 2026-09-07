@@ -90,14 +90,32 @@ registering — both because a flat hit radius doesn't scale with an enemy's act
 enemy type gets a different visual scale, give it its own `hit_radius` override the same way
 Elite does, rather than tuning `projectile.gd`.
 
-**Design constraint for future enemy projectiles**: enemies are melee-only right now
-(`contact_damage`), but if ranged enemies get added later, their projectiles must only ever check
-distance against the player — never scan the `enemies` group the way `projectile.gd`'s
-"target lost" fallback does for the player's own projectiles (see `_process()` in
-`scenes/projectiles/projectile.gd`). Since enemies can now stand on top of each other, a
-generic "hit whatever's in range" fallback would let enemies shoot each other in the back;
-projectiles fired *by* enemies must pass through other enemies untouched and only ever resolve
-against the player.
+**Ranged enemies** (`scenes/enemies/ranged_enemy.tscn`): the second enemy variant after Elite, and
+like Elite it reuses `enemy.gd` rather than needing its own script — `is_ranged = true` switches the
+attack branch in `_process()` from a direct `player_ref.take_damage(contact_damage)` call to
+`_shoot_projectile()`, which instantiates `projectile_scene` aimed at the player.
+`melee_range` doubles as engagement/firing range for a ranged enemy (350, vs. 60 for the melee
+enemy and 100 for Elite) — it's the same "how close before I stop and attack" field either way, just
+interpreted as "how far I can shoot" instead of "how close I need to be to hit." Same size
+`Polygon2D` as the base enemy, just a different color (orange vs. red), per how it was specced.
+`main.gd`'s `ranged_enemy_chance` (0.3) mixes it into the *regular* wave spawn queue (not
+wave-10-exclusive like Elite) — each non-Elite spawn independently rolls whether to use
+`enemy_scene` or `ranged_enemy_scene`.
+
+**Enemy projectiles are their own script, never the player's** (`scenes/enemies/enemy_projectile.gd`,
+instantiated by `enemy.gd`'s `_shoot_projectile()`) — this satisfies a constraint flagged before any
+ranged enemy existed: since enemies don't block each other and can visually overlap (see above),
+`scenes/projectiles/projectile.gd`'s "target lost" fallback (scan the `enemies` group for the
+nearest target) would be actively dangerous reused for an enemy's own projectile — it would let one
+enemy shoot another in the back the moment its assigned target (the player) became invalid.
+`enemy_projectile.gd` has no such fallback at all: if `target` isn't valid, the projectile just
+keeps flying left and eventually self-cleans up off-screen, full stop, no scanning for a substitute
+target of any kind. It also flies the opposite direction (`position.x -= speed * delta`, vs. the
+player's projectile flying right) and cleans up past the *left* edge of the camera's view instead of
+the right, and its `hit_radius` is a fixed export rather than read from the target (`projectile.gd`
+reads `target.hit_radius` because enemies come in different visual sizes; there's only one possible
+target type for an enemy projectile — the player — so a fixed value matching the player's own
+`Polygon2D` half-width is simpler and sufficient).
 
 **Enemies guard against dying twice in the same frame** (`enemy.gd`'s `_is_dead` flag, checked at
 the top of `take_damage()` and set at the top of `_die()`): `queue_free()` doesn't remove a node
@@ -318,9 +336,9 @@ reuse the *real* code paths rather than shortcutting past them:
   It only calls `GameManager.debug_force_wave_clear()` — which itself refuses to act unless
   `enemies_alive`/`enemies_remaining_to_spawn` are already both zero — to cover the edge case where
   no enemy was alive to begin with (so no death naturally triggered the wave-clear check).
-- **Spawnout Elite** shares `_spawn_at_edge()` with the normal wave spawner (extracted from
-  `_spawn_enemy()` during this work) so a debug-spawned Elite gets the same HP-multiplier-before-
-  `add_child()` treatment as one spawned by wave 10 for real.
+- **Spawnout Elite** / **Spawnout dálkového** both share `_spawn_at_edge()` with the normal wave
+  spawner (extracted from `_spawn_enemy()` during the Elite work) so a debug-spawned enemy gets the
+  same HP-multiplier-before-`add_child()` treatment as one spawned by the real wave queue.
 - **Rychlost** cycles `Engine.time_scale` through `1x/2x/5x/10x` — this is global engine state, so
   it also speeds up Timers, Tweens, and the Game Over/Victory countdown, and (unlike everything
   else on this panel) is **not** reset by a scene reload; the button re-syncs its own label from
@@ -336,9 +354,11 @@ reuse the *real* code paths rather than shortcutting past them:
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, base stats, fall/intro animation params
 - `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
-- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`
-- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`
+- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`
+- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `is_ranged`/`projectile_scene`
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
+- `scenes/enemies/ranged_enemy.tscn` — ranged enemy's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`
+- `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops) — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS`
