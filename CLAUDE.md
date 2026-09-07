@@ -210,16 +210,29 @@ There are no sprite assets to manage; if you need to change how something looks,
 **Progression (XP → levels → item draft)**: enemies grant `reward` (gold) *and* `xp_reward` on
 death via `GameManager.enemy_defeated(reward, xp_reward)`. XP accumulates toward
 `xp_for_next_level()` (`XP_BASE + (level - 1) * XP_PER_LEVEL_GROWTH`); `add_xp()` loops so one big
-XP chunk can grant several levels at once. Each level raises every base stat automatically by
-`LEVEL_STAT_GROWTH` and queues one "item draft" (see below) — there is no per-stat purchasing and
-no ability tree; the player never spends a manually-banked point.
+XP chunk can grant several levels at once. Each level queues one "item draft" (see below) — there
+is no per-stat purchasing, no ability tree, and (as of this note) **no automatic stat growth from
+levelling either**: `LEVEL_STAT_GROWTH` was deliberately removed, so a bare level-up (before the
+resulting draft is resolved) changes nothing about the player's stats. This was a conscious
+simplification, not an oversight — with both an automatic per-level bump *and* item picks
+contributing to the same numbers, a stat like "Poškození: 28" was a sum of an invisible part (level
+growth) and a visible, chosen part (item rank), so the player's choices didn't fully explain their
+own power. Now every point of every stat traces back to a specific picked item, which also matters
+more once real active/passive abilities join the item pool (see below) — there's one unified
+"level-up = one upgrade slot" model instead of two parallel growth tracks to keep straight.
 
 **Stats flow**: base stats live as `@export` vars on `player.gd` (`base_damage`,
 `base_attack_speed`, `base_attack_range`, `base_max_hp`). Effective stats come from getters
 (`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`, `get_hp_regen()`)
 that add `GameManager.get_stat_bonus(stat_id)` — **the single place where progression turns into
-numbers** (level growth + picked-item ranks summed together). The player recomputes on the
-`level_changed` and `item_rank_changed` signals; the HUD never touches player stats directly.
+numbers**, and now purely a sum of picked-item ranks (no level term at all). The player recomputes
+on the `level_changed` and `item_rank_changed` signals — `level_changed` alone is a no-op for stats
+now, kept only so UI (the level badge, etc.) stays in sync; the HUD never touches player stats
+directly. **Balance caveat**: removing the automatic floor means a run's power now depends entirely
+on what the (currently small, 6-item) draft pool happens to offer — going several levels without
+seeing a given stat's item is possible (~50% chance per level to miss any one specific item with
+`DRAFT_CHOICE_COUNT` 3 of 6), so a fragile-feeling run from bad luck is a known, accepted trade-off
+for now, not yet tuned away.
 
 **Item/loot draft replaced the old ability tree** (`GameManager.ITEMS`/`ITEM_ORDER`, `hud.gd`,
 `Control/DraftPanel` in `hud.tscn`): instead of a fixed Q/W/E/R grid the player spent points into,
@@ -313,5 +326,5 @@ reuse the *real* code paths rather than shortcutting past them:
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops) — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS`
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)

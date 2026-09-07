@@ -35,15 +35,6 @@ const ENEMY_HP_GROWTH_PER_LOOP: float = 0.5
 const XP_BASE: int = 60
 const XP_PER_LEVEL_GROWTH: int = 40
 
-## O kolik se automaticky zvednou základní staty za každou získanou úroveň.
-## Úroveň 1 = čisté base staty z player.gd, každá další přidá tyto hodnoty.
-const LEVEL_STAT_GROWTH := {
-	"damage": 5.0,
-	"max_hp": 20.0,
-	"attack_speed": 0.1,
-	"attack_range": 15.0,
-}
-
 ## --- Item/loot draft --------------------------------------------------
 ## Náhrada za dřívější strom schopností (Q/W/E/R). Místo utrácení bodů do
 ## pevně daných 4 schopností si hráč při každém level-upu vybírá 1 ze 3
@@ -212,8 +203,9 @@ func add_xp(amount: int) -> void:
 func _level_up() -> void:
 	player_level += 1
 	pending_drafts += 1
-	# level_changed první - hráč si podle něj přepočítá staty, teprve pak
-	# přijde případná nabídka itemu.
+	# Level sám o sobě už žádný stat automaticky nezvedá (viz get_stat_bonus) -
+	# level_changed tu zůstává jen kvůli UI (odznak úrovně v HUD apod.), veškerý
+	# reálný růst statů přijde teprve s vybraným itemem z nabídky.
 	level_changed.emit(player_level)
 	_try_offer_next_draft()
 
@@ -269,11 +261,13 @@ func resolve_draft(item_id: String) -> bool:
 	return true
 
 
-## Celkový bonus ke statu = růst za úrovně + rank vybraných itemů, které na
-## stat působí. Jediné místo, kde se progrese promítá do statů - player.gd
-## si ho jen přičítá ke svým base hodnotám.
+## Celkový bonus ke statu = součet ranků vybraných itemů, které na stat
+## působí. Jediné místo, kde se progrese promítá do statů - player.gd si ho
+## jen přičítá ke svým base hodnotám. Úroveň sama o sobě už bonus nedává -
+## veškerý růst jde přes vybrané itemy, ať je jasné, čím je která hodnota
+## daná (žádný "neviditelný" automatický přírůstek vedle viditelné volby).
 func get_stat_bonus(stat_id: String) -> float:
-	var bonus: float = float(LEVEL_STAT_GROWTH.get(stat_id, 0.0)) * float(player_level - 1)
+	var bonus: float = 0.0
 
 	for item_id in ITEM_ORDER:
 		var definition: Dictionary = ITEMS[item_id]
