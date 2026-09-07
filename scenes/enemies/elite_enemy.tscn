@@ -15,4 +15,5 @@ hit_radius = 58.0
 [node name="Polygon2D" type="Polygon2D" parent="."]
 color = Color(0.55, 0.1, 0.65, 1)
 polygon = PackedVector2Array(-18, -24, 18, -24, 18, 24, -18, 24)
+position = Vector2(0, -48)
 scale = Vector2(3, 3)

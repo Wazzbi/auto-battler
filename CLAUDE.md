@@ -179,6 +179,21 @@ Elites when `wave_number == GameManager.FINAL_WAVE`, and `_spawn_enemy()` always
 queue before falling back to normal enemies, so the Elite(s) appear first in wave 10, with regular
 enemies filling out the rest of the wave's usual sqrt-curve count.
 
+**Scaling a visual around its own center sinks it into the ground** — this bit the Elite once
+already: `Polygon2D.scale` scales the shape around the *node's own local origin*, which coincides
+with the enemy's `global_position` (the point all gameplay distance math uses). A normal enemy's
+polygon is vertically centered on that point (±24px), so scaling it 3x for the Elite made it ±72px
+— the bottom edge dropped from `origin + 24` to `origin + 72`, visibly sinking ~48px into the
+ground even though `global_position` (and therefore every gameplay check) never moved. Fixed by
+also setting the Elite's `Polygon2D.position = Vector2(0, -48)`: since a node's `position` offsets
+its *already-scaled* content in the parent's coordinate space, this shifts the whole scaled shape
+up by exactly the amount needed to put its bottom edge back at `origin + 24`, matching every other
+enemy's ground line — the shape now grows upward from a shared "feet" line instead of expanding
+symmetrically from the center. Any future differently-scaled enemy visual needs the same treatment:
+`position.y = -(scaled_half_height - unscaled_half_height)` on the scaled `Polygon2D`, purely
+cosmetic and independent of `melee_range`/`hit_radius`/spawn math, which all key off the parent
+node's `global_position` and were never affected by this bug.
+
 **Intro/drop-in sequence**: on start, the player falls from above into position
 (`_play_drop_in_animation` in `player.gd`) while `GameManager.state == State.INTRO`, which blocks
 all gameplay `_process` logic automatically. `_on_landed()` triggers a screen shake, a squash
