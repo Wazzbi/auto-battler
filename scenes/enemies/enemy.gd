@@ -1,7 +1,8 @@
 extends Node2D
 ## Základní nepřítel. Pohybuje se doleva směrem k hráči; jakmile je
 ## dostatečně blízko (podle svého vlastního melee_range), zastaví se a útočí
-## v pravidelných intervalech.
+## v pravidelných intervalech - buď kontaktně (výchozí), nebo na dálku
+## projektilem, pokud je zapnuté is_ranged (viz ranged_enemy.tscn).
 ##
 ## Nepřátelé se navzájem NEBLOKUJÍ - každý počítá svou stop distanci nezávisle
 ## na ostatních, takže se klidně vizuálně překryjí (žádná Area2D/collision
@@ -13,6 +14,9 @@ extends Node2D
 @export var max_hp: float = 20.0
 @export var contact_damage: float = 5.0
 @export var attack_interval: float = 1.0
+## Vzdálenost, na které se nepřítel zastaví a začne útočit. U kontaktních
+## nepřátel je to prakticky dosah "na dotek", u is_ranged nepřátel funguje
+## jako skutečný dostřel (viz ranged_enemy.tscn, kde je nastavený mnohem výš).
 @export var melee_range: float = 60.0
 @export var reward: int = 10
 ## Zkušenosti za zabití - hráč z nich sbírá úrovně a body do schopností
@@ -22,6 +26,15 @@ extends Node2D
 ## vypadá, že se stane příliš brzy/pozdě vůči tomu, co je vidět na obrazovce -
 ## viz projectile.gd, které čte tuhle hodnotu místo vlastní pevné konstanty.
 @export var hit_radius: float = 20.0
+
+## Pokud je zapnuté, útok nedává kontaktní poškození přímo, ale vystřelí
+## projektil (enemy_projectile.gd) směrem k hráči - viz _shoot_projectile().
+@export var is_ranged: bool = false
+## Scéna projektilu, kterou is_ranged nepřítel vystřeluje. Musí to být
+## enemy_projectile.tscn (nebo kompatibilní) - NIKDY hráčovo projectile.tscn,
+## to má opačný směr letu a jiný fallback při ztrátě cíle (viz CLAUDE.md
+## "Design constraint for future enemy projectiles").
+@export var projectile_scene: PackedScene
 
 var hp: float
 var player_ref: Node2D = null
@@ -58,8 +71,23 @@ func _process(delta: float) -> void:
 	else:
 		attack_timer -= delta
 		if attack_timer <= 0.0:
-			player_ref.take_damage(contact_damage)
+			if is_ranged:
+				_shoot_projectile()
+			else:
+				player_ref.take_damage(contact_damage)
 			attack_timer = attack_interval
+
+
+## Vystřelí projektil směrem k hráči - contact_damage se tu recykluje jako
+## poškození projektilu (u kontaktního nepřítele je to totéž číslo, jen jinak
+## doručené, takže není potřeba samostatný export navíc).
+func _shoot_projectile() -> void:
+	if projectile_scene == null:
+		return
+	var projectile: Node2D = projectile_scene.instantiate()
+	get_tree().current_scene.add_child(projectile)
+	projectile.global_position = global_position
+	projectile.setup(contact_damage, player_ref)
 
 
 func take_damage(amount: float) -> void:

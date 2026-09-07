@@ -4,6 +4,11 @@ extends Node2D
 
 @export var enemy_scene: PackedScene
 @export var elite_enemy_scene: PackedScene
+@export var ranged_enemy_scene: PackedScene
+## Pravděpodobnost, že se dálkový nepřítel objeví místo normálního při
+## běžném spawnu z fronty vlny (Elite frontu neovlivňuje - ta má vlastní
+## pořadí, viz _spawn_enemy())
+@export var ranged_enemy_chance: float = 0.3
 @export var enemies_base_count: int = 4
 ## Násobitel odmocninové křivky obtížnosti - růst je postupný, ne skokový
 @export var difficulty_growth: float = 1.2
@@ -70,6 +75,8 @@ func _spawn_enemy() -> void:
 		elites_left_to_spawn -= 1
 	else:
 		enemies_left_to_spawn -= 1
+		if ranged_enemy_scene != null and randf() < ranged_enemy_chance:
+			scene_to_spawn = ranged_enemy_scene
 
 	_spawn_at_edge(scene_to_spawn)
 	GameManager.enemies_remaining_to_spawn = enemies_left_to_spawn + elites_left_to_spawn
@@ -145,3 +152,9 @@ func debug_skip_wave() -> void:
 func debug_spawn_elite() -> void:
 	if elite_enemy_scene != null:
 		_spawn_at_edge(elite_enemy_scene)
+
+
+## DEBUG: spawne jednoho dálkového nepřítele na vyžádání, mimo běžnou frontu vln
+func debug_spawn_ranged_enemy() -> void:
+	if ranged_enemy_scene != null:
+		_spawn_at_edge(ranged_enemy_scene)

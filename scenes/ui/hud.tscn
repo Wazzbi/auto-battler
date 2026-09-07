@@ -654,9 +654,17 @@ text = "+1 Kolo"
 layout_mode = 0
 offset_left = 20.0
 offset_top = 322.0
-offset_right = 460.0
+offset_right = 230.0
 offset_bottom = 358.0
 text = "Spawnout Elite"
+
+[node name="SpawnRangedButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 322.0
+offset_right = 460.0
+offset_bottom = 358.0
+text = "Spawnout dálkového"
 
 [node name="SpeedButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
