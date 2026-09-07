@@ -129,6 +129,15 @@ offset_bottom = 118.0
 theme_override_font_sizes/font_size = 14
 text = "Max HP: 100"
 
+[node name="StatArmor" type="Label" parent="Control/BottomBar" unique_id=1334704327]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 122.0
+offset_right = 200.0
+offset_bottom = 146.0
+theme_override_font_sizes/font_size = 14
+text = "Brnění: 2"
+
 [node name="Portrait" type="ColorRect" parent="Control/BottomBar" unique_id=873193496]
 layout_mode = 0
 offset_left = 212.0
@@ -329,11 +338,30 @@ text = "Regen
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="AutoAssignToggle" type="Button" parent="Control/BottomBar" unique_id=93625391]
+[node name="PickedItemSlot6" type="ColorRect" parent="Control/BottomBar"]
 layout_mode = 0
-offset_left = 748.0
+offset_left = 742.0
 offset_top = 66.0
 offset_right = 808.0
+offset_bottom = 114.0
+color = Color(0.14, 0.15, 0.19, 1)
+
+[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot6"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 11
+text = "Tlumiče
+0/5"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AutoAssignToggle" type="Button" parent="Control/BottomBar" unique_id=93625391]
+layout_mode = 0
+offset_left = 820.0
+offset_top = 66.0
+offset_right = 880.0
 offset_bottom = 114.0
 toggle_mode = true
 button_pressed = false
