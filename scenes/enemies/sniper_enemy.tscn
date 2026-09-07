@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/enemies/enemy.gd" id="1_enemy_script"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/enemy_projectile.tscn" id="2_enemy_projectile"]
+
+[node name="SniperEnemy" type="Node2D"]
+script = ExtResource("1_enemy_script")
+is_ranged = true
+projectile_scene = ExtResource("2_enemy_projectile")
+melee_range = 550.0
+
+[node name="Polygon2D" type="Polygon2D" parent="."]
+color = Color(0.15, 0.55, 0.25, 1)
+polygon = PackedVector2Array(-18, -24, 18, -24, 18, 24, -18, 24)
