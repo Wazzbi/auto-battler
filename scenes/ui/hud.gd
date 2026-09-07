@@ -28,6 +28,7 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var stat_speed: Label = $Control/BottomBar/StatSpeed
 @onready var stat_range: Label = $Control/BottomBar/StatRange
 @onready var stat_hp: Label = $Control/BottomBar/StatHP
+@onready var stat_armor: Label = $Control/BottomBar/StatArmor
 @onready var level_label: Label = $Control/BottomBar/LevelBadge/LevelLabel
 @onready var hp_bar: ProgressBar = $Control/BottomBar/HPBar
 @onready var hp_label: Label = $Control/BottomBar/HPBar/HPLabel
@@ -328,6 +329,7 @@ func _refresh_stat_labels() -> void:
 	stat_speed.text = "Rychlost: %.1f/s" % player_ref.get_attack_speed()
 	stat_range.text = "Dostřel: %.0f" % player_ref.get_attack_range()
 	stat_hp.text = "Max HP: %.0f" % player_ref.max_hp
+	stat_armor.text = "Brnění: %.0f" % player_ref.get_armor()
 
 
 func show_wave_cleared_message(wave_number: int) -> void:

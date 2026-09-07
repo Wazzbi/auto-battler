@@ -117,6 +117,24 @@ the existing move-when-clear logic once an enemy's range is allowed to exceed th
 exactly why `sniper_enemy_chance` (0.15) is set lower than `ranged_enemy_chance` (0.3) — snipers are
 meant to read as a rarer, more dangerous variant, not a routine replacement for the base enemy.
 
+**Ranged/sniper chance ramps in over the first few waves of loop 1** (`main.gd`'s
+`variant_ramp_start_wave`/`variant_ramp_full_wave`, `_variant_chance_multiplier()`): before wave 3
+neither variant can spawn at all; between wave 3 and wave 7 their chance grows linearly from 0 up to
+the full `ranged_enemy_chance`/`sniper_enemy_chance`; from wave 7 on it's the full configured value.
+This was a data-backed fix, not a guess — a headless simulation (real `main.tscn`/`player.gd`/
+`enemy.gd`, sped up via `Engine.time_scale`, "Auto" draft picking so it plays like a no-strategy
+player) showed **0/10 runs surviving even wave 1-4** with both variants active from wave 1 at their
+full chance, versus **4/10 runs clearing both of the first two loops** (20 waves) when ranged/sniper
+were disabled entirely — the dominant killer was ranged/sniper landing free, unavoidable damage from
+outside the player's own `attack_range` before the player had *any* item or level yet, not raw enemy
+count. Re-running the same simulation after adding the ramp pushed the average death wave from ~2.3
+to ~4.1 — a real improvement, but still short of reliably clearing 20 waves, so the ramp alone is a
+partial fix, not a finished balance pass (see the loop-1-only caveat below for why it isn't applied
+more broadly). **The ramp only applies in `loop_count == 1`** — from loop 2 onward both chances are
+always full — because by loop 2 the player has already been through the ramp once and carries level/
+item progression forward (see "Both player progression AND position/HP persist across loops" above),
+so softening the opening again would just make the endless mode easier over time instead of harder.
+
 **Enemy projectiles are their own script, never the player's** (`scenes/enemies/enemy_projectile.gd`,
 instantiated by `enemy.gd`'s `_shoot_projectile()`) — this satisfies a constraint flagged before any
 ranged enemy existed: since enemies don't block each other and can visually overlap (see above),
@@ -258,7 +276,13 @@ There are no sprite assets to manage; if you need to change how something looks,
 **Progression (XP → levels → item draft)**: enemies grant `reward` (gold) *and* `xp_reward` on
 death via `GameManager.enemy_defeated(reward, xp_reward)`. XP accumulates toward
 `xp_for_next_level()` (`XP_BASE + (level - 1) * XP_PER_LEVEL_GROWTH`); `add_xp()` loops so one big
-XP chunk can grant several levels at once. Each level queues one "item draft" (see below) — there
+XP chunk can grant several levels at once. **`XP_BASE` is tuned to 40, not the curve's original 60**,
+specifically so the first level-up (and first draft choice) lands before the end of wave 1 rather
+than partway through wave 2 — with the base enemy's `xp_reward` of 12 and `main.gd`'s wave-1 count
+of 4, that's exactly 48 XP from clearing wave 1 alone. This was a deliberate pacing choice (verified
+with a throwaway headless simulation of waves 1-3, not just eyeballed): a new run should show the
+player *something* — a draft card — almost immediately, rather than several minutes of pure combat
+before the first meaningful choice appears. Each level queues one "item draft" (see below) — there
 is no per-stat purchasing, no ability tree, and (as of this note) **no automatic stat growth from
 levelling either**: `LEVEL_STAT_GROWTH` was deliberately removed, so a bare level-up (before the
 resulting draft is resolved) changes nothing about the player's stats. This was a conscious
@@ -270,17 +294,40 @@ more once real active/passive abilities join the item pool (see below) — there
 "level-up = one upgrade slot" model instead of two parallel growth tracks to keep straight.
 
 **Stats flow**: base stats live as `@export` vars on `player.gd` (`base_damage`,
-`base_attack_speed`, `base_attack_range`, `base_max_hp`). Effective stats come from getters
-(`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`, `get_hp_regen()`)
-that add `GameManager.get_stat_bonus(stat_id)` — **the single place where progression turns into
-numbers**, and now purely a sum of picked-item ranks (no level term at all). The player recomputes
-on the `level_changed` and `item_rank_changed` signals — `level_changed` alone is a no-op for stats
-now, kept only so UI (the level badge, etc.) stays in sync; the HUD never touches player stats
-directly. **Balance caveat**: removing the automatic floor means a run's power now depends entirely
-on what the (currently small, 6-item) draft pool happens to offer — going several levels without
-seeing a given stat's item is possible (~50% chance per level to miss any one specific item with
-`DRAFT_CHOICE_COUNT` 3 of 6), so a fragile-feeling run from bad luck is a known, accepted trade-off
-for now, not yet tuned away.
+`base_attack_speed`, `base_attack_range`, `base_max_hp`, `base_armor`). Effective stats come from
+getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`,
+`get_hp_regen()`, `get_armor()`) that add `GameManager.get_stat_bonus(stat_id)` — **the single place
+where progression turns into numbers**, and now purely a sum of picked-item ranks (no level term at
+all). The player recomputes on the `level_changed` and `item_rank_changed` signals — `level_changed`
+alone is a no-op for stats now, kept only so UI (the level badge, etc.) stays in sync; the HUD never
+touches player stats directly. **Balance caveat**: removing the automatic floor means a run's power
+now depends entirely on what the (currently small, 7-item) draft pool happens to offer — going
+several levels without seeing a given stat's item is possible (~57% chance per level to miss any one
+specific item with `DRAFT_CHOICE_COUNT` 3 of 7), so a fragile-feeling run from bad luck is a known,
+accepted trade-off for now, not yet tuned away.
+
+**Armor (`base_armor`, `get_armor()`, `kinetic_dampers` item)**: a flat, per-hit damage reduction —
+`take_damage()` in `player.gd` computes `reduced_amount = max(amount - get_armor(), amount *
+MIN_DAMAGE_RATIO)` (`MIN_DAMAGE_RATIO` 0.1, so at least 10% of any hit always gets through, even
+against a fully-stacked armor build — this stops armor from ever granting outright immunity to a
+future, harder-hitting enemy type). This is a standard genre tool for a specific failure mode:
+"death by many small simultaneous hits" (several enemies each landing modest contact damage) rather
+than "death by one big hit" — unlike a percentage-based mitigation stat, a *flat* reduction hits
+weak/frequent damage sources hardest, which is exactly the profile of this game's enemies (see
+"data-backed fix" below). `base_armor` defaults to 2.0 (all current enemies deal exactly 5 contact
+damage, so base armor alone cuts that to 3 — a 40% reduction before any item at all);
+`kinetic_dampers` grants +2 armor per rank, matching `base_armor`'s scale, up to `MAX_ITEM_RANK` (5).
+
+**This was a data-backed fix, not a guess** — same headless simulation approach as the ranged/sniper
+ramp above (real `main.tscn`, "Auto" draft picking, sped up via `Engine.time_scale`). Before armor,
+even with the ranged/sniper ramp already in place, 0/10 runs survived both of the first two loops (20
+waves) and the average death wave was ~4.1; after adding armor, in a follow-up batch of 10 runs, 7
+died between wave 5 of loop 1 and wave 10 of **loop 2** (one run died on the very last wave of loop 1
+after clearing it entirely; another died on the very last wave of loop 2, i.e. 19 of 20 waves
+cleared), and the other 3 were still going when the simulation's time budget ran out. No config
+change here is claimed to make the game *strictly* survivable end-to-end — it moved the typical
+death point from "wave 2-4 of loop 1" to "deep into loop 1 or partway through loop 2," which is the
+kind of improvement that's meant to be judged by playtesting feel, not chased to a specific number.
 
 **Item/loot draft replaced the old ability tree** (`GameManager.ITEMS`/`ITEM_ORDER`, `hud.gd`,
 `Control/DraftPanel` in `hud.tscn`): instead of a fixed Q/W/E/R grid the player spent points into,
@@ -368,9 +415,9 @@ reuse the *real* code paths rather than shortcutting past them:
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, base stats, fall/intro animation params
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params
 - `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
-- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`
+- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_wave`/`variant_ramp_full_wave` (loop-1-only ramp for when ranged/sniper start appearing)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `is_ranged`/`projectile_scene`
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) is the one that matters most — it must stay above the player's base `attack_range` (400) for the "protected artillery" behavior described above to hold

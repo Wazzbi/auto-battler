@@ -31,8 +31,9 @@ const FINAL_WAVE: int = 10
 ## (nové typy nepřátel, jiné staty, ...), viz get_enemy_hp_multiplier().
 const ENEMY_HP_GROWTH_PER_LOOP: float = 0.5
 
-## XP potřebné na 2. úroveň; každá další úroveň stojí o XP_PER_LEVEL_GROWTH víc
-const XP_BASE: int = 60
+## XP potřebné na 2. úroveň; každá další úroveň stojí o XP_PER_LEVEL_GROWTH víc.
+## Sníženo z 60 na 40, aby první level-up padl už ve vlně 1, ne až v půlce vlny 2.
+const XP_BASE: int = 40
 const XP_PER_LEVEL_GROWTH: int = 40
 
 ## --- Item/loot draft --------------------------------------------------
@@ -87,10 +88,18 @@ const ITEMS := {
 		"stat": "hp_regen",
 		"per_rank": 0.5,
 	},
+	"kinetic_dampers": {
+		"name": "Kinetické tlumiče",
+		"short_name": "Tlumiče",
+		"desc": "+2 snížení poškození z každého zásahu za úroveň itemu",
+		"stat": "armor",
+		"per_rank": 2.0,
+	},
 }
 ## Pořadí itemů v HUD - drží layout stabilní nezávisle na pořadí v Dictionary
 const ITEM_ORDER: Array[String] = [
-	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating", "nanite_repair"
+	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating", "nanite_repair",
+	"kinetic_dampers"
 ]
 const MAX_ITEM_RANK: int = 5
 ## Kolik itemů se nabídne v jedné draft nabídce

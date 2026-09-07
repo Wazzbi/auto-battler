@@ -26,6 +26,12 @@ signal landed
 ## Pasivní regenerace HP za sekundu - tiká pořád, ne jen mimo boj (jako
 ## základní HP regen v League of Legends)
 @export var base_hp_regen: float = 1.0
+## Plochý odečet poškození z KAŽDÉHO zásahu (ne procento) - viz take_damage().
+## Standardní žánrový nástroj proti "umřu na součet spousty malých zásahů":
+## na rozdíl od ladění počtu/rychlosti nepřátel škáluje samo s tím, kolik
+## jich bude v budoucnu víc, protože každý jednotlivý zásah je relativně
+## slabší, ne jen méně častý.
+@export var base_armor: float = 2.0
 @export var move_speed: float = 60.0 # px/s postupu, když nikdo není v dosahu
 @export var projectile_scene: PackedScene
 @export var impact_effect_scene: PackedScene
@@ -140,6 +146,10 @@ func get_hp_regen() -> float:
 	return base_hp_regen + GameManager.get_stat_bonus("hp_regen")
 
 
+func get_armor() -> float:
+	return base_armor + GameManager.get_stat_bonus("armor")
+
+
 func _on_level_changed(_new_level: int) -> void:
 	_apply_progression_changes()
 
@@ -207,14 +217,24 @@ func _shoot(target: Node2D) -> void:
 	projectile.setup(get_damage(), target)
 
 
+## Kolik % původního poškození projde i přes libovolně vysoké brnění - brání
+## tomu, aby naskládané brnění (base + draftnuté ranky) udělalo hráče
+## nezranitelným vůči budoucím silnějším typům zásahů. Plochý odečet níž
+## je naopak záměrně bez podlahy pro NEGATIVNÍ hodnoty, takže proti slabým
+## zásahům (řádově pod hodnotou brnění) může efektivní poškození klesnout
+## skoro na tuhle podlahu.
+const MIN_DAMAGE_RATIO: float = 0.1
+
+
 func take_damage(amount: float) -> void:
 	if GameManager.state != GameManager.State.PLAYING:
 		return
 	if debug_invincible:
 		return
+	var reduced_amount: float = maxf(amount - get_armor(), amount * MIN_DAMAGE_RATIO)
 	# Ořez na nulu musí být před emitem - HUD ukazuje HP i číselně a jinak by
 	# na okamžik problikla záporná hodnota
-	hp = maxf(hp - amount, 0.0)
+	hp = maxf(hp - reduced_amount, 0.0)
 	hp_changed.emit(hp, max_hp)
 	if hp <= 0:
 		died.emit()

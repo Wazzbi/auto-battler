@@ -13,6 +13,15 @@ extends Node2D
 ## Nižší než ranged_enemy_chance - sniper (dostřel přes hráčův attack_range)
 ## je vzácnější a nebezpečnější varianta, ne běžná náhrada za normálního nepřítele
 @export var sniper_enemy_chance: float = 0.15
+## Do téhle vlny (v 1. kole) se ranged/sniper nepřátelé vůbec neobjevují -
+## viz _variant_chance_multiplier(). Bez rozjezdu umírali noví hráči často
+## už ve vlně 1-2, dřív než stihli zabít jediného nepřítele (ranged/sniper
+## dávají poškození zdarma z bezpečné vzdálenosti, na kterou hráč na začátku
+## nemá dosah ani itemy).
+@export var variant_ramp_start_wave: int = 3
+## Od téhle vlny (v 1. kole) mají ranged_enemy_chance/sniper_enemy_chance
+## svou plnou nakonfigurovanou hodnotu - mezi start a full lineárně narůstá.
+@export var variant_ramp_full_wave: int = 7
 @export var enemies_base_count: int = 4
 ## Násobitel odmocninové křivky obtížnosti - růst je postupný, ne skokový
 @export var difficulty_growth: float = 1.2
@@ -83,9 +92,12 @@ func _spawn_enemy() -> void:
 		# mohly obě "trefit" najednou a bez smyslu upřednostnit tu poslední
 		# zkontrolovanou podmínku.
 		var roll: float = randf()
-		if sniper_enemy_scene != null and roll < sniper_enemy_chance:
+		var variant_multiplier: float = _variant_chance_multiplier()
+		var effective_sniper_chance: float = sniper_enemy_chance * variant_multiplier
+		var effective_ranged_chance: float = ranged_enemy_chance * variant_multiplier
+		if sniper_enemy_scene != null and roll < effective_sniper_chance:
 			scene_to_spawn = sniper_enemy_scene
-		elif ranged_enemy_scene != null and roll < sniper_enemy_chance + ranged_enemy_chance:
+		elif ranged_enemy_scene != null and roll < effective_sniper_chance + effective_ranged_chance:
 			scene_to_spawn = ranged_enemy_scene
 
 	_spawn_at_edge(scene_to_spawn)
@@ -111,6 +123,22 @@ func _spawn_at_edge(scene: PackedScene) -> Node2D:
 
 	GameManager.register_enemy_spawned()
 	return enemy
+
+
+## Násobitel 0-1 pro ranged_enemy_chance/sniper_enemy_chance - lineárně roste
+## od variant_ramp_start_wave (0) do variant_ramp_full_wave (1). Platí JEN
+## v 1. kole (loop_count == 1) - od 2. kola dál je vždy plný, protože hráč
+## už jednou rozjezdem prošel a má z předchozího kola úroveň i itemy, takže
+## další "měkký start" by jen zbytečně zjednodušil endless škálování.
+func _variant_chance_multiplier() -> float:
+	if GameManager.loop_count > 1:
+		return 1.0
+	if GameManager.current_wave < variant_ramp_start_wave:
+		return 0.0
+	if GameManager.current_wave >= variant_ramp_full_wave:
+		return 1.0
+	var span: int = variant_ramp_full_wave - variant_ramp_start_wave
+	return float(GameManager.current_wave - variant_ramp_start_wave) / float(span)
 
 
 func _on_wave_started(wave_number: int) -> void:
