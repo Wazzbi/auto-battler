@@ -1,6 +1,6 @@
 extends Node
 ## Globální singleton (Autoload) - řídí vlny nepřátel, měnu, zkušenosti,
-## úrovně hráče a jeho schopnosti. Zaregistrován v Project Settings > Autoload
+## úrovně hráče a jeho vylepšení. Zaregistrován v Project Settings > Autoload
 ## jako "GameManager".
 
 signal wave_started(wave_number: int)
@@ -10,8 +10,11 @@ signal game_won_triggered
 signal currency_changed(new_amount: int)
 signal xp_changed(current_xp: int, xp_needed: int)
 signal level_changed(new_level: int)
-signal ability_points_changed(amount: int)
-signal ability_rank_changed(ability_id: String, new_rank: int)
+## Emitne se, když je k dispozici nová nabídka itemů k výběru (viz
+## "Item/loot draft" níže) - HUD podle toho buď zobrazí DraftPanel, nebo
+## (má-li zapnutý Auto výběr) rovnou zavolá resolve_draft() sám.
+signal item_draft_ready(offered_ids: Array)
+signal item_rank_changed(item_id: String, new_rank: int)
 signal loop_changed(new_loop: int)
 
 enum State { INTRO, PLAYING, GAME_OVER, WON }
@@ -31,8 +34,6 @@ const ENEMY_HP_GROWTH_PER_LOOP: float = 0.5
 ## XP potřebné na 2. úroveň; každá další úroveň stojí o XP_PER_LEVEL_GROWTH víc
 const XP_BASE: int = 60
 const XP_PER_LEVEL_GROWTH: int = 40
-## Nejvyšší rank jedné schopnosti (jako v MOBA hrách - 5 bodů do schopnosti)
-const MAX_ABILITY_RANK: int = 5
 
 ## O kolik se automaticky zvednou základní staty za každou získanou úroveň.
 ## Úroveň 1 = čisté base staty z player.gd, každá další přidá tyto hodnoty.
@@ -43,46 +44,70 @@ const LEVEL_STAT_GROWTH := {
 	"attack_range": 15.0,
 }
 
-## Definice čtyř schopností. Aktivní efekty (projektily, animace) zatím nejsou -
-## každý rank prozatím jen pasivně přičítá `per_rank` ke statu `stat`, aby body
-## do schopností měly herní dopad. Až se budou dělat opravdové aktivní
-## schopnosti, mění se jen tahle tabulka a get_stat_bonus().
-const ABILITIES := {
-	"q": {
-		"key": "Q",
-		"name": "Salva",
-		"desc": "+1 zasažený cíl za rank",
-		"stat": "multishot",
-		"per_rank": 1.0,
-	},
-	"w": {
-		"key": "W",
-		"name": "Průraz",
-		"desc": "+4 poškození za rank",
+## --- Item/loot draft --------------------------------------------------
+## Náhrada za dřívější strom schopností (Q/W/E/R). Místo utrácení bodů do
+## pevně daných 4 schopností si hráč při každém level-upu vybírá 1 ze 3
+## náhodně nabídnutých itemů - stejný princip jako "level-up card" ve
+## Vampire Survivors. Efekt je záměrně stejně jednoduchý jako dřív u
+## schopností (pasivní bonus `per_rank` ke statu `stat` za každý rank) -
+## mění se JEN zdroj volby (náhodná nabídka místo pevného stromu), ne
+## herní dopad. Až budou mít itemy skutečné aktivní efekty, mění se jen
+## tahle tabulka a get_stat_bonus().
+const ITEMS := {
+	"power_core": {
+		"name": "Jádro síly",
+		"short_name": "Jádro",
+		"desc": "+4 poškození za úroveň itemu",
 		"stat": "damage",
 		"per_rank": 4.0,
 	},
-	"e": {
-		"key": "E",
-		"name": "Rychlopalba",
-		"desc": "+0.15 útoku/s za rank",
+	"rapid_coils": {
+		"name": "Rychlopalné cívky",
+		"short_name": "Palba",
+		"desc": "+0.15 útoku/s za úroveň itemu",
 		"stat": "attack_speed",
 		"per_rank": 0.15,
 	},
-	"r": {
-		"key": "R",
-		"name": "Dalekostřel",
-		"desc": "+40 dostřelu za rank",
+	"long_barrel": {
+		"name": "Prodloužená hlaveň",
+		"short_name": "Dostřel",
+		"desc": "+40 dostřelu za úroveň itemu",
 		"stat": "attack_range",
 		"per_rank": 40.0,
 	},
+	"split_rounds": {
+		"name": "Dělené střely",
+		"short_name": "Rozptyl",
+		"desc": "+1 zasažený cíl za úroveň itemu",
+		"stat": "multishot",
+		"per_rank": 1.0,
+	},
+	"reinforced_plating": {
+		"name": "Zesílený pancíř",
+		"short_name": "Pancíř",
+		"desc": "+20 max. HP za úroveň itemu",
+		"stat": "max_hp",
+		"per_rank": 20.0,
+	},
+	"nanite_repair": {
+		"name": "Nanitová oprava",
+		"short_name": "Regen",
+		"desc": "+0.5 regenerace HP/s za úroveň itemu",
+		"stat": "hp_regen",
+		"per_rank": 0.5,
+	},
 }
-## Pořadí schopností v HUD - drží layout stabilní nezávisle na pořadí v Dictionary
-const ABILITY_ORDER: Array[String] = ["q", "w", "e", "r"]
+## Pořadí itemů v HUD - drží layout stabilní nezávisle na pořadí v Dictionary
+const ITEM_ORDER: Array[String] = [
+	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating", "nanite_repair"
+]
+const MAX_ITEM_RANK: int = 5
+## Kolik itemů se nabídne v jedné draft nabídce
+const DRAFT_CHOICE_COUNT: int = 3
 
 var current_wave: int = 0
 ## Kolikáté kolo (průchod 10 vlnami) hráč zrovna hraje. Roste, hráčova
-## progrese (úroveň/XP/schopnosti/měna) se ale mezi koly NERESETUJE -
+## progrese (úroveň/XP/itemy/měna) se ale mezi koly NERESETUJE -
 ## viz _start_new_loop(). Resetuje se jen na skutečný Game Over (reset_game()).
 var loop_count: int = 1
 var currency: int = 0
@@ -92,9 +117,14 @@ var state: State = State.INTRO
 
 var player_level: int = 1
 var player_xp: int = 0
-## Nevyužité body do schopností. Hráč dostane 1 na startu a 1 za každou úroveň.
-var ability_points: int = 1
-var ability_ranks := {"q": 0, "w": 0, "e": 0, "r": 0}
+var item_ranks: Dictionary = {}
+## Kolik draft nabídek čeká na vyřízení - víc než 1 může nastat, když hráč
+## dostane hodně XP naráz a povýší o víc úrovní v jednom volání add_xp().
+## HUD nabídky vyřizuje jednu po druhé (viz resolve_draft()).
+var pending_drafts: int = 0
+## Itemy nabídnuté v AKTUÁLNĚ čekající draft nabídce - resolve_draft() proti
+## nim ověřuje, že hráč vybírá opravdu z toho, co bylo nabídnuto.
+var _current_offer: Array = []
 
 
 ## Volá main.gd v _enter_tree(), tedy DŘÍV než se spustí _ready() hráče a HUD -
@@ -109,8 +139,11 @@ func reset_game() -> void:
 	state = State.INTRO
 	player_level = 1
 	player_xp = 0
-	ability_points = 1
-	ability_ranks = {"q": 0, "w": 0, "e": 0, "r": 0}
+	pending_drafts = 0
+	_current_offer = []
+	item_ranks.clear()
+	for item_id in ITEM_ORDER:
+		item_ranks[item_id] = 0
 
 
 ## Zavolá level/spawner, aby oznámil, že spawnul nepřítele (pro sledování stavu vlny)
@@ -145,7 +178,7 @@ func start_next_wave() -> void:
 
 ## Vyčištěním FINAL_WAVE hra nekončí - vlny se vrátí na 1 se silnějšími
 ## nepřáteli (viz get_enemy_hp_multiplier()), ale hráčova progrese (úroveň,
-## XP, schopnosti, měna) i pozice a HP zůstávají přesně tak, jak byly - level
+## XP, itemy, měna) i pozice a HP zůstávají přesně tak, jak byly - level
 ## je bezkonečný, takže postava jen pokračuje dál dopředu (viz player.gd,
 ## HP se doplňuje pasivní regenerací, ne skokově při každém kole).
 func _start_new_loop() -> void:
@@ -178,42 +211,74 @@ func add_xp(amount: int) -> void:
 
 func _level_up() -> void:
 	player_level += 1
-	ability_points += 1
-	# level_changed první - hráč si podle něj přepočítá staty, teprve pak HUD
-	# reaguje na nové body do schopností
+	pending_drafts += 1
+	# level_changed první - hráč si podle něj přepočítá staty, teprve pak
+	# přijde případná nabídka itemu.
 	level_changed.emit(player_level)
-	ability_points_changed.emit(ability_points)
+	_try_offer_next_draft()
 
 
-## Utratí 1 bod - buď odemkne zamčenou schopnost (rank 0 -> 1), nebo zvýší rank
-## už odemčené. Vrací false, pokud nejsou body nebo je schopnost na max ranku.
-func spend_ability_point(ability_id: String) -> bool:
-	if ability_points <= 0:
+## Vylosuje až DRAFT_CHOICE_COUNT náhodných itemů, které ještě nejsou na
+## maximálním ranku. Volá se pokaždé znovu (ne jednou dopředu), aby nabídka
+## odrážela aktuální stav itemů v okamžiku, kdy se skutečně zobrazí.
+func _roll_draft_options() -> Array:
+	var eligible: Array = []
+	for item_id in ITEM_ORDER:
+		if item_ranks[item_id] < MAX_ITEM_RANK:
+			eligible.append(item_id)
+	eligible.shuffle()
+	return eligible.slice(0, mini(DRAFT_CHOICE_COUNT, eligible.size()))
+
+
+## Pokud čeká aspoň jedna draft nabídka A zrovna žádná není rozehraná,
+## vylosuje itemy a emitne item_draft_ready. Když už nejsou žádné itemy pod
+## maximem (nic k nabídnutí), nabídku potichu "spotřebuje" bez zobrazení a
+## zkusí další frontu. Podmínka `_current_offer.is_empty()` je nutná - bez
+## ní by každý _level_up() ve stejném volání add_xp() (velký přísun XP naráz
+## povýší o víc úrovní ve smyčce) vygeneroval a emitnul VLASTNÍ nabídku, i
+## když už jedna čeká na vyřízení.
+func _try_offer_next_draft() -> void:
+	if pending_drafts <= 0 or not _current_offer.is_empty():
+		return
+
+	var offered: Array = _roll_draft_options()
+	if offered.is_empty():
+		pending_drafts -= 1
+		_try_offer_next_draft()
+		return
+
+	_current_offer = offered
+	item_draft_ready.emit(offered)
+
+
+## Zavolá HUD, když hráč (nebo Auto výběr) vybere item z aktuální nabídky.
+## Vrací false, pokud zrovna žádná nabídka nečeká nebo item_id není mezi
+## nabídnutými (ochrana proti zastaralému/duplicitnímu kliknutí).
+func resolve_draft(item_id: String) -> bool:
+	if pending_drafts <= 0 or not _current_offer.has(item_id):
 		return false
-	if not ability_ranks.has(ability_id):
-		return false
 
-	var new_rank: int = int(ability_ranks[ability_id]) + 1
-	if new_rank > MAX_ABILITY_RANK:
-		return false
+	pending_drafts -= 1
+	_current_offer = []
 
-	ability_points -= 1
-	ability_ranks[ability_id] = new_rank
-	ability_rank_changed.emit(ability_id, new_rank)
-	ability_points_changed.emit(ability_points)
+	var new_rank: int = int(item_ranks[item_id]) + 1
+	item_ranks[item_id] = new_rank
+	item_rank_changed.emit(item_id, new_rank)
+
+	_try_offer_next_draft()
 	return true
 
 
-## Celkový bonus ke statu = růst za úrovně + ranky schopností, které na stat působí.
-## Jediné místo, kde se progrese promítá do statů - player.gd si ho jen přičítá
-## ke svým base hodnotám.
+## Celkový bonus ke statu = růst za úrovně + rank vybraných itemů, které na
+## stat působí. Jediné místo, kde se progrese promítá do statů - player.gd
+## si ho jen přičítá ke svým base hodnotám.
 func get_stat_bonus(stat_id: String) -> float:
 	var bonus: float = float(LEVEL_STAT_GROWTH.get(stat_id, 0.0)) * float(player_level - 1)
 
-	for ability_id in ABILITY_ORDER:
-		var definition: Dictionary = ABILITIES[ability_id]
+	for item_id in ITEM_ORDER:
+		var definition: Dictionary = ITEMS[item_id]
 		if definition["stat"] == stat_id:
-			bonus += float(definition["per_rank"]) * float(ability_ranks[ability_id])
+			bonus += float(definition["per_rank"]) * float(item_ranks[item_id])
 
 	return bonus
 
@@ -253,30 +318,28 @@ func debug_add_currency(amount: int) -> void:
 	currency_changed.emit(currency)
 
 
-## DEBUG: přidá body do schopností bez nutnosti levelovat
-func debug_add_ability_points(amount: int) -> void:
-	ability_points += amount
-	ability_points_changed.emit(ability_points)
+## DEBUG: rovnou vynutí jednu draft nabídku bez čekání na level-up
+func debug_force_draft() -> void:
+	pending_drafts += 1
+	_try_offer_next_draft()
 
 
-## DEBUG: nastaví všechny schopnosti rovnou na maximální rank
-func debug_max_abilities() -> void:
-	for ability_id in ABILITY_ORDER:
-		if ability_ranks[ability_id] < MAX_ABILITY_RANK:
-			ability_ranks[ability_id] = MAX_ABILITY_RANK
-			ability_rank_changed.emit(ability_id, MAX_ABILITY_RANK)
+## DEBUG: nastaví všechny itemy rovnou na maximální rank
+func debug_max_items() -> void:
+	for item_id in ITEM_ORDER:
+		if item_ranks[item_id] < MAX_ITEM_RANK:
+			item_ranks[item_id] = MAX_ITEM_RANK
+			item_rank_changed.emit(item_id, MAX_ITEM_RANK)
 
 
-## DEBUG: vynuluje ranky schopností a vrátí za ně body zpět (respec) - pro
-## rychlé vyzkoušení jiného buildu
-func debug_reset_abilities() -> void:
-	for ability_id in ABILITY_ORDER:
-		var rank: int = ability_ranks[ability_id]
-		if rank > 0:
-			ability_points += rank
-			ability_ranks[ability_id] = 0
-			ability_rank_changed.emit(ability_id, 0)
-	ability_points_changed.emit(ability_points)
+## DEBUG: vynuluje ranky všech itemů - pro rychlé vyzkoušení jiného buildu.
+## Na rozdíl od dřívějšího respecu schopností nevrací žádné "body" - itemy
+## se nekupují za body, jen se draftí při level-upu.
+func debug_reset_items() -> void:
+	for item_id in ITEM_ORDER:
+		if item_ranks[item_id] > 0:
+			item_ranks[item_id] = 0
+			item_rank_changed.emit(item_id, 0)
 
 
 ## DEBUG: přeskočí rovnou na další kolo (jen zvýší multiplikátor HP

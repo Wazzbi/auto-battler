@@ -25,7 +25,7 @@ There are no automated tests, linters, or CLI build commands in this project.
 ## Architecture
 
 **Autoload singleton (`scripts/autoload/game_manager.gd`, registered as `GameManager`)** is the
-single source of truth for game state: current wave, currency, XP/level/ability ranks, enemy counts,
+single source of truth for game state: current wave, currency, XP/level/item ranks, enemy counts,
 and the `State` enum (`INTRO`, `PLAYING`, `GAME_OVER`, `WON`). Almost every gameplay script gates
 its `_process` logic behind `if GameManager.state != GameManager.State.PLAYING: return`. Wave
 progression is continuous — clearing a wave immediately calls `start_next_wave()`, there is no
@@ -33,7 +33,7 @@ forced pause between waves. All player progression lives here, not on the player
 
 **`reset_game()` must be called from `main.gd`'s `_enter_tree()`, not `_ready()`.** Godot calls a
 parent's `_ready()` *after* its children's, so resetting in `_ready()` would let `player.gd` and
-`hud.gd` initialize from the *previous* run's level/ability ranks — visible as wrong stats after the
+`hud.gd` initialize from the *previous* run's level/item ranks — visible as wrong stats after the
 Game Over auto-restart (`reload_current_scene()`), since `GameManager` is an autoload and survives
 the reload.
 
@@ -138,7 +138,7 @@ entirely during testing until this was fixed.
 (`FINAL_WAVE`) doesn't call `trigger_win()` anymore — `_on_wave_cleared()` calls
 `_start_new_loop()` instead, which increments `loop_count`, resets `current_wave` to 0, and calls
 `start_next_wave()` to jump straight back into wave 1. **Both player progression AND position/HP
-persist across loops** — level, XP, ability ranks/points, currency, world position, and current HP
+persist across loops** — level, XP, item ranks, currency, world position, and current HP
 are all untouched by a loop transition (there is no `reset_game()` call anywhere in this path, and
 `player.gd` no longer reacts to `loop_changed` at all). Since the level is boundless, the player
 just keeps walking forward through loop after loop rather than restarting from the spawn point.
@@ -207,46 +207,63 @@ rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact
 There are no sprite assets to manage; if you need to change how something looks, look for a
 `_draw()` override or `Polygon2D` node rather than an image file.
 
-**Progression (XP → levels → abilities)**: enemies grant `reward` (gold) *and* `xp_reward` on death
-via `GameManager.enemy_defeated(reward, xp_reward)`. XP accumulates toward
+**Progression (XP → levels → item draft)**: enemies grant `reward` (gold) *and* `xp_reward` on
+death via `GameManager.enemy_defeated(reward, xp_reward)`. XP accumulates toward
 `xp_for_next_level()` (`XP_BASE + (level - 1) * XP_PER_LEVEL_GROWTH`); `add_xp()` loops so one big
 XP chunk can grant several levels at once. Each level raises every base stat automatically by
-`LEVEL_STAT_GROWTH` and grants 1 ability point. The player starts at level 1 *with 1 point already
-banked*, so the first click always unlocks one ability — matching the MOBA rule the design is based
-on ("at the start you have exactly one ability"). There is no per-stat purchasing anymore.
+`LEVEL_STAT_GROWTH` and queues one "item draft" (see below) — there is no per-stat purchasing and
+no ability tree; the player never spends a manually-banked point.
 
 **Stats flow**: base stats live as `@export` vars on `player.gd` (`base_damage`,
 `base_attack_speed`, `base_attack_range`, `base_max_hp`). Effective stats come from getters
-(`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`) that add
-`GameManager.get_stat_bonus(stat_id)` — **the single place where progression turns into numbers**
-(level growth + ability ranks summed together). The player recomputes on the `level_changed` and
-`ability_rank_changed` signals; the HUD never touches player stats, it only calls
-`GameManager.spend_ability_point(ability_id)` and re-reads the getters for display.
+(`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`, `get_hp_regen()`)
+that add `GameManager.get_stat_bonus(stat_id)` — **the single place where progression turns into
+numbers** (level growth + picked-item ranks summed together). The player recomputes on the
+`level_changed` and `item_rank_changed` signals; the HUD never touches player stats directly.
 
-**Abilities are placeholders**: `GameManager.ABILITIES` defines four abilities (Q/W/E/R) with a
-`stat` + `per_rank` pair instead of real active effects — a rank currently just adds passively to a
-stat, so spending points has a gameplay effect while actual spells don't exist yet. Ranks cap at
-`MAX_ABILITY_RANK`. When real active abilities get built, that table and `get_stat_bonus()` are the
-only things that need to change; the HUD iterates `ABILITY_ORDER` and reads `ABILITIES` generically,
-so adding/renaming abilities does not require touching UI code (only the matching
-`Ability<KEY>` / `AbilityRank<KEY>` nodes in `hud.tscn`).
+**Item/loot draft replaced the old ability tree** (`GameManager.ITEMS`/`ITEM_ORDER`, `hud.gd`,
+`Control/DraftPanel` in `hud.tscn`): instead of a fixed Q/W/E/R grid the player spent points into,
+each level-up now queues an offer of `DRAFT_CHOICE_COUNT` (3) *random* items — same "pick one of
+three" pattern as Vampire Survivors' level-up cards. This was a deliberate replacement, not an
+addition: the previous ability system gave a flat, always-the-same choice every run (see the
+brainstorm this came from), while randomized offers make each run's build meaningfully different.
+Mechanically the payoff is identical to before — each item has a `stat` + `per_rank` pair and a
+rank up to `MAX_ITEM_RANK`, so it's still just a passive bonus, not a real active effect (same
+placeholder status the abilities had; when real active effects get built, `ITEMS` and
+`get_stat_bonus()` are still the only things that need to change).
 
-**Auto ability-point assignment**: the "Auto" toggle button in `hud.gd` (default ON) spends new
-ability points for the player automatically - `_maybe_auto_assign()` picks uniformly at random
-among abilities not yet at `MAX_ABILITY_RANK` and calls `GameManager.spend_ability_point()` in a
-loop until points run out or every ability is maxed. **This is a deliberately temporary/placeholder
-rule** (no weighting, no preference for unlocking a new ability over ranking up an existing one) -
-it's flagged to be revisited once real active abilities exist and some builds become better than
-others. Toggling Auto off just stops the auto-spend; points bank up and go back to manual clicking,
-same as before this feature existed. The reentrancy guard (`_auto_assigning`) exists because
-`spend_ability_point()` emits `ability_points_changed` synchronously, which would otherwise call
-`_maybe_auto_assign()` again mid-loop.
+**Draft flow / one offer at a time**: `_level_up()` increments `GameManager.pending_drafts` and
+calls `_try_offer_next_draft()`, which only actually rolls and emits `item_draft_ready` if
+`_current_offer` is empty — **this guard is load-bearing**, not decorative: a single big XP grant
+(e.g. the Debug panel's "+500 XP") can call `_level_up()` several times synchronously inside
+`add_xp()`'s loop, and without the guard each of those calls would roll and emit its own offer,
+stomping `_current_offer` and desyncing `pending_drafts` from what's actually on screen. Offers are
+resolved one at a time via `resolve_draft(item_id)`, which clears `_current_offer` and calls
+`_try_offer_next_draft()` again — so a big XP grant queues N drafts that the HUD walks through
+sequentially, not simultaneously.
+
+**Draft pauses the game, unlike the old ability buttons did** (`_show_draft_panel()` /
+`_on_draft_pick_pressed()` in `hud.gd`, mirroring the Shop's `get_tree().paused` pattern) — a
+level-up card is meant to be a deliberate stop-and-choose moment. The "Auto" toggle
+(`Control/BottomBar/AutoAssignToggle`, **default OFF** — this is a deliberate flip from the old
+ability system's default-ON Auto, see below) resolves offers with a uniformly random pick and skips
+the panel/pause entirely. Toggling Auto **on** while a draft is already showing must proactively
+resolve it (`_on_draft_auto_toggled()`) — otherwise the panel would stay stuck open forever, since
+nothing else would ever call `resolve_draft()` for it.
+
+**Why Auto defaults OFF now, unlike the old ability-point Auto-assign (which defaulted ON)**: the
+entire point of switching to randomized item drafts was to give the player a real, visible choice
+each level — defaulting Auto to on would silently defeat that by never showing the player the
+choice is happening at all. Auto is kept as an opt-in convenience for fast playtesting/debugging,
+not as the expected default experience. The random-pick logic itself is still a deliberately
+simple placeholder (no weighting by current build) — same caveat the old ability Auto-assign had.
 
 **HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
-portrait with a level badge, HP bar, XP bar, the four ability buttons with rank labels, six
-(currently decorative) item slots, gold, and the shop button. Right-side elements are anchored to
-the right edge and the bars stretch, so the bar survives window resizing. The old "Upgrade" button
-and its stats panel are gone — ability points are spent by clicking the ability buttons directly.
+portrait with a level badge, HP bar, XP bar, six picked-item slots (`PickedItemSlot0..5`, indexed
+to match `GameManager.ITEM_ORDER` — grayed out at rank 0, shows `short_name` + rank once picked),
+six (currently decorative, unrelated — future equipment loot) `ItemSlot1..6` rects, gold, and the
+shop button. Right-side elements are anchored to the right edge and the bars stretch, so the bar
+survives window resizing.
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
@@ -280,9 +297,12 @@ reuse the *real* code paths rather than shortcutting past them:
   it also speeds up Timers, Tweens, and the Game Over/Victory countdown, and (unlike everything
   else on this panel) is **not** reset by a scene reload; the button re-syncs its own label from
   the actual `Engine.time_scale` in `_setup_debug_panel()` so it doesn't lie after a restart.
-- **Max/Reset schopností** double as a quick respec tool — reset refunds every spent point rather
-  than just zeroing ranks, so ability point math stays internally consistent (verified in tests: HP
-  regen bonus stays derivable the same way, nothing about `get_stat_bonus()` needed to change).
+- **Vynutit draft** calls `GameManager.debug_force_draft()` to queue an offer immediately, bypassing
+  the level-up requirement — the fastest way to test the draft UI/flow without grinding XP.
+- **Max/Reset itemy** are a blunt build-testing tool — max sets every item straight to
+  `MAX_ITEM_RANK`, reset zeroes every rank. Unlike the old ability respec, reset does **not** refund
+  anything to re-spend, because items were never bought with a spendable currency in the first
+  place — they're free picks from a draft, so "reset" is just a clean slate for the next level-up.
 
 ## Key tunables when adjusting gameplay
 
@@ -293,5 +313,5 @@ reuse the *real* code paths rather than shortcutting past them:
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), ability definitions and `MAX_ABILITY_RANK`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), per-level stat growth (`LEVEL_STAT_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)

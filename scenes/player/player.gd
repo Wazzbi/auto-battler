@@ -53,10 +53,10 @@ var debug_invincible: bool = false
 func _ready() -> void:
 	add_to_group("player")
 
-	# Progrese (úrovně, ranky schopností) mění staty za běhu - reagujeme na oba
-	# signály, HUD do statů hráče nikdy nesahá přímo.
+	# Progrese (úrovně, ranky draftnutých itemů) mění staty za běhu - reagujeme
+	# na oba signály, HUD do statů hráče nikdy nesahá přímo.
 	GameManager.level_changed.connect(_on_level_changed)
-	GameManager.ability_rank_changed.connect(_on_ability_rank_changed)
+	GameManager.item_rank_changed.connect(_on_item_rank_changed)
 
 	_recalculate_stats()
 	hp = max_hp
@@ -127,7 +127,7 @@ func get_attack_range() -> float:
 	return base_attack_range + GameManager.get_stat_bonus("attack_range")
 
 
-## Kolik cílů hráč zasáhne najednou (1 + bonus ze schopnosti Salva)
+## Kolik cílů hráč zasáhne najednou (1 + bonus z itemu "Dělené střely")
 func get_target_count() -> int:
 	return 1 + int(GameManager.get_stat_bonus("multishot"))
 
@@ -143,7 +143,7 @@ func _on_level_changed(_new_level: int) -> void:
 	_apply_progression_changes()
 
 
-func _on_ability_rank_changed(_ability_id: String, _new_rank: int) -> void:
+func _on_item_rank_changed(_item_id: String, _new_rank: int) -> void:
 	_apply_progression_changes()
 
 
