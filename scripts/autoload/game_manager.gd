@@ -114,10 +114,14 @@ const DRAFT_CHOICE_COUNT: int = 3
 ## reálné rozhodnutí, co koupit a co vynechat, ne jen "vezmi všechno".
 ## Itemy dávají víc statů najednou (na rozdíl od draftu, kde má každý item
 ## jen jeden stat) - odlišuje to obchod jako vlastní systém, ne jen druhou
-## cestu ke stejným číslům. `tier`/`recipe` jsou zatím nevyužitá pole
-## připravená pro budoucí "combine" strom (viz Card0..6 v hud.tscn) - až
-## bude existovat, item s tier > 1 bude mít recipe vyplněné ID komponent
-## itemů, které při "spojení" spotřebuje.
+## cestu ke stejným číslům.
+##
+## Dřív tu byl i "combine" strom (2 základní itemy -> 1 silnější tier-2 item)
+## - zrušený ve prospěch plánovaného systému rarity (Bronz/Stříbro/Zlato/
+## Diamant, opakovaná koupě stejného itemu zvedá jeho raritu), který dělá v
+## podstatě totéž (odměna za opakovanou investici), ale jako jeden sjednocený
+## systém místo dvou paralelních. Rarita zatím není implementovaná - tohle
+## je jen odstranění toho, co nahrazuje.
 const SHOP_ITEMS := {
 	"overcharged_core": {
 		"name": "Přebíječ jader",
@@ -125,8 +129,6 @@ const SHOP_ITEMS := {
 		"desc": "+6 poškození\n+0.2 útoku/s",
 		"stats": {"damage": 6.0, "attack_speed": 0.2},
 		"cost": 200,
-		"tier": 1,
-		"recipe": [],
 	},
 	"field_plating": {
 		"name": "Terénní pancéřování",
@@ -134,8 +136,6 @@ const SHOP_ITEMS := {
 		"desc": "+30 max. HP\n+3 brnění",
 		"stats": {"max_hp": 30.0, "armor": 3.0},
 		"cost": 200,
-		"tier": 1,
-		"recipe": [],
 	},
 	"targeting_module": {
 		"name": "Zaměřovací modul",
@@ -143,8 +143,6 @@ const SHOP_ITEMS := {
 		"desc": "+50 dostřel\n+1 zasažený cíl",
 		"stats": {"attack_range": 50.0, "multishot": 1.0},
 		"cost": 220,
-		"tier": 1,
-		"recipe": [],
 	},
 	"nanite_regenerator": {
 		"name": "Nanitový regenerátor",
@@ -152,8 +150,6 @@ const SHOP_ITEMS := {
 		"desc": "+1.0 regenerace HP/s\n+3 brnění",
 		"stats": {"hp_regen": 1.0, "armor": 3.0},
 		"cost": 180,
-		"tier": 1,
-		"recipe": [],
 	},
 	"overloaded_coils": {
 		"name": "Přetížené cívky",
@@ -161,8 +157,6 @@ const SHOP_ITEMS := {
 		"desc": "+0.2 útoku/s\n+1 zasažený cíl",
 		"stats": {"attack_speed": 0.2, "multishot": 1.0},
 		"cost": 220,
-		"tier": 1,
-		"recipe": [],
 	},
 	"gravity_stabilizer": {
 		"name": "Gravitační stabilizátor",
@@ -170,8 +164,6 @@ const SHOP_ITEMS := {
 		"desc": "+30 max. HP\n+50 dostřel",
 		"stats": {"max_hp": 30.0, "attack_range": 50.0},
 		"cost": 200,
-		"tier": 1,
-		"recipe": [],
 	},
 	"destruction_core": {
 		"name": "Jádro destrukce",
@@ -179,43 +171,6 @@ const SHOP_ITEMS := {
 		"desc": "+6 poškození\n+30 max. HP",
 		"stats": {"damage": 6.0, "max_hp": 30.0},
 		"cost": 220,
-		"tier": 1,
-		"recipe": [],
-	},
-	## --- Tier 2 (spojené itemy) ------------------------------------------
-	## "cost" tady NENÍ prodejní cena, ale poplatek za SPOJENÍ navrch k tomu,
-	## co obě komponenty už stály (viz combine_shop_item()). Spojení sní obě
-	## komponenty a nahradí je jedním itemem - čistý efekt na sloty je -1
-	## (2 komponenty zmizí, item přibude), takže nikdy nemůže narazit na
-	## MAX_SHOP_SLOTS. Staty jsou o něco víc než prostý součet komponent
-	## (odměna za investici), stejně jako u finálních itemů v League of
-	## Legends.
-	"annihilation_core": {
-		"name": "Jádro anihilace",
-		"short_name": "Anihilace",
-		"desc": "+16 poškození\n+0.25 útoku/s\n+30 max. HP",
-		"stats": {"damage": 16.0, "attack_speed": 0.25, "max_hp": 30.0},
-		"cost": 160,
-		"tier": 2,
-		"recipe": ["overcharged_core", "destruction_core"],
-	},
-	"regenerating_bastion": {
-		"name": "Regenerační bašta",
-		"short_name": "Bašta",
-		"desc": "+35 max. HP\n+8 brnění\n+1.5 regenerace HP/s",
-		"stats": {"max_hp": 35.0, "armor": 8.0, "hp_regen": 1.5},
-		"cost": 140,
-		"tier": 2,
-		"recipe": ["field_plating", "nanite_regenerator"],
-	},
-	"swarm_emitter": {
-		"name": "Rojový emitor",
-		"short_name": "Emitor",
-		"desc": "+50 dostřel\n+3 zasažené cíle\n+0.2 útoku/s",
-		"stats": {"attack_range": 50.0, "multishot": 3.0, "attack_speed": 0.2},
-		"cost": 170,
-		"tier": 2,
-		"recipe": ["targeting_module", "overloaded_coils"],
 	},
 }
 ## Pořadí itemů v obchodě - 7 itemů na jen 6 slotů (viz MAX_SHOP_SLOTS), takže
@@ -223,12 +178,6 @@ const SHOP_ITEMS := {
 const SHOP_ITEM_ORDER: Array[String] = [
 	"overcharged_core", "field_plating", "targeting_module", "nanite_regenerator",
 	"overloaded_coils", "gravity_stabilizer", "destruction_core"
-]
-## Pořadí spojitelných (tier 2) itemů - zobrazuje se ve zvláštní sekci
-## obchodu, ne v hlavním katalogu SHOP_ITEM_ORDER, protože se nedají koupit
-## přímo za zlato, jen spojit z komponent (viz combine_shop_item()).
-const SHOP_COMBINE_ORDER: Array[String] = [
-	"annihilation_core", "regenerating_bastion", "swarm_emitter"
 ]
 const MAX_SHOP_SLOTS: int = 6
 ## Kolik % z ceny itemu se vrátí při prodeji - nižší než 100 %, aby obchod
@@ -448,56 +397,16 @@ func buy_shop_item(item_id: String) -> bool:
 	return true
 
 
-## Vrátí SHOP_SELL_REFUND_RATIO z CELKOVÉ investice do itemu a item zmizí ze
-## slotů úplně - na rozdíl od draftu tu nejsou ranky, které by šlo snižovat
-## po jednom. U tier-2 itemu je "celková investice" cena spojení PLUS obě
-## komponenty (viz _total_shop_item_value()), ne jen poslední poplatek za
-## spojení - jinak by prodej spojeného itemu vracel směšně málo vzhledem k
-## tomu, co do něj hráč reálně vložil.
+## Vrátí SHOP_SELL_REFUND_RATIO z ceny itemu a item zmizí ze slotů úplně -
+## na rozdíl od draftu tu nejsou ranky, které by šlo snižovat po jednom.
 func sell_shop_item(item_id: String) -> bool:
 	if not owned_shop_items.has(item_id):
 		return false
 
-	var refund: int = int(round(float(_total_shop_item_value(item_id)) * SHOP_SELL_REFUND_RATIO))
+	var refund: int = int(round(float(SHOP_ITEMS[item_id]["cost"]) * SHOP_SELL_REFUND_RATIO))
 	currency += refund
 	currency_changed.emit(currency)
 	owned_shop_items.erase(item_id)
-	shop_inventory_changed.emit()
-	return true
-
-
-## Součet ceny itemu a (rekurzivně) cen všech itemů v jeho receptu - u
-## tier-1 itemu (prázdný recipe) je to prostě jeho cost. Používá se pro
-## výpočet prodejního refundu, viz sell_shop_item().
-func _total_shop_item_value(item_id: String) -> int:
-	var definition: Dictionary = SHOP_ITEMS[item_id]
-	var value: int = int(definition["cost"])
-	for component_id in definition["recipe"]:
-		value += _total_shop_item_value(component_id)
-	return value
-
-
-## true, pokud hráč vlastní OBĚ komponenty z receptu, ještě item nevlastní a
-## má dost zlata na poplatek za spojení.
-func can_combine_shop_item(item_id: String) -> bool:
-	if owned_shop_items.has(item_id):
-		return false
-	for component_id in SHOP_ITEMS[item_id]["recipe"]:
-		if not owned_shop_items.has(component_id):
-			return false
-	return currency >= int(SHOP_ITEMS[item_id]["cost"])
-
-
-## Spotřebuje obě komponenty z receptu a nahradí je hotovým tier-2 itemem.
-func combine_shop_item(item_id: String) -> bool:
-	if not can_combine_shop_item(item_id):
-		return false
-
-	currency -= int(SHOP_ITEMS[item_id]["cost"])
-	currency_changed.emit(currency)
-	for component_id in SHOP_ITEMS[item_id]["recipe"]:
-		owned_shop_items.erase(component_id)
-	owned_shop_items.append(item_id)
 	shop_inventory_changed.emit()
 	return true
 

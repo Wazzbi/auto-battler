@@ -49,14 +49,6 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 	$Control/ShopPanel/ShopCard5,
 	$Control/ShopPanel/ShopCard6,
 ]
-## Karty pro tier-2 (spojené) itemy - viz GameManager.SHOP_COMBINE_ORDER.
-## Oddělené od shop_cards, protože se tu neplní stejný katalog (SHOP_ITEM_ORDER
-## vs. SHOP_COMBINE_ORDER) a mají navíc RecipeLabel.
-@onready var shop_combine_cards: Array = [
-	$Control/ShopPanel/ShopCombineCard0,
-	$Control/ShopPanel/ShopCombineCard1,
-	$Control/ShopPanel/ShopCombineCard2,
-]
 ## Zobrazuje vlastněné obchodní itemy v BottomBaru - na rozdíl od
 ## _item_slots (draftnuté itemy, pevné pořadí podle ITEM_ORDER) se tyhle
 ## plní dynamicky podle GameManager.owned_shop_items (0-6 vlastněných kusů),
@@ -377,24 +369,14 @@ func _setup_shop_cards() -> void:
 		var action_button: Button = card.get_node("ActionButton")
 		action_button.pressed.connect(_on_shop_card_action_pressed.bind(item_id))
 
-	for i in GameManager.SHOP_COMBINE_ORDER.size():
-		var item_id: String = GameManager.SHOP_COMBINE_ORDER[i]
-		var card: Panel = shop_combine_cards[i]
-		var action_button: Button = card.get_node("ActionButton")
-		action_button.pressed.connect(_on_shop_card_action_pressed.bind(item_id))
 
-
-## Koupě/spojení/prodej rozhoduje podle AKTUÁLNÍHO vlastnictví a receptu v
-## okamžiku kliknutí, ne podle toho, co tlačítko říkalo při posledním
-## refreshi - GameManager si to stejně ověří sám (can_buy_shop_item()/
-## can_combine_shop_item()/owned_shop_items.has()), tohle jen zavolá tu
-## správnou ze tří funkcí. Item s neprázdným receptem (tier 2) se nedá koupit
-## přímo za zlato, jen spojit z komponent.
+## Koupě/prodej rozhoduje podle AKTUÁLNÍHO vlastnictví v okamžiku kliknutí,
+## ne podle toho, co tlačítko říkalo při posledním refreshi - GameManager si
+## to stejně ověří sám (can_buy_shop_item()/owned_shop_items.has()), tohle je
+## jen aby se zavolala ta správná ze dvou funkcí.
 func _on_shop_card_action_pressed(item_id: String) -> void:
 	if GameManager.owned_shop_items.has(item_id):
 		GameManager.sell_shop_item(item_id)
-	elif not GameManager.SHOP_ITEMS[item_id]["recipe"].is_empty():
-		GameManager.combine_shop_item(item_id)
 	else:
 		GameManager.buy_shop_item(item_id)
 
@@ -429,40 +411,6 @@ func _refresh_shop_panel() -> void:
 			cost_label.text = "Cena: %d" % int(definition["cost"])
 			action_button.text = "Koupit"
 			action_button.disabled = not GameManager.can_buy_shop_item(item_id)
-
-	_refresh_shop_combine_cards()
-
-
-## Karty pro tier-2 itemy navíc ukazují recept (krátké názvy obou komponent)
-## - stejná logika koupě/prodeje jako u _refresh_shop_panel(), jen "Koupit"
-## nahrazuje "Spojit" a podmínka je can_combine_shop_item() místo
-## can_buy_shop_item().
-func _refresh_shop_combine_cards() -> void:
-	for i in GameManager.SHOP_COMBINE_ORDER.size():
-		var item_id: String = GameManager.SHOP_COMBINE_ORDER[i]
-		var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
-		var card: Panel = shop_combine_cards[i]
-		var name_label: Label = card.get_node("NameLabel")
-		var recipe_label: Label = card.get_node("RecipeLabel")
-		var desc_label: Label = card.get_node("DescLabel")
-		var cost_label: Label = card.get_node("CostLabel")
-		var action_button: Button = card.get_node("ActionButton")
-
-		name_label.text = definition["name"]
-		var recipe_names: Array[String] = []
-		for component_id in definition["recipe"]:
-			recipe_names.append(GameManager.SHOP_ITEMS[component_id]["short_name"])
-		recipe_label.text = "Recept: %s" % " + ".join(recipe_names)
-		desc_label.text = definition["desc"]
-
-		if GameManager.owned_shop_items.has(item_id):
-			cost_label.text = "Vlastníš"
-			action_button.text = "Prodat"
-			action_button.disabled = false
-		else:
-			cost_label.text = "Spojení: %d" % int(definition["cost"])
-			action_button.text = "Spojit"
-			action_button.disabled = not GameManager.can_combine_shop_item(item_id)
 
 
 ## Zobrazuje vlastněné obchodní itemy v BottomBaru (mimo obchod samotný) -

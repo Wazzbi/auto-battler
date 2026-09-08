@@ -398,13 +398,12 @@ want the game to keep running while the shop is open, so the pause lives only in
 `_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` in `hud.gd` and nothing
 else depends on it.
 
-**`ShopPanel` must stay well under the game's 720px window height** — it was originally sized at
-720px tall (edge-to-edge with the default window, zero margin) once the combine cards were added,
-which pushed the "Zavřít obchod" button off-screen with no way to close the panel. Fixed by
-shrinking every shop/combine card (smaller fonts, tighter padding) and laying the 7 basic items out
-in a single row instead of two, bringing the panel down to 420px tall — comfortable margin even
-accounting for window chrome. Any future addition to the shop panel (more items, more combine
-slots) needs to keep an eye on this budget rather than just growing the panel to fit new content.
+**`ShopPanel` must stay well under the game's 720px window height** — it once grew to exactly
+720px tall (edge-to-edge with the default window, zero margin) after adding a now-removed combine-
+items section, which pushed the "Zavřít obchod" button off-screen with no way to close the panel.
+Currently 250px tall (single row of 7 compact cards + close button) with comfortable margin. Any
+future addition to the shop panel needs to keep an eye on this budget rather than just growing the
+panel to fit new content.
 
 **Shop items are a separate, slot-limited system from the item draft** (`GameManager.SHOP_ITEMS`/
 `SHOP_ITEM_ORDER`, `owned_shop_items`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is
@@ -432,28 +431,16 @@ by checking `GameManager.owned_shop_items.has(item_id)` — the same 7 cards are
 roles (a card showing "Koupit"/cost when unowned flips to "Prodat"/"Vlastníš" once bought), rather
 than maintaining a separate catalog view and owned-inventory view that could drift out of sync.
 
-**Tier-2 (combined) items** (`annihilation_core`, `regenerating_bastion`, `swarm_emitter` in
-`SHOP_ITEMS`, `GameManager.SHOP_COMBINE_ORDER`, `Control/ShopPanel/ShopCombineCard0..2` in
-`hud.tscn`): each declares a non-empty `recipe` (two tier-1 item IDs) and can't be bought directly
-with `buy_shop_item()` — only `combine_shop_item()`, which requires owning *both* recipe components
-plus enough gold for `cost` (which for a tier-2 item means the combine *fee*, not a standalone
-price). Combining **removes both components and adds the tier-2 item**, a net change of -1 owned
-item (2 → 1) — this can never breach `MAX_SHOP_SLOTS`, since the two consumed components were
-already counted against it. Each tier-2 item's stats are somewhat more than the raw sum of its
-components' stats (the same "finished item is worth more than its parts" incentive League of
-Legends uses) — e.g. "Jádro anihilace" (`overcharged_core` + `destruction_core`) gives +16 damage
-where the components alone would sum to +12. `hud.gd`'s `_on_shop_card_action_pressed(item_id)`
-picks buy vs. combine vs. sell by checking ownership first, then whether `recipe` is empty — the
-same dual-purpose-button pattern as tier-1 cards, reused for the combine cards' `ActionButton` too.
-
-**Selling refunds 50% of TOTAL investment, not just the item's own `cost`** —
-`_total_shop_item_value(item_id)` recurses through `recipe` (a tier-1 item's value is just its
-`cost`; a tier-2 item's value is its own `cost` *plus* both components' values), and
-`sell_shop_item()` refunds `SHOP_SELL_REFUND_RATIO` of that total. Without this, selling "Jádro
-anihilace" would refund only 50% of its 160-gold combine fee (80 gold) despite the player having
-spent 200 + 220 + 160 = 580 gold to build it — the recursive total (580 × 50% = 290) is what
-actually gets refunded. This also means the recipe chain can go arbitrarily deep in the future
-(tier-3 combining tier-2 items) without this formula needing to change.
+**There used to be a tier-2 "combine" system here (removed 2026-09-08)** — pairs of basic items
+could be fused into a stronger third item. It was retired in favor of a planned rarity system
+(Bronz/Stříbro/Zlato/Diamant — buying a duplicate of an owned item upgrades its rarity instead of
+combining two different items) that covers the same design goal — reward for repeated investment
+in one item — as a single unified mechanic instead of two parallel ones. **The rarity system is
+designed but not yet implemented** — see the `project_shop_implementation_plan` memory for the
+concrete tier/cost sketch (4 tiers, ~1.6× power and cost growth per tier, special effects unlocking
+at Gold) before building it, rather than re-deriving the numbers from scratch. If you're looking for
+`combine_shop_item()`/`SHOP_COMBINE_ORDER`/`recipe` fields, they no longer exist — don't resurrect
+them without checking whether the rarity system has since replaced this note.
 
 **`Control/BottomBar/ItemSlot1..6` now display owned shop items** (`hud.gd`'s
 `_refresh_shop_slots()`), filled in `owned_shop_items` order so empty slots always trail at the end
@@ -514,5 +501,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, including tier-2 combined items' `recipe`), `SHOP_COMBINE_ORDER`, `MAX_SHOP_SLOTS`, `SHOP_SELL_REFUND_RATIO` — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`), `MAX_SHOP_SLOTS`, `SHOP_SELL_REFUND_RATIO` — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)

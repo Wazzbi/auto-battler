@@ -522,9 +522,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -360.0
-offset_top = -210.0
+offset_top = -125.0
 offset_right = 360.0
-offset_bottom = 210.0
+offset_bottom = 125.0
 
 [node name="Title" type="Label" parent="Control/ShopPanel" unique_id=1857439836]
 layout_mode = 0
@@ -872,196 +872,12 @@ offset_bottom = 128.0
 theme_override_font_sizes/font_size = 10
 text = "Koupit"
 
-[node name="CombineTitle" type="Label" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 20.0
-offset_top = 184.0
-offset_right = 700.0
-offset_bottom = 204.0
-theme_override_font_sizes/font_size = 14
-text = "Spojení itemů"
-horizontal_alignment = 1
-
-[node name="ShopCombineCard0" type="Panel" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 40.0
-offset_top = 208.0
-offset_right = 240.0
-offset_bottom = 352.0
-
-[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 4.0
-offset_right = 194.0
-offset_bottom = 24.0
-theme_override_font_sizes/font_size = 11
-text = "Název"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="RecipeLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 26.0
-offset_right = 194.0
-offset_bottom = 44.0
-theme_override_font_sizes/font_size = 9
-text = "Recept"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 46.0
-offset_right = 194.0
-offset_bottom = 94.0
-theme_override_font_sizes/font_size = 9
-text = "Popis"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 96.0
-offset_right = 194.0
-offset_bottom = 112.0
-theme_override_font_sizes/font_size = 10
-text = "Spojení: 0"
-horizontal_alignment = 1
-
-[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCombineCard0"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 114.0
-offset_right = 194.0
-offset_bottom = 140.0
-text = "Spojit"
-
-[node name="ShopCombineCard1" type="Panel" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 260.0
-offset_top = 208.0
-offset_right = 460.0
-offset_bottom = 352.0
-
-[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 4.0
-offset_right = 194.0
-offset_bottom = 24.0
-theme_override_font_sizes/font_size = 11
-text = "Název"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="RecipeLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 26.0
-offset_right = 194.0
-offset_bottom = 44.0
-theme_override_font_sizes/font_size = 9
-text = "Recept"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 46.0
-offset_right = 194.0
-offset_bottom = 94.0
-theme_override_font_sizes/font_size = 9
-text = "Popis"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 96.0
-offset_right = 194.0
-offset_bottom = 112.0
-theme_override_font_sizes/font_size = 10
-text = "Spojení: 0"
-horizontal_alignment = 1
-
-[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCombineCard1"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 114.0
-offset_right = 194.0
-offset_bottom = 140.0
-text = "Spojit"
-
-[node name="ShopCombineCard2" type="Panel" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 480.0
-offset_top = 208.0
-offset_right = 680.0
-offset_bottom = 352.0
-
-[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 4.0
-offset_right = 194.0
-offset_bottom = 24.0
-theme_override_font_sizes/font_size = 11
-text = "Název"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="RecipeLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 26.0
-offset_right = 194.0
-offset_bottom = 44.0
-theme_override_font_sizes/font_size = 9
-text = "Recept"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 46.0
-offset_right = 194.0
-offset_bottom = 94.0
-theme_override_font_sizes/font_size = 9
-text = "Popis"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 96.0
-offset_right = 194.0
-offset_bottom = 112.0
-theme_override_font_sizes/font_size = 10
-text = "Spojení: 0"
-horizontal_alignment = 1
-
-[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCombineCard2"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 114.0
-offset_right = 194.0
-offset_bottom = 140.0
-text = "Spojit"
-
 [node name="CloseButton" type="Button" parent="Control/ShopPanel" unique_id=1539487263]
 layout_mode = 0
 offset_left = 300.0
-offset_top = 362.0
+offset_top = 192.0
 offset_right = 420.0
-offset_bottom = 394.0
+offset_bottom = 224.0
 text = "Zavřít obchod"
 
 [node name="GameOverPanel" type="Panel" parent="Control" unique_id=2052936013]
