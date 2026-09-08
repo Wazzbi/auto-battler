@@ -40,6 +40,35 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 
 @onready var shop_panel: Panel = $Control/ShopPanel
 @onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
+@onready var shop_cards: Array = [
+	$Control/ShopPanel/ShopCard0,
+	$Control/ShopPanel/ShopCard1,
+	$Control/ShopPanel/ShopCard2,
+	$Control/ShopPanel/ShopCard3,
+	$Control/ShopPanel/ShopCard4,
+	$Control/ShopPanel/ShopCard5,
+	$Control/ShopPanel/ShopCard6,
+]
+## Karty pro tier-2 (spojené) itemy - viz GameManager.SHOP_COMBINE_ORDER.
+## Oddělené od shop_cards, protože se tu neplní stejný katalog (SHOP_ITEM_ORDER
+## vs. SHOP_COMBINE_ORDER) a mají navíc RecipeLabel.
+@onready var shop_combine_cards: Array = [
+	$Control/ShopPanel/ShopCombineCard0,
+	$Control/ShopPanel/ShopCombineCard1,
+	$Control/ShopPanel/ShopCombineCard2,
+]
+## Zobrazuje vlastněné obchodní itemy v BottomBaru - na rozdíl od
+## _item_slots (draftnuté itemy, pevné pořadí podle ITEM_ORDER) se tyhle
+## plní dynamicky podle GameManager.owned_shop_items (0-6 vlastněných kusů),
+## viz _refresh_shop_slots().
+@onready var shop_slot_nodes: Array = [
+	$Control/BottomBar/ItemSlot1,
+	$Control/BottomBar/ItemSlot2,
+	$Control/BottomBar/ItemSlot3,
+	$Control/BottomBar/ItemSlot4,
+	$Control/BottomBar/ItemSlot5,
+	$Control/BottomBar/ItemSlot6,
+]
 
 @onready var draft_panel: Panel = $Control/DraftPanel
 @onready var draft_cards: Array = [
@@ -127,6 +156,7 @@ func _ready() -> void:
 	GameManager.item_draft_ready.connect(_on_item_draft_ready)
 	GameManager.item_rank_changed.connect(_on_item_rank_changed)
 	GameManager.loop_changed.connect(_on_loop_changed)
+	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
 
 	game_over_panel.hide()
 	victory_panel.hide()
@@ -135,6 +165,7 @@ func _ready() -> void:
 	wave_cleared_label.hide()
 
 	_cache_item_nodes()
+	_setup_shop_cards()
 
 	shop_button.pressed.connect(_on_shop_button_pressed)
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
@@ -211,6 +242,8 @@ func _on_loop_changed(new_loop: int) -> void:
 
 func _on_currency_changed(new_amount: int) -> void:
 	gold_label.text = "Zlato: %d" % new_amount
+	if shop_panel.visible:
+		_refresh_shop_panel()
 
 
 func _on_xp_changed(current_xp: int, xp_needed: int) -> void:
@@ -307,6 +340,7 @@ func _refresh_progression() -> void:
 	gold_label.text = "Zlato: %d" % GameManager.currency
 	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())
 	_refresh_items()
+	_refresh_shop_slots()
 	_refresh_stat_labels()
 
 
@@ -333,6 +367,125 @@ func _refresh_stat_labels() -> void:
 	stat_armor.text = "Brnění: %.0f" % player_ref.get_armor()
 
 
+## Napojí každou z 7 karet na jeden konkrétní SHOP_ITEM_ORDER item natrvalo -
+## karty se recyklují (mění se jen text/stav podle vlastnictví), ne že by se
+## přepojovaly na jiný item při každém refreshi.
+func _setup_shop_cards() -> void:
+	for i in GameManager.SHOP_ITEM_ORDER.size():
+		var item_id: String = GameManager.SHOP_ITEM_ORDER[i]
+		var card: Panel = shop_cards[i]
+		var action_button: Button = card.get_node("ActionButton")
+		action_button.pressed.connect(_on_shop_card_action_pressed.bind(item_id))
+
+	for i in GameManager.SHOP_COMBINE_ORDER.size():
+		var item_id: String = GameManager.SHOP_COMBINE_ORDER[i]
+		var card: Panel = shop_combine_cards[i]
+		var action_button: Button = card.get_node("ActionButton")
+		action_button.pressed.connect(_on_shop_card_action_pressed.bind(item_id))
+
+
+## Koupě/spojení/prodej rozhoduje podle AKTUÁLNÍHO vlastnictví a receptu v
+## okamžiku kliknutí, ne podle toho, co tlačítko říkalo při posledním
+## refreshi - GameManager si to stejně ověří sám (can_buy_shop_item()/
+## can_combine_shop_item()/owned_shop_items.has()), tohle jen zavolá tu
+## správnou ze tří funkcí. Item s neprázdným receptem (tier 2) se nedá koupit
+## přímo za zlato, jen spojit z komponent.
+func _on_shop_card_action_pressed(item_id: String) -> void:
+	if GameManager.owned_shop_items.has(item_id):
+		GameManager.sell_shop_item(item_id)
+	elif not GameManager.SHOP_ITEMS[item_id]["recipe"].is_empty():
+		GameManager.combine_shop_item(item_id)
+	else:
+		GameManager.buy_shop_item(item_id)
+
+
+func _on_shop_inventory_changed() -> void:
+	_refresh_shop_slots()
+	if shop_panel.visible:
+		_refresh_shop_panel()
+
+
+## Aktualizuje text/stav karet podle toho, co hráč vlastní, kolik má zlata a
+## kolik má volných slotů - volá se při otevření obchodu a při každé změně
+## zlata/inventáře, dokud je obchod otevřený.
+func _refresh_shop_panel() -> void:
+	for i in GameManager.SHOP_ITEM_ORDER.size():
+		var item_id: String = GameManager.SHOP_ITEM_ORDER[i]
+		var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
+		var card: Panel = shop_cards[i]
+		var name_label: Label = card.get_node("NameLabel")
+		var desc_label: Label = card.get_node("DescLabel")
+		var cost_label: Label = card.get_node("CostLabel")
+		var action_button: Button = card.get_node("ActionButton")
+
+		name_label.text = definition["name"]
+		desc_label.text = definition["desc"]
+
+		if GameManager.owned_shop_items.has(item_id):
+			cost_label.text = "Vlastníš"
+			action_button.text = "Prodat"
+			action_button.disabled = false
+		else:
+			cost_label.text = "Cena: %d" % int(definition["cost"])
+			action_button.text = "Koupit"
+			action_button.disabled = not GameManager.can_buy_shop_item(item_id)
+
+	_refresh_shop_combine_cards()
+
+
+## Karty pro tier-2 itemy navíc ukazují recept (krátké názvy obou komponent)
+## - stejná logika koupě/prodeje jako u _refresh_shop_panel(), jen "Koupit"
+## nahrazuje "Spojit" a podmínka je can_combine_shop_item() místo
+## can_buy_shop_item().
+func _refresh_shop_combine_cards() -> void:
+	for i in GameManager.SHOP_COMBINE_ORDER.size():
+		var item_id: String = GameManager.SHOP_COMBINE_ORDER[i]
+		var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
+		var card: Panel = shop_combine_cards[i]
+		var name_label: Label = card.get_node("NameLabel")
+		var recipe_label: Label = card.get_node("RecipeLabel")
+		var desc_label: Label = card.get_node("DescLabel")
+		var cost_label: Label = card.get_node("CostLabel")
+		var action_button: Button = card.get_node("ActionButton")
+
+		name_label.text = definition["name"]
+		var recipe_names: Array[String] = []
+		for component_id in definition["recipe"]:
+			recipe_names.append(GameManager.SHOP_ITEMS[component_id]["short_name"])
+		recipe_label.text = "Recept: %s" % " + ".join(recipe_names)
+		desc_label.text = definition["desc"]
+
+		if GameManager.owned_shop_items.has(item_id):
+			cost_label.text = "Vlastníš"
+			action_button.text = "Prodat"
+			action_button.disabled = false
+		else:
+			cost_label.text = "Spojení: %d" % int(definition["cost"])
+			action_button.text = "Spojit"
+			action_button.disabled = not GameManager.can_combine_shop_item(item_id)
+
+
+## Zobrazuje vlastněné obchodní itemy v BottomBaru (mimo obchod samotný) -
+## na rozdíl od _refresh_items() (pevné pořadí podle ITEM_ORDER) se sloty
+## plní postupně podle owned_shop_items, takže prázdné sloty jsou vždy na
+## konci bez ohledu na to, který konkrétní item byl prodán.
+func _refresh_shop_slots() -> void:
+	for i in shop_slot_nodes.size():
+		var slot: ColorRect = shop_slot_nodes[i]
+		var label: Label = slot.get_node("Label")
+
+		if i < GameManager.owned_shop_items.size():
+			var item_id: String = GameManager.owned_shop_items[i]
+			var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
+			label.text = definition["short_name"]
+			slot.modulate = Color.WHITE
+			slot.tooltip_text = "%s\n%s" % [definition["name"], definition["desc"]]
+		else:
+			label.text = "-"
+			slot.modulate = LOCKED_ITEM_MODULATE
+			slot.tooltip_text = ""
+
+
 func show_wave_cleared_message(wave_number: int) -> void:
 	wave_cleared_label.text = "Vlna %d splněna!" % wave_number
 	wave_cleared_label.show()
@@ -345,6 +498,7 @@ func show_wave_cleared_message(wave_number: int) -> void:
 func _on_shop_button_pressed() -> void:
 	if GameManager.state != GameManager.State.PLAYING:
 		return
+	_refresh_shop_panel()
 	shop_panel.show()
 	get_tree().paused = true
 

@@ -44,6 +44,16 @@ uses a square-root curve (`enemies_base_count + sqrt(wave_number - 1) * difficul
 difficulty ramps gradually, and `max_concurrent_enemies` caps how many can be alive at once
 regardless of how many are left to spawn.
 
+**Design goal for future wave/enemy-count tuning: optimize for a growing on-screen enemy density,
+bullet-hell-style "overwhelm" tension — not just total kill count or flat stat scaling.** The
+player should feel progressively more surrounded as a wave (or loop) goes on, not face a flat or
+instantly-spiking threat level. When adjusting `enemies_base_count`/`difficulty_growth`/
+`spawn_interval`/`max_concurrent_enemies` (or redesigning the wave/loop curve — see
+`project_balance_deferred` in memory), judge the change by the *shape* of concurrent-enemies-over-
+time, not only by win/lose or average survival wave. Planned: a Debug panel telemetry readout
+(concurrent enemy count, "close calls" — HP dropping low and recovering) to make this shape
+observable during manual playtesting, not yet built.
+
 **Camera/scrolling model**: the `Camera2D` (`Main/Camera2D` in `main.tscn`, script
 `scenes/camera_follow.gd`) is an **independent sibling node, not a child of the player**. It tracks
 the player's X position with its own exponential lerp (`follow_speed`, default 5.0) offset
@@ -386,7 +396,62 @@ survives window resizing.
 along with the game. The pause is deliberate *for now*; the user has flagged that they may later
 want the game to keep running while the shop is open, so the pause lives only in
 `_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` in `hud.gd` and nothing
-else depends on it. The shop is intentionally empty apart from its close button.
+else depends on it.
+
+**Shop items are a separate, slot-limited system from the item draft** (`GameManager.SHOP_ITEMS`/
+`SHOP_ITEM_ORDER`, `owned_shop_items`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is
+free, randomly offered, single-stat, and unlimited-rank, a shop item is: bought with gold, always
+available (all 7 shown every time the shop opens), grants **multiple stats at once** (e.g.
+"Přebíječ jader" = +6 damage AND +0.2 attack speed), and is **owned or not** — no ranks, buying it
+again isn't possible (`can_buy_shop_item()` returns false once `owned_shop_items.has(item_id)`).
+This was a deliberate design pivot mid-brainstorm, modeled after League of Legends' item system
+(discrete items, not stacking ranks) instead of extending the draft's rank-based pattern to gold
+purchases — the two systems are meant to feel different, not like two currencies buying the same
+thing. **7 items exist for only `MAX_SHOP_SLOTS` (6) slots** — deliberate, not a UI overflow bug:
+the player can never own all 7 simultaneously, so choosing which 6 (and which one to skip) is a
+real decision, reusing the same "offer more than you can take" pressure the draft's 3-of-6(now
+7) pick already relies on. `get_stat_bonus(stat_id)` sums both the draft's `item_ranks` contribution
+and shop items' `stats` dict contribution for a given stat — a player can own both "Jádro síly"
+(draft) *and* "Přebíječ jader" (shop, which also grants damage) at the same time; their damage
+bonuses just add together, no conflict.
+
+**Selling refunds `SHOP_SELL_REFUND_RATIO` (50%) and removes the item outright** — there's no
+partial/per-rank sell, because shop items don't have ranks to step down from (see above). A player
+who buys then immediately sells an item nets a 50% gold loss, which is the intended anti-respec-
+loop friction (matches the reasoning already applied to the draft's Debug "Reset itemy", which
+also gives no refund). `_on_shop_card_action_pressed(item_id)` decides buy vs. sell at *click time*
+by checking `GameManager.owned_shop_items.has(item_id)` — the same 7 cards are reused for both
+roles (a card showing "Koupit"/cost when unowned flips to "Prodat"/"Vlastníš" once bought), rather
+than maintaining a separate catalog view and owned-inventory view that could drift out of sync.
+
+**Tier-2 (combined) items** (`annihilation_core`, `regenerating_bastion`, `swarm_emitter` in
+`SHOP_ITEMS`, `GameManager.SHOP_COMBINE_ORDER`, `Control/ShopPanel/ShopCombineCard0..2` in
+`hud.tscn`): each declares a non-empty `recipe` (two tier-1 item IDs) and can't be bought directly
+with `buy_shop_item()` — only `combine_shop_item()`, which requires owning *both* recipe components
+plus enough gold for `cost` (which for a tier-2 item means the combine *fee*, not a standalone
+price). Combining **removes both components and adds the tier-2 item**, a net change of -1 owned
+item (2 → 1) — this can never breach `MAX_SHOP_SLOTS`, since the two consumed components were
+already counted against it. Each tier-2 item's stats are somewhat more than the raw sum of its
+components' stats (the same "finished item is worth more than its parts" incentive League of
+Legends uses) — e.g. "Jádro anihilace" (`overcharged_core` + `destruction_core`) gives +16 damage
+where the components alone would sum to +12. `hud.gd`'s `_on_shop_card_action_pressed(item_id)`
+picks buy vs. combine vs. sell by checking ownership first, then whether `recipe` is empty — the
+same dual-purpose-button pattern as tier-1 cards, reused for the combine cards' `ActionButton` too.
+
+**Selling refunds 50% of TOTAL investment, not just the item's own `cost`** —
+`_total_shop_item_value(item_id)` recurses through `recipe` (a tier-1 item's value is just its
+`cost`; a tier-2 item's value is its own `cost` *plus* both components' values), and
+`sell_shop_item()` refunds `SHOP_SELL_REFUND_RATIO` of that total. Without this, selling "Jádro
+anihilace" would refund only 50% of its 160-gold combine fee (80 gold) despite the player having
+spent 200 + 220 + 160 = 580 gold to build it — the recursive total (580 × 50% = 290) is what
+actually gets refunded. This also means the recipe chain can go arbitrarily deep in the future
+(tier-3 combining tier-2 items) without this formula needing to change.
+
+**`Control/BottomBar/ItemSlot1..6` now display owned shop items** (`hud.gd`'s
+`_refresh_shop_slots()`), filled in `owned_shop_items` order so empty slots always trail at the end
+regardless of *which* item was sold — unlike the draft's `PickedItemSlot0..6` (fixed per-item
+position from `ITEM_ORDER`, grayed at rank 0), there's no fixed "this item always lives in slot 3"
+mapping for shop items, since ownership is a dynamic subset of 6 out of 7 possible items.
 
 **Debug panel** (`hud.gd`, `scenes/ui/eye_icon.gd`): a dev-only panel toggled by the `DebugButton`
 in the top-right corner, which shows "Debug" plus a procedurally-drawn eye icon (open/closed,
@@ -424,6 +489,12 @@ reuse the *real* code paths rather than shortcutting past them:
   than in the main HUD specifically because its only real use is skipping the draft-choice pause
   during testing.
 
+**Planned but not yet done**: a live "fun"/pacing telemetry readout (concurrent enemy count,
+"close calls") is planned for this panel — see the bullet-hell pacing design goal above. The panel
+is also flagged to eventually get **narrower** (~30-50%, exact amount flexible) since its current
+two-column button grid is fairly wide — explicitly low priority, only worth doing if it's cheap;
+don't proactively redesign the layout for this alone.
+
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params
@@ -435,5 +506,5 @@ reuse the *real* code paths rather than shortcutting past them:
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops) — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS`
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, including tier-2 combined items' `recipe`), `SHOP_COMBINE_ORDER`, `MAX_SHOP_SLOTS`, `SHOP_SELL_REFUND_RATIO` — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)

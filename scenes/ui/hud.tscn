@@ -368,6 +368,17 @@ offset_right = -286.0
 offset_bottom = 58.0
 color = Color(0.14, 0.15, 0.19, 1)
 
+[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot1"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 9
+text = "-"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
 [node name="ItemSlot2" type="ColorRect" parent="Control/BottomBar" unique_id=162173072]
 layout_mode = 1
 anchors_preset = 1
@@ -378,6 +389,17 @@ offset_top = 14.0
 offset_right = -236.0
 offset_bottom = 58.0
 color = Color(0.14, 0.15, 0.19, 1)
+
+[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 9
+text = "-"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
 
 [node name="ItemSlot3" type="ColorRect" parent="Control/BottomBar" unique_id=113830123]
 layout_mode = 1
@@ -390,6 +412,17 @@ offset_right = -186.0
 offset_bottom = 58.0
 color = Color(0.14, 0.15, 0.19, 1)
 
+[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot3"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 9
+text = "-"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
 [node name="ItemSlot4" type="ColorRect" parent="Control/BottomBar" unique_id=558387754]
 layout_mode = 1
 anchors_preset = 1
@@ -400,6 +433,17 @@ offset_top = 64.0
 offset_right = -286.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
+
+[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot4"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 9
+text = "-"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
 
 [node name="ItemSlot5" type="ColorRect" parent="Control/BottomBar" unique_id=1839271119]
 layout_mode = 1
@@ -412,6 +456,17 @@ offset_right = -236.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
+[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot5"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 9
+text = "-"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
 [node name="ItemSlot6" type="ColorRect" parent="Control/BottomBar" unique_id=146363010]
 layout_mode = 1
 anchors_preset = 1
@@ -422,6 +477,17 @@ offset_top = 64.0
 offset_right = -186.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
+
+[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot6"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 9
+text = "-"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
 
 [node name="ShopButton" type="Button" parent="Control/BottomBar" unique_id=1143364953]
 layout_mode = 1
@@ -455,37 +521,540 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -320.0
-offset_top = -220.0
-offset_right = 320.0
-offset_bottom = 180.0
+offset_left = -360.0
+offset_top = -260.0
+offset_right = 360.0
+offset_bottom = 460.0
 
 [node name="Title" type="Label" parent="Control/ShopPanel" unique_id=1857439836]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 20.0
-offset_right = 620.0
-offset_bottom = 60.0
+offset_top = 16.0
+offset_right = 700.0
+offset_bottom = 50.0
 theme_override_font_sizes/font_size = 24
 text = "Obchod"
 horizontal_alignment = 1
 
-[node name="Info" type="Label" parent="Control/ShopPanel" unique_id=765786391]
+[node name="ShopCard0" type="Panel" parent="Control/ShopPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 80.0
-offset_right = 620.0
-offset_bottom = 300.0
-text = "Obchod je zatím prázdný - předměty přibudou později."
+offset_top = 60.0
+offset_right = 180.0
+offset_bottom = 250.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 152.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 13
+text = "Název"
 horizontal_alignment = 1
-vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 152.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 11
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 124.0
+offset_right = 152.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 12
+text = "Cena: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 152.0
+offset_right = 152.0
+offset_bottom = 182.0
+text = "Koupit"
+
+[node name="ShopCard1" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 190.0
+offset_top = 60.0
+offset_right = 350.0
+offset_bottom = 250.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 152.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 13
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 152.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 11
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 124.0
+offset_right = 152.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 12
+text = "Cena: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 152.0
+offset_right = 152.0
+offset_bottom = 182.0
+text = "Koupit"
+
+[node name="ShopCard2" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 360.0
+offset_top = 60.0
+offset_right = 520.0
+offset_bottom = 250.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 152.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 13
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 152.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 11
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 124.0
+offset_right = 152.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 12
+text = "Cena: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 152.0
+offset_right = 152.0
+offset_bottom = 182.0
+text = "Koupit"
+
+[node name="ShopCard3" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 530.0
+offset_top = 60.0
+offset_right = 690.0
+offset_bottom = 250.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCard3"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 152.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 13
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard3"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 152.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 11
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard3"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 124.0
+offset_right = 152.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 12
+text = "Cena: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCard3"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 152.0
+offset_right = 152.0
+offset_bottom = 182.0
+text = "Koupit"
+
+[node name="ShopCard4" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 270.0
+offset_right = 180.0
+offset_bottom = 460.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCard4"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 152.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 13
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard4"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 152.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 11
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard4"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 124.0
+offset_right = 152.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 12
+text = "Cena: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCard4"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 152.0
+offset_right = 152.0
+offset_bottom = 182.0
+text = "Koupit"
+
+[node name="ShopCard5" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 190.0
+offset_top = 270.0
+offset_right = 350.0
+offset_bottom = 460.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCard5"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 152.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 13
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard5"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 152.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 11
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard5"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 124.0
+offset_right = 152.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 12
+text = "Cena: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCard5"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 152.0
+offset_right = 152.0
+offset_bottom = 182.0
+text = "Koupit"
+
+[node name="ShopCard6" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 360.0
+offset_top = 270.0
+offset_right = 520.0
+offset_bottom = 460.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCard6"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 152.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 13
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard6"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 152.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 11
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard6"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 124.0
+offset_right = 152.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 12
+text = "Cena: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCard6"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 152.0
+offset_right = 152.0
+offset_bottom = 182.0
+text = "Koupit"
+
+[node name="CombineTitle" type="Label" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 470.0
+offset_right = 700.0
+offset_bottom = 494.0
+theme_override_font_sizes/font_size = 16
+text = "Spojení itemů"
+horizontal_alignment = 1
+
+[node name="ShopCombineCard0" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 498.0
+offset_right = 180.0
+offset_bottom = 658.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 6.0
+offset_right = 152.0
+offset_bottom = 28.0
+theme_override_font_sizes/font_size = 12
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RecipeLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 30.0
+offset_right = 152.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 10
+text = "Recept"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 60.0
+offset_right = 152.0
+offset_bottom = 110.0
+theme_override_font_sizes/font_size = 10
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 112.0
+offset_right = 152.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 11
+text = "Spojení: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCombineCard0"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 132.0
+offset_right = 152.0
+offset_bottom = 158.0
+text = "Spojit"
+
+[node name="ShopCombineCard1" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 190.0
+offset_top = 498.0
+offset_right = 350.0
+offset_bottom = 658.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 6.0
+offset_right = 152.0
+offset_bottom = 28.0
+theme_override_font_sizes/font_size = 12
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RecipeLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 30.0
+offset_right = 152.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 10
+text = "Recept"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 60.0
+offset_right = 152.0
+offset_bottom = 110.0
+theme_override_font_sizes/font_size = 10
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 112.0
+offset_right = 152.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 11
+text = "Spojení: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCombineCard1"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 132.0
+offset_right = 152.0
+offset_bottom = 158.0
+text = "Spojit"
+
+[node name="ShopCombineCard2" type="Panel" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 360.0
+offset_top = 498.0
+offset_right = 520.0
+offset_bottom = 658.0
+
+[node name="NameLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 6.0
+offset_right = 152.0
+offset_bottom = 28.0
+theme_override_font_sizes/font_size = 12
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RecipeLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 30.0
+offset_right = 152.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 10
+text = "Recept"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 60.0
+offset_right = 152.0
+offset_bottom = 110.0
+theme_override_font_sizes/font_size = 10
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCombineCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 112.0
+offset_right = 152.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 11
+text = "Spojení: 0"
+horizontal_alignment = 1
+
+[node name="ActionButton" type="Button" parent="Control/ShopPanel/ShopCombineCard2"]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 132.0
+offset_right = 152.0
+offset_bottom = 158.0
+text = "Spojit"
 
 [node name="CloseButton" type="Button" parent="Control/ShopPanel" unique_id=1539487263]
 layout_mode = 0
-offset_left = 230.0
-offset_top = 330.0
-offset_right = 410.0
-offset_bottom = 374.0
+offset_left = 300.0
+offset_top = 670.0
+offset_right = 420.0
+offset_bottom = 706.0
 text = "Zavřít obchod"
 
 [node name="GameOverPanel" type="Panel" parent="Control" unique_id=2052936013]
