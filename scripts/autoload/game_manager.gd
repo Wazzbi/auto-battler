@@ -18,6 +18,14 @@ signal item_rank_changed(item_id: String, new_rank: int)
 signal loop_changed(new_loop: int)
 ## Emitne se po nákupu nebo prodeji v obchodě - viz "Obchod" níže.
 signal shop_inventory_changed
+## Emitne se, kdykoliv se vygeneruje nová nabídka 4 itemů (vlna 10 hotová,
+## nebo reroll) - HUD podle toho překreslí karty. offer_ids má vždy
+## SHOP_OFFER_SIZE prvků.
+signal shop_offer_changed(offer_ids: Array)
+## Emitne se JEN při automatickém otevření po 10. vlně (ne při ručním
+## otevření tlačítkem ani při rerollu) - HUD na to reaguje zobrazením a
+## zapauzováním panelu, i když zrovna nikdo neklikl na tlačítko Obchod.
+signal shop_auto_open_requested
 
 enum State { INTRO, PLAYING, GAME_OVER, WON }
 
@@ -184,6 +192,20 @@ const MAX_SHOP_SLOTS: int = 6
 ## nešlo použít jako bezplatný "respec" (nakoupit, hned prodat, zkusit jiné).
 const SHOP_SELL_REFUND_RATIO: float = 0.5
 
+## Kolik itemů se najednou nabídne v obchodě - záměrně míň než celý
+## SHOP_ITEM_ORDER (7), aby obchod nebyl jen "kup si všechno, co chceš", ale
+## reálná náhodná nabídka jako draft, s možností si za zlato přehodit
+## (viz reroll_shop() níže). Nabídka může obsahovat i už vlastněné itemy -
+## jinak by nikdy nešlo narazit na příležitost zvýšit jejich raritu, až ta
+## bude existovat.
+const SHOP_OFFER_SIZE: int = 4
+## Cena prvního rerollu v jedné návštěvě obchodu; každý další přidá
+## SHOP_REROLL_COST_STEP navrch (20, 35, 50, ...) - resetuje se při každé
+## nové nabídce (viz _generate_shop_offer()), takže vyhnout se drahým
+## pozdním rerollům nejde tím, že hráč obchod zavře a otevře znovu.
+const SHOP_REROLL_BASE_COST: int = 20
+const SHOP_REROLL_COST_STEP: int = 15
+
 var current_wave: int = 0
 ## Kolikáté kolo (průchod 10 vlnami) hráč zrovna hraje. Roste, hráčova
 ## progrese (úroveň/XP/itemy/měna) se ale mezi koly NERESETUJE -
@@ -208,6 +230,22 @@ var _current_offer: Array = []
 ## item_ranks tu nejsou ranky, item buď je v tomhle poli (koupený), nebo
 ## není. Velikost pole je omezená na MAX_SHOP_SLOTS.
 var owned_shop_items: Array[String] = []
+## Aktuálně nabídnuté itemy v obchodě (SHOP_OFFER_SIZE kusů) - viz
+## _generate_shop_offer(). Prázdné, dokud hráč poprvé nedohraje 10. vlnu.
+var shop_offer: Array[String] = []
+## Kolikrát byla aktuální nabídka přehozená - roste s reroll_shop(), resetuje
+## se na 0 při každé nové nabídce. Určuje cenu dalšího rerollu.
+var shop_reroll_count: int = 0
+## true od chvíle, co hráč v AKTUÁLNÍM běhu poprvé dohrál 10. vlnu - do té
+## doby je tlačítko Obchod v HUD neaktivní/šedé (viz hud.gd). Resetuje se
+## v reset_game() jako všechno ostatní run-scoped - nový běh musí 10. vlnu
+## dohrát znovu, stejně jako musí znovu sbírat úrovně a itemy.
+var shop_available: bool = false
+## DEBUG: když true, reroll_shop() nic neúčtuje - pro rychlé testování bez
+## grindění zlata. Přepíná se v Debug panelu (hud.gd), NEresetuje se v
+## reset_game() (stejná logika jako u Engine.time_scale v Debug panelu -
+## je to vývojářské pohodlí napříč restarty, ne herní stav).
+var debug_free_reroll: bool = false
 
 
 ## Volá main.gd v _enter_tree(), tedy DŘÍV než se spustí _ready() hráče a HUD -
@@ -228,6 +266,9 @@ func reset_game() -> void:
 	for item_id in ITEM_ORDER:
 		item_ranks[item_id] = 0
 	owned_shop_items.clear()
+	shop_offer.clear()
+	shop_reroll_count = 0
+	shop_available = false
 
 
 ## Zavolá level/spawner, aby oznámil, že spawnul nepřítele (pro sledování stavu vlny)
@@ -269,7 +310,54 @@ func _start_new_loop() -> void:
 	loop_count += 1
 	current_wave = 0
 	loop_changed.emit(loop_count)
+	_open_periodic_shop()
 	start_next_wave()
+
+
+## Obchod se odemyká a nabízí novou nabídku jednou za kolo, na hranici mezi
+## 10. vlnou a další - viz "Periodické otevírání" v CLAUDE.md. shop_available
+## zůstává true i pro zbytek běhu (hráč tlačítkem znovu otevře AKTUÁLNÍ
+## nabídku), ale novou nabídku (a reset ceny rerollu) dostane jen na téhle
+## hranici, ne při každém ručním otevření.
+func _open_periodic_shop() -> void:
+	shop_available = true
+	shop_reroll_count = 0
+	_generate_shop_offer()
+	shop_auto_open_requested.emit()
+
+
+## Vybere SHOP_OFFER_SIZE náhodných itemů (bez opakování v rámci JEDNÉ
+## nabídky) ze SHOP_ITEM_ORDER. Nesahá na shop_reroll_count - o to se stará
+## volající (_open_periodic_shop() ho vynuluje, reroll_shop() ho zvyšuje),
+## protože "nová nabídka" znamená něco jiného v obou případech.
+func _generate_shop_offer() -> void:
+	var pool: Array[String] = SHOP_ITEM_ORDER.duplicate()
+	pool.shuffle()
+	shop_offer = pool.slice(0, SHOP_OFFER_SIZE)
+	shop_offer_changed.emit(shop_offer)
+
+
+## Cena dalšího rerollu - roste s každým rerollem v AKTUÁLNÍ nabídce (viz
+## shop_reroll_count), 0 když je zapnuté DEBUG: debug_free_reroll.
+func get_shop_reroll_cost() -> int:
+	if debug_free_reroll:
+		return 0
+	return SHOP_REROLL_BASE_COST + shop_reroll_count * SHOP_REROLL_COST_STEP
+
+
+func can_reroll_shop() -> bool:
+	return currency >= get_shop_reroll_cost()
+
+
+func reroll_shop() -> bool:
+	if not can_reroll_shop():
+		return false
+
+	currency -= get_shop_reroll_cost()
+	currency_changed.emit(currency)
+	shop_reroll_count += 1
+	_generate_shop_offer()
+	return true
 
 
 ## Násobitel HP nově spawnutých nepřátel pro aktuální kolo - main.gd ho
