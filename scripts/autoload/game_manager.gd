@@ -125,61 +125,69 @@ const DRAFT_CHOICE_COUNT: int = 3
 ## cestu ke stejným číslům.
 ##
 ## Dřív tu byl i "combine" strom (2 základní itemy -> 1 silnější tier-2 item)
-## - zrušený ve prospěch plánovaného systému rarity (Bronz/Stříbro/Zlato/
-## Diamant, opakovaná koupě stejného itemu zvedá jeho raritu), který dělá v
-## podstatě totéž (odměna za opakovanou investici), ale jako jeden sjednocený
-## systém místo dvou paralelních. Rarita zatím není implementovaná - tohle
-## je jen odstranění toho, co nahrazuje.
+## - zrušený ve prospěch systému rarity (Bronz/Stříbro/Zlato/Diamant),
+## protože dělá v podstatě totéž (odměna za opakovanou investici), ale jako
+## jeden sjednocený systém místo dvou paralelních.
+##
+## "desc" pole tu záměrně NENÍ - popis se generuje dynamicky přes
+## get_shop_item_desc(item_id, tier), protože jinak by statický text ukazoval
+## Bronz čísla i pro vylepšený Diamantový item. "stats" jsou vždy BRONZ
+## (tier 0) hodnoty, get_stat_bonus()/get_shop_item_desc() je násobí přes
+## SHOP_RARITY_MULTIPLIERS podle aktuální rarity itemu.
 const SHOP_ITEMS := {
 	"overcharged_core": {
 		"name": "Přebíječ jader",
 		"short_name": "Přebíječ",
-		"desc": "+6 poškození\n+0.2 útoku/s",
 		"stats": {"damage": 6.0, "attack_speed": 0.2},
 		"cost": 200,
 	},
 	"field_plating": {
 		"name": "Terénní pancéřování",
 		"short_name": "Pancéřování",
-		"desc": "+30 max. HP\n+3 brnění",
 		"stats": {"max_hp": 30.0, "armor": 3.0},
 		"cost": 200,
 	},
 	"targeting_module": {
 		"name": "Zaměřovací modul",
 		"short_name": "Zaměřovač",
-		"desc": "+50 dostřel\n+1 zasažený cíl",
 		"stats": {"attack_range": 50.0, "multishot": 1.0},
 		"cost": 220,
 	},
 	"nanite_regenerator": {
 		"name": "Nanitový regenerátor",
 		"short_name": "Regenerátor",
-		"desc": "+1.0 regenerace HP/s\n+3 brnění",
 		"stats": {"hp_regen": 1.0, "armor": 3.0},
 		"cost": 180,
 	},
 	"overloaded_coils": {
 		"name": "Přetížené cívky",
 		"short_name": "Cívky",
-		"desc": "+0.2 útoku/s\n+1 zasažený cíl",
 		"stats": {"attack_speed": 0.2, "multishot": 1.0},
 		"cost": 220,
 	},
 	"gravity_stabilizer": {
 		"name": "Gravitační stabilizátor",
 		"short_name": "Stabilizátor",
-		"desc": "+30 max. HP\n+50 dostřel",
 		"stats": {"max_hp": 30.0, "attack_range": 50.0},
 		"cost": 200,
 	},
 	"destruction_core": {
 		"name": "Jádro destrukce",
 		"short_name": "Destrukce",
-		"desc": "+6 poškození\n+30 max. HP",
 		"stats": {"damage": 6.0, "max_hp": 30.0},
 		"cost": 220,
 	},
+}
+## Zobrazované jednotky pro get_shop_item_desc() - klíče musí sedět se "stat"
+## v ITEMS a klíči "stats" dictionary v SHOP_ITEMS.
+const STAT_DISPLAY_NAMES := {
+	"damage": "poškození",
+	"attack_speed": "útoku/s",
+	"attack_range": "dostřel",
+	"multishot": "zasažený cíl",
+	"max_hp": "max. HP",
+	"hp_regen": "regenerace HP/s",
+	"armor": "brnění",
 }
 ## Pořadí itemů v obchodě - 7 itemů na jen 6 slotů (viz MAX_SHOP_SLOTS), takže
 ## hráč nutně jeden vynechá - záměrný trade-off, ne chyba v počtu.
@@ -206,6 +214,24 @@ const SHOP_OFFER_SIZE: int = 4
 const SHOP_REROLL_BASE_COST: int = 20
 const SHOP_REROLL_COST_STEP: int = 15
 
+## --- Rarita obchodních itemů --------------------------------------------
+## Opakovaná koupě/vylepšení stejného itemu zvedá jeho raritu o stupeň -
+## nahrazuje dřívější tier-2 combine strom jedním sjednoceným systémem (viz
+## poznámka u SHOP_ITEMS výše). BRONZE je stupeň, na kterém se item koupí
+## poprvé (index 0 do SHOP_RARITY_MULTIPLIERS/SHOP_RARITY_COST_RATIOS).
+enum ShopRarity { BRONZE, SILVER, GOLD, DIAMOND }
+const SHOP_RARITY_NAMES: Array[String] = ["Bronz", "Stříbro", "Zlato", "Diamant"]
+## Násobitel BRONZE (základních) hodnot ve SHOP_ITEMS[item_id]["stats"] -
+## ~1.6x na stupeň, aby vylepšení bylo vždy citelné, ne kosmetické.
+const SHOP_RARITY_MULTIPLIERS: Array[float] = [1.0, 1.6, 2.6, 4.2]
+## Cena za DOSAŽENÍ daného stupně (index = ShopRarity), jako násobek vlastní
+## ceny itemu (SHOP_ITEMS[item_id]["cost"]) - ne absolutní číslo, aby dražší
+## itemy měly úměrně dražší i vylepšení. Roste rychleji než síla
+## (SHOP_RARITY_MULTIPLIERS), takže Diamant je záměrně luxusní pozdní
+## investice, ne rutinní cíl - viz "exponenciální cena, téměř lineární
+## bonus" z balance brainstormu, který k tomuhle systému vedl.
+const SHOP_RARITY_COST_RATIOS: Array[float] = [1.0, 1.4, 2.25, 3.75]
+
 var current_wave: int = 0
 ## Kolikáté kolo (průchod 10 vlnami) hráč zrovna hraje. Roste, hráčova
 ## progrese (úroveň/XP/itemy/měna) se ale mezi koly NERESETUJE -
@@ -226,10 +252,18 @@ var pending_drafts: int = 0
 ## Itemy nabídnuté v AKTUÁLNĚ čekající draft nabídce - resolve_draft() proti
 ## nim ověřuje, že hráč vybírá opravdu z toho, co bylo nabídnuto.
 var _current_offer: Array = []
-## ID vlastněných obchodních itemů (viz "Obchod" výše) - na rozdíl od
-## item_ranks tu nejsou ranky, item buď je v tomhle poli (koupený), nebo
-## není. Velikost pole je omezená na MAX_SHOP_SLOTS.
-var owned_shop_items: Array[String] = []
+## Vlastněné obchodní itemy: item_id -> aktuální rarita (ShopRarity, viz
+## níže). Item v dictionary = vlastněný; klíč "hodnota" je jeho rank/tier
+## (na rozdíl od draftu, kde item_ranks čísluje 0 = nevlastněný, tady
+## nevlastněný item v dictionary vůbec není - přítomnost = vlastnictví,
+## stejně jako to bylo dřív u Array[String]). Počet klíčů je omezený na
+## MAX_SHOP_SLOTS.
+var owned_shop_items: Dictionary = {}
+## item_id -> celkem zlata investováno (nákup + všechna vylepšení) - použije
+## se pro refund při prodeji (viz sell_shop_item()), aby prodej Diamantového
+## itemu vrátil poměrnou část ze VŠECH peněz do něj vložených, ne jen z
+## poslední koupě/vylepšení.
+var shop_item_investment: Dictionary = {}
 ## Aktuálně nabídnuté itemy v obchodě (SHOP_OFFER_SIZE kusů) - viz
 ## _generate_shop_offer(). Prázdné, dokud hráč poprvé nedohraje 10. vlnu.
 var shop_offer: Array[String] = []
@@ -266,6 +300,7 @@ func reset_game() -> void:
 	for item_id in ITEM_ORDER:
 		item_ranks[item_id] = 0
 	owned_shop_items.clear()
+	shop_item_investment.clear()
 	shop_offer.clear()
 	shop_reroll_count = 0
 	shop_available = false
@@ -458,43 +493,104 @@ func get_stat_bonus(stat_id: String) -> float:
 	for item_id in owned_shop_items:
 		var stats: Dictionary = SHOP_ITEMS[item_id]["stats"]
 		if stats.has(stat_id):
-			bonus += float(stats[stat_id])
+			var tier: int = owned_shop_items[item_id]
+			bonus += float(stats[stat_id]) * SHOP_RARITY_MULTIPLIERS[tier]
 
 	return bonus
 
 
-## true, pokud je pro item volný slot, hráč ho ještě nevlastní a má na něj
-## dost zlata - _on_shop_buy_pressed() v hud.gd tímhle rozhoduje, jestli má
-## tlačítko "Koupit" být aktivní.
+## Cena za DOSAŽENÍ daného stupně rarity (koupě na BRONZE, nebo vylepšení
+## na SILVER/GOLD/DIAMOND) - poměr ceny itemu podle SHOP_RARITY_COST_RATIOS.
+func get_shop_item_cost(item_id: String, tier: ShopRarity) -> int:
+	var base_cost: float = float(SHOP_ITEMS[item_id]["cost"])
+	return int(round(base_cost * SHOP_RARITY_COST_RATIOS[tier]))
+
+
+## Popis itemu se staty přepočítanými na danou raritu - na rozdíl od
+## statického textu (co SHOP_ITEMS už nemá, viz komentář výše) tohle vždy
+## odpovídá tomu, co item na daném stupni skutečně dává.
+func get_shop_item_desc(item_id: String, tier: ShopRarity) -> String:
+	var multiplier: float = SHOP_RARITY_MULTIPLIERS[tier]
+	var stats: Dictionary = SHOP_ITEMS[item_id]["stats"]
+	var lines: Array[String] = []
+	for stat_id in stats:
+		var value: float = float(stats[stat_id]) * multiplier
+		var stat_name: String = STAT_DISPLAY_NAMES.get(stat_id, stat_id)
+		lines.append("+%s %s" % [_format_shop_stat_number(value), stat_name])
+	return "\n".join(lines)
+
+
+func _format_shop_stat_number(value: float) -> String:
+	if is_equal_approx(value, round(value)):
+		return str(int(round(value)))
+	return "%.1f" % value
+
+
+## true, pokud je pro item volný slot, hráč ho ještě nevlastní a má dost
+## zlata na koupi na BRONZE - _refresh_shop_panel() v hud.gd tímhle rozhoduje,
+## jestli má tlačítko "Koupit" být aktivní.
 func can_buy_shop_item(item_id: String) -> bool:
 	if owned_shop_items.has(item_id):
 		return false
 	if owned_shop_items.size() >= MAX_SHOP_SLOTS:
 		return false
-	return currency >= int(SHOP_ITEMS[item_id]["cost"])
+	return currency >= get_shop_item_cost(item_id, ShopRarity.BRONZE)
 
 
 func buy_shop_item(item_id: String) -> bool:
 	if not can_buy_shop_item(item_id):
 		return false
 
-	currency -= int(SHOP_ITEMS[item_id]["cost"])
+	var cost: int = get_shop_item_cost(item_id, ShopRarity.BRONZE)
+	currency -= cost
 	currency_changed.emit(currency)
-	owned_shop_items.append(item_id)
+	owned_shop_items[item_id] = ShopRarity.BRONZE
+	shop_item_investment[item_id] = cost
 	shop_inventory_changed.emit()
 	return true
 
 
-## Vrátí SHOP_SELL_REFUND_RATIO z ceny itemu a item zmizí ze slotů úplně -
-## na rozdíl od draftu tu nejsou ranky, které by šlo snižovat po jednom.
+## true, pokud hráč item vlastní, ještě není na DIAMOND a má dost zlata na
+## další stupeň.
+func can_upgrade_shop_item(item_id: String) -> bool:
+	if not owned_shop_items.has(item_id):
+		return false
+	var current_tier: int = owned_shop_items[item_id]
+	if current_tier >= ShopRarity.DIAMOND:
+		return false
+	return currency >= get_shop_item_cost(item_id, current_tier + 1)
+
+
+## Zvýší raritu vlastněného itemu o jeden stupeň - "vidět item podruhé v
+## nabídce" je jediný způsob, jak k tomu dojde (viz _generate_shop_offer(),
+## nabídka NEfiltruje už vlastněné itemy pryč přesně kvůli tomuhle).
+func upgrade_shop_item(item_id: String) -> bool:
+	if not can_upgrade_shop_item(item_id):
+		return false
+
+	var next_tier: int = owned_shop_items[item_id] + 1
+	var cost: int = get_shop_item_cost(item_id, next_tier)
+	currency -= cost
+	currency_changed.emit(currency)
+	owned_shop_items[item_id] = next_tier
+	shop_item_investment[item_id] = int(shop_item_investment.get(item_id, 0)) + cost
+	shop_inventory_changed.emit()
+	return true
+
+
+## Vrátí SHOP_SELL_REFUND_RATIO z CELKOVÉ investice do itemu (nákup + všechna
+## vylepšení, viz shop_item_investment) a item zmizí ze slotů úplně na
+## jakémkoliv stupni - obchod neumožňuje prodat "jen jeden stupeň zpátky".
 func sell_shop_item(item_id: String) -> bool:
 	if not owned_shop_items.has(item_id):
 		return false
 
-	var refund: int = int(round(float(SHOP_ITEMS[item_id]["cost"]) * SHOP_SELL_REFUND_RATIO))
+	var invested: int = int(shop_item_investment.get(item_id, 0))
+	var refund: int = int(round(float(invested) * SHOP_SELL_REFUND_RATIO))
 	currency += refund
 	currency_changed.emit(currency)
 	owned_shop_items.erase(item_id)
+	shop_item_investment.erase(item_id)
 	shop_inventory_changed.emit()
 	return true
 

@@ -370,26 +370,37 @@ func _refresh_stat_labels() -> void:
 ## na rozdíl od dřívějška teď karty ukazují cokoliv, co zrovna padne do dané
 ## pozice v GameManager.shop_offer (mění se s každým rerollem/novou nabídkou),
 ## takže se musí ptát na aktuální obsah slotu při každém kliknutí, ne na to,
-## co bylo připojené při startu.
+## co bylo připojené při startu. Dvě tlačítka na kartu: ActionButton dělá
+## Koupit/Vylepšit (podle vlastnictví a rarity), SellButton vždy jen Prodá -
+## nejde je sloučit do jednoho jako dřív, protože vlastněný item teď má DVĚ
+## smysluplné akce (vylepšit NEBO prodat), ne jen jednu.
 func _setup_shop_cards() -> void:
 	for i in shop_cards.size():
 		var card: Panel = shop_cards[i]
 		var action_button: Button = card.get_node("ActionButton")
+		var sell_button: Button = card.get_node("SellButton")
 		action_button.pressed.connect(_on_shop_card_action_pressed.bind(i))
+		sell_button.pressed.connect(_on_shop_card_sell_pressed.bind(i))
 
 
-## Koupě/prodej rozhoduje podle AKTUÁLNÍHO obsahu slotu a vlastnictví v
+## Koupě/vylepšení rozhoduje podle AKTUÁLNÍHO obsahu slotu a vlastnictví v
 ## okamžiku kliknutí - GameManager si to stejně ověří sám (can_buy_shop_item()/
-## owned_shop_items.has()), tohle jen zjistí, který item je v tuhle chvíli
+## can_upgrade_shop_item()), tohle jen zjistí, který item je v tuhle chvíli
 ## v daném slotu nabídky, a zavolá správnou ze dvou funkcí.
 func _on_shop_card_action_pressed(slot_index: int) -> void:
 	if slot_index >= GameManager.shop_offer.size():
 		return
 	var item_id: String = GameManager.shop_offer[slot_index]
 	if GameManager.owned_shop_items.has(item_id):
-		GameManager.sell_shop_item(item_id)
+		GameManager.upgrade_shop_item(item_id)
 	else:
 		GameManager.buy_shop_item(item_id)
+
+
+func _on_shop_card_sell_pressed(slot_index: int) -> void:
+	if slot_index >= GameManager.shop_offer.size():
+		return
+	GameManager.sell_shop_item(GameManager.shop_offer[slot_index])
 
 
 func _on_shop_inventory_changed() -> void:
@@ -431,7 +442,9 @@ func _refresh_shop_button_state() -> void:
 ## Aktualizuje karty podle AKTUÁLNÍ nabídky (GameManager.shop_offer, vždy
 ## SHOP_OFFER_SIZE položek) a cenu/dostupnost rerollu - volá se při otevření
 ## obchodu a při každé změně zlata/inventáře/nabídky, dokud je obchod
-## otevřený.
+## otevřený. Tři stavy karty: nevlastněný (Koupit), vlastněný pod DIAMOND
+## (Vylepšit), vlastněný na DIAMOND (ActionButton zamčené na "Max") -
+## SellButton je aktivní na jakémkoliv vlastněném stupni, i na Max.
 func _refresh_shop_panel() -> void:
 	for i in shop_cards.size():
 		var card: Panel = shop_cards[i]
@@ -444,21 +457,34 @@ func _refresh_shop_panel() -> void:
 		var item_id: String = GameManager.shop_offer[i]
 		var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
 		var name_label: Label = card.get_node("NameLabel")
+		var rarity_label: Label = card.get_node("RarityLabel")
 		var desc_label: Label = card.get_node("DescLabel")
 		var cost_label: Label = card.get_node("CostLabel")
 		var action_button: Button = card.get_node("ActionButton")
+		var sell_button: Button = card.get_node("SellButton")
 
 		name_label.text = definition["name"]
-		desc_label.text = definition["desc"]
 
-		if GameManager.owned_shop_items.has(item_id):
-			cost_label.text = "Vlastníš"
-			action_button.text = "Prodat"
-			action_button.disabled = false
-		else:
-			cost_label.text = "Cena: %d" % int(definition["cost"])
+		var owned: bool = GameManager.owned_shop_items.has(item_id)
+		var tier: int = GameManager.owned_shop_items[item_id] if owned else GameManager.ShopRarity.BRONZE
+
+		rarity_label.text = GameManager.SHOP_RARITY_NAMES[tier] if owned else "Nevlastníš"
+		desc_label.text = GameManager.get_shop_item_desc(item_id, tier)
+
+		if not owned:
+			cost_label.text = "Cena: %d" % GameManager.get_shop_item_cost(item_id, GameManager.ShopRarity.BRONZE)
 			action_button.text = "Koupit"
 			action_button.disabled = not GameManager.can_buy_shop_item(item_id)
+		elif tier < GameManager.ShopRarity.DIAMOND:
+			cost_label.text = "Vylepšit: %d" % GameManager.get_shop_item_cost(item_id, tier + 1)
+			action_button.text = "Vylepšit"
+			action_button.disabled = not GameManager.can_upgrade_shop_item(item_id)
+		else:
+			cost_label.text = "Max. úroveň"
+			action_button.text = "Max"
+			action_button.disabled = true
+
+		sell_button.disabled = not owned
 
 	shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
 	shop_reroll_button.disabled = not GameManager.can_reroll_shop()
@@ -466,19 +492,27 @@ func _refresh_shop_panel() -> void:
 
 ## Zobrazuje vlastněné obchodní itemy v BottomBaru (mimo obchod samotný) -
 ## na rozdíl od _refresh_items() (pevné pořadí podle ITEM_ORDER) se sloty
-## plní postupně podle owned_shop_items, takže prázdné sloty jsou vždy na
-## konci bez ohledu na to, který konkrétní item byl prodán.
+## plní postupně podle owned_shop_items (Dictionary item_id -> rarita, viz
+## game_manager.gd), takže prázdné sloty jsou vždy na konci bez ohledu na
+## to, který konkrétní item byl prodán. owned_shop_items.keys() zachovává
+## pořadí vložení (GDScript Dictionary je ordered).
 func _refresh_shop_slots() -> void:
+	var owned_ids: Array = GameManager.owned_shop_items.keys()
+
 	for i in shop_slot_nodes.size():
 		var slot: ColorRect = shop_slot_nodes[i]
 		var label: Label = slot.get_node("Label")
 
-		if i < GameManager.owned_shop_items.size():
-			var item_id: String = GameManager.owned_shop_items[i]
+		if i < owned_ids.size():
+			var item_id: String = owned_ids[i]
+			var tier: int = GameManager.owned_shop_items[item_id]
 			var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
-			label.text = definition["short_name"]
+			label.text = "%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[tier]]
 			slot.modulate = Color.WHITE
-			slot.tooltip_text = "%s\n%s" % [definition["name"], definition["desc"]]
+			slot.tooltip_text = "%s (%s)\n%s" % [
+				definition["name"], GameManager.SHOP_RARITY_NAMES[tier],
+				GameManager.get_shop_item_desc(item_id, tier)
+			]
 		else:
 			label.text = "-"
 			slot.modulate = LOCKED_ITEM_MODULATE
