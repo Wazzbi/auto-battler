@@ -395,31 +395,67 @@ survives window resizing.
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
 along with the game. The pause is deliberate *for now*; the user has flagged that they may later
 want the game to keep running while the shop is open, so the pause lives only in
-`_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` in `hud.gd` and nothing
-else depends on it.
+`_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` /
+`_on_shop_auto_open_requested()` in `hud.gd` and nothing else depends on it.
 
-**`ShopPanel` must stay well under the game's 720px window height** — it was originally sized at
-720px tall (edge-to-edge with the default window, zero margin) once the combine cards were added,
-which pushed the "Zavřít obchod" button off-screen with no way to close the panel. Fixed by
-shrinking every shop/combine card (smaller fonts, tighter padding) and laying the 7 basic items out
-in a single row instead of two, bringing the panel down to 420px tall — comfortable margin even
-accounting for window chrome. Any future addition to the shop panel (more items, more combine
-slots) needs to keep an eye on this budget rather than just growing the panel to fit new content.
+**Shop opens periodically, not any time** (`GameManager.shop_available`,
+`shop_auto_open_requested` signal, `_open_periodic_shop()`/`_start_new_loop()`): the shop unlocks
+and shows a fresh offer automatically — panel pops open and pauses, no click needed — the moment
+wave 10 is cleared and a new loop starts, reusing the existing loop-boundary code path rather than
+adding new event plumbing. This resolved a long-standing open design question (shop available any
+time vs. gated to a specific moment) via a Bazaar-inspired redesign brainstorm. `shop_available`
+turns true the first time this fires in a run and **stays true for the rest of that run** — the
+`ShopButton` in `Control/BottomBar` re-enables and its label drops the "(po 10. vlně)" suffix once
+unlocked, and stays clickable afterward purely to **re-open the current offer** (e.g. if the player
+closed it by accident) — clicking it never generates a new offer or costs anything; only the next
+wave-10 clear or a paid reroll does that. Before the first unlock, `_on_shop_button_pressed()`
+silently no-ops if clicked (shouldn't be reachable anyway since the button is disabled).
+`shop_available`/`shop_offer`/`shop_reroll_count` are run-scoped and reset in `reset_game()` like
+everything else — a new run has to clear wave 10 again, same as it has to re-collect levels/items.
 
-**Shop items are a separate, slot-limited system from the item draft** (`GameManager.SHOP_ITEMS`/
+**The offer is `SHOP_OFFER_SIZE` (4) random items out of the full 7-item pool, not all 7 at once**
+(`GameManager.shop_offer`, `_generate_shop_offer()`) — picked via `SHOP_ITEM_ORDER.duplicate();
+pool.shuffle(); pool.slice(0, SHOP_OFFER_SIZE)`, so duplicates within one offer are impossible.
+Already-owned items **can** appear in the offer (not filtered out) — with only 4 discrete items and
+no ranks, there'd be no way to ever revisit an owned item otherwise; today buying it again is just
+blocked (`can_buy_shop_item()`), but this is deliberately left open for the planned rarity system
+(a future item, seeing itself in the offer, becomes an "upgrade" opportunity instead of a dead
+click — see `project_shop_implementation_plan` memory). The four `ShopCard0..3` nodes are bound to
+their **slot index**, not a fixed item ID (`_setup_shop_cards()`/`_on_shop_card_action_pressed()`)
+— unlike the old always-full catalog, what's shown in slot 2 changes every reroll, so the click
+handler resolves `GameManager.shop_offer[slot_index]` at click time rather than trusting a
+value captured at setup.
+
+**Reroll costs `SHOP_REROLL_BASE_COST` (20) for the first reroll, `+SHOP_REROLL_COST_STEP` (15) for
+each further reroll within the same offer** (20, 35, 50, ...) — `shop_reroll_count` resets to 0
+only when a *new* offer is generated (wave-10 unlock or a completed reroll), so closing and
+reopening the shop does **not** reset the price ramp; the ramp exists specifically to stop
+infinite-free-rerolling for a perfect draw. `GameManager.debug_free_reroll` (Debug panel's
+"Free reroll" toggle) makes `get_shop_reroll_cost()` always return 0 for fast manual testing — like
+`Engine.time_scale`, this is intentionally **not** reset by `reset_game()` (dev convenience across
+restarts, not game state).
+
+**`ShopPanel` must stay well under the game's 720px window height** — it once grew to exactly
+720px tall (edge-to-edge with the default window, zero margin) after adding a now-removed combine-
+items section, which pushed the "Zavřít obchod" button off-screen with no way to close the panel.
+Currently 310px tall (one row of 4 cards + a reroll button + close button) with comfortable margin.
+Any future addition to the shop panel needs to keep an eye on this budget rather than just growing
+the panel to fit new content.
+
+**Shop items are a separate system from the item draft** (`GameManager.SHOP_ITEMS`/
 `SHOP_ITEM_ORDER`, `owned_shop_items`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is
-free, randomly offered, single-stat, and unlimited-rank, a shop item is: bought with gold, always
-available (all 7 shown every time the shop opens), grants **multiple stats at once** (e.g.
-"Přebíječ jader" = +6 damage AND +0.2 attack speed), and is **owned or not** — no ranks, buying it
-again isn't possible (`can_buy_shop_item()` returns false once `owned_shop_items.has(item_id)`).
-This was a deliberate design pivot mid-brainstorm, modeled after League of Legends' item system
-(discrete items, not stacking ranks) instead of extending the draft's rank-based pattern to gold
-purchases — the two systems are meant to feel different, not like two currencies buying the same
-thing. **7 items exist for only `MAX_SHOP_SLOTS` (6) slots** — deliberate, not a UI overflow bug:
-the player can never own all 7 simultaneously, so choosing which 6 (and which one to skip) is a
-real decision, reusing the same "offer more than you can take" pressure the draft's 3-of-6(now
-7) pick already relies on. `get_stat_bonus(stat_id)` sums both the draft's `item_ranks` contribution
-and shop items' `stats` dict contribution for a given stat — a player can own both "Jádro síly"
+free, randomly offered, single-stat, and unlimited-rank, a shop item is: bought with gold from a
+rotating offer (see above), grants **multiple stats at once** (e.g. "Přebíječ jader" = +6 damage
+AND +0.2 attack speed), and is **owned or not** — no ranks, buying it again isn't possible
+(`can_buy_shop_item()` returns false once `owned_shop_items.has(item_id)`). This was a deliberate
+design pivot mid-brainstorm, modeled after League of Legends' item system (discrete items, not
+stacking ranks) instead of extending the draft's rank-based pattern to gold purchases — the two
+systems are meant to feel different, not like two currencies buying the same thing. Ownership is
+still capped at `MAX_SHOP_SLOTS` (6) even though only 7 items total exist and only 4 show at once
+— the cap matters less now that the offer itself is already scarce, but stays in place since the
+planned rarity system (see memory) will grow the item pool well past 7. `get_stat_bonus(stat_id)`
+sums both the draft's `item_ranks` contribution and shop items' `stats` dict contribution for a
+given stat — a player can own both "Jádro síly"
 (draft) *and* "Přebíječ jader" (shop, which also grants damage) at the same time; their damage
 bonuses just add together, no conflict.
 
@@ -432,28 +468,16 @@ by checking `GameManager.owned_shop_items.has(item_id)` — the same 7 cards are
 roles (a card showing "Koupit"/cost when unowned flips to "Prodat"/"Vlastníš" once bought), rather
 than maintaining a separate catalog view and owned-inventory view that could drift out of sync.
 
-**Tier-2 (combined) items** (`annihilation_core`, `regenerating_bastion`, `swarm_emitter` in
-`SHOP_ITEMS`, `GameManager.SHOP_COMBINE_ORDER`, `Control/ShopPanel/ShopCombineCard0..2` in
-`hud.tscn`): each declares a non-empty `recipe` (two tier-1 item IDs) and can't be bought directly
-with `buy_shop_item()` — only `combine_shop_item()`, which requires owning *both* recipe components
-plus enough gold for `cost` (which for a tier-2 item means the combine *fee*, not a standalone
-price). Combining **removes both components and adds the tier-2 item**, a net change of -1 owned
-item (2 → 1) — this can never breach `MAX_SHOP_SLOTS`, since the two consumed components were
-already counted against it. Each tier-2 item's stats are somewhat more than the raw sum of its
-components' stats (the same "finished item is worth more than its parts" incentive League of
-Legends uses) — e.g. "Jádro anihilace" (`overcharged_core` + `destruction_core`) gives +16 damage
-where the components alone would sum to +12. `hud.gd`'s `_on_shop_card_action_pressed(item_id)`
-picks buy vs. combine vs. sell by checking ownership first, then whether `recipe` is empty — the
-same dual-purpose-button pattern as tier-1 cards, reused for the combine cards' `ActionButton` too.
-
-**Selling refunds 50% of TOTAL investment, not just the item's own `cost`** —
-`_total_shop_item_value(item_id)` recurses through `recipe` (a tier-1 item's value is just its
-`cost`; a tier-2 item's value is its own `cost` *plus* both components' values), and
-`sell_shop_item()` refunds `SHOP_SELL_REFUND_RATIO` of that total. Without this, selling "Jádro
-anihilace" would refund only 50% of its 160-gold combine fee (80 gold) despite the player having
-spent 200 + 220 + 160 = 580 gold to build it — the recursive total (580 × 50% = 290) is what
-actually gets refunded. This also means the recipe chain can go arbitrarily deep in the future
-(tier-3 combining tier-2 items) without this formula needing to change.
+**There used to be a tier-2 "combine" system here (removed 2026-09-08)** — pairs of basic items
+could be fused into a stronger third item. It was retired in favor of a planned rarity system
+(Bronz/Stříbro/Zlato/Diamant — buying a duplicate of an owned item upgrades its rarity instead of
+combining two different items) that covers the same design goal — reward for repeated investment
+in one item — as a single unified mechanic instead of two parallel ones. **The rarity system is
+designed but not yet implemented** — see the `project_shop_implementation_plan` memory for the
+concrete tier/cost sketch (4 tiers, ~1.6× power and cost growth per tier, special effects unlocking
+at Gold) before building it, rather than re-deriving the numbers from scratch. If you're looking for
+`combine_shop_item()`/`SHOP_COMBINE_ORDER`/`recipe` fields, they no longer exist — don't resurrect
+them without checking whether the rarity system has since replaced this note.
 
 **`Control/BottomBar/ItemSlot1..6` now display owned shop items** (`hud.gd`'s
 `_refresh_shop_slots()`), filled in `owned_shop_items` order so empty slots always trail at the end
@@ -496,6 +520,10 @@ reuse the *real* code paths rather than shortcutting past them:
 - **Auto vylepšení** is the moved/renamed old BottomBar "Auto" toggle (see above) — it's here rather
   than in the main HUD specifically because its only real use is skipping the draft-choice pause
   during testing.
+- **Free reroll** sets `GameManager.debug_free_reroll`, making shop rerolls free (see "Reroll
+  costs..." above) — for testing the shop offer/reroll flow without grinding gold. Same
+  not-reset-by-`reset_game()` treatment as **Rychlost**, for the same reason (dev convenience
+  across restarts, not run state).
 
 **Planned but not yet done**: a live "fun"/pacing telemetry readout (concurrent enemy count,
 "close calls") is planned for this panel — see the bullet-hell pacing design goal above. The panel
@@ -514,5 +542,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, including tier-2 combined items' `recipe`), `SHOP_COMBINE_ORDER`, `MAX_SHOP_SLOTS`, `SHOP_SELL_REFUND_RATIO` — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`), `MAX_SHOP_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP` — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)
