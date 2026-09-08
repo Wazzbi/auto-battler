@@ -398,6 +398,14 @@ want the game to keep running while the shop is open, so the pause lives only in
 `_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` in `hud.gd` and nothing
 else depends on it.
 
+**`ShopPanel` must stay well under the game's 720px window height** — it was originally sized at
+720px tall (edge-to-edge with the default window, zero margin) once the combine cards were added,
+which pushed the "Zavřít obchod" button off-screen with no way to close the panel. Fixed by
+shrinking every shop/combine card (smaller fonts, tighter padding) and laying the 7 basic items out
+in a single row instead of two, bringing the panel down to 420px tall — comfortable margin even
+accounting for window chrome. Any future addition to the shop panel (more items, more combine
+slots) needs to keep an eye on this budget rather than just growing the panel to fit new content.
+
 **Shop items are a separate, slot-limited system from the item draft** (`GameManager.SHOP_ITEMS`/
 `SHOP_ITEM_ORDER`, `owned_shop_items`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is
 free, randomly offered, single-stat, and unlimited-rank, a shop item is: bought with gold, always
