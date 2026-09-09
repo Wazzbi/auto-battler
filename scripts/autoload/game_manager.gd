@@ -31,6 +31,8 @@ signal shop_offer_changed(offer_ids: Array)
 ## Emitne se JEN při automatickém otevření po 10. vlně (ne při ručním
 ## otevření tlačítkem ani při rerollu) - HUD na to reaguje zobrazením a
 ## zapauzováním panelu, i když zrovna nikdo neklikl na tlačítko Obchod.
+## Pokud v tu chvíli ještě čeká nevyřízená nabídka schopnosti, emit se
+## ODLOŽÍ, dokud se nevyřídí - viz _try_open_pending_shop().
 signal shop_auto_open_requested
 
 enum State { INTRO, PLAYING, GAME_OVER, WON }
@@ -360,6 +362,14 @@ var shop_reroll_count: int = 0
 ## v reset_game() jako všechno ostatní run-scoped - nový běh musí 10. vlnu
 ## dohrát znovu, stejně jako musí znovu sbírat úrovně a itemy.
 var shop_available: bool = false
+## true, když čeká na otevření AUTOMATICKY otevřená nabídka obchodu (po 10.
+## vlně), ale zrovna běží nevyřízená nabídka schopnosti - viz
+## _try_open_pending_shop(). Řeší kolizi, kdy hráč dostane level-up přesně
+## ze zabití POSLEDNÍHO nepřítele 10. vlny: level-up proběhne SYNCHRONNĚ
+## uvnitř enemy_defeated() (přes add_xp()), tedy ještě předtím, než se
+## stihne vyhodnotit konec vlny o pár řádků níž - bez tohohle odložení by
+## AbilityDraftPanel a ShopPanel mohly naskočit na sobě současně.
+var _shop_open_deferred: bool = false
 ## DEBUG: když true, reroll_shop() nic neúčtuje - pro rychlé testování bez
 ## grindění zlata. Přepíná se v Debug panelu (hud.gd), NEresetuje se v
 ## reset_game() (stejná logika jako u Engine.time_scale v Debug panelu -
@@ -387,6 +397,7 @@ func reset_game() -> void:
 	shop_offer.clear()
 	shop_reroll_count = 0
 	shop_available = false
+	_shop_open_deferred = false
 
 
 ## Zavolá level/spawner, aby oznámil, že spawnul nepřítele (pro sledování stavu vlny)
@@ -441,6 +452,21 @@ func _open_periodic_shop() -> void:
 	shop_available = true
 	shop_reroll_count = 0
 	_generate_shop_offer()
+	_try_open_pending_shop()
+
+
+## Otevře obchod (emitne shop_auto_open_requested) HNED, pokud zrovna nečeká
+## žádná nevyřízená nabídka schopnosti - jinak otevření jen ODLOŽÍ
+## (_shop_open_deferred) a schová se za resolve_ability_draft(), který tuhle
+## funkci zavolá znovu, jakmile se poslední čekající nabídka vyřídí. Volá se
+## jak z _open_periodic_shop() (nová nabídka po 10. vlně), tak z konce
+## resolve_ability_draft() (dořešení odloženého otevření).
+func _try_open_pending_shop() -> void:
+	if pending_ability_drafts > 0 or not _current_ability_offer.is_empty():
+		_shop_open_deferred = true
+		return
+
+	_shop_open_deferred = false
 	shop_auto_open_requested.emit()
 
 
@@ -579,6 +605,13 @@ func resolve_ability_draft(offer_index: int) -> bool:
 	_add_ability(offer_entry["ability_id"], offer_entry["rarity"])
 
 	_try_offer_next_ability_draft()
+	# Kdyby zrovna čekalo odložené otevření obchodu (viz _shop_open_deferred) -
+	# ať už proto, že tohle byla poslední čekající nabídka, nebo proto, že
+	# _try_offer_next_ability_draft() zrovna žádnou další nevygeneroval -
+	# zkusí ho otevřít teď. _try_open_pending_shop() si samo ověří, jestli
+	# fronta schopností doopravdy doběhla do prázdna.
+	if _shop_open_deferred:
+		_try_open_pending_shop()
 	return true
 
 

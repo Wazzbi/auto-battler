@@ -318,7 +318,10 @@ func _on_ability_auto_toggled(enabled: bool) -> void:
 	var pick_index: int = randi() % _last_ability_offer.size()
 	GameManager.resolve_ability_draft(pick_index) # se zapnutým Auto se přes _on_ability_draft_ready samo prořeže i případné další čekající
 	ability_draft_panel.hide()
-	get_tree().paused = false
+	# Stejná pojistka jako v _on_ability_pick_pressed() - resolve_ability_draft()
+	# mohl synchronně otevřít ShopPanel (odložené auto-otevření po 10. vlně).
+	if not shop_panel.visible:
+		get_tree().paused = false
 
 
 func _on_ability_inventory_changed() -> void:
@@ -374,10 +377,15 @@ func _on_ability_pick_pressed(offer_index: int) -> void:
 	# resolve_ability_draft() může synchronně vyvolat DALŠÍ ability_draft_ready
 	# (víc úrovní najednou z velkého přísunu XP), který už _show_ability_draft_panel()
 	# znovu zavolal a panel nechal otevřený s novým obsahem - tady ho proto
-	# zavíráme jen když už doopravdy nic dalšího nečeká.
+	# zavíráme jen když už doopravdy nic dalšího nečeká. Stejně tak může
+	# synchronně otevřít ShopPanel (odložené automatické otevření po 10. vlně,
+	# viz GameManager._try_open_pending_shop()) - odpauzovat smí, jen když
+	# obchod zrovna NEPŘEVZAL pauzu za nás, jinak by hra na okamžik běžela
+	# pod nově otevřeným ShopPanelem.
 	if GameManager.pending_ability_drafts <= 0:
 		ability_draft_panel.hide()
-		get_tree().paused = false
+		if not shop_panel.visible:
+			get_tree().paused = false
 
 
 ## Sloty vlastněných schopností v BottomBaru - ukazuje počet vlastněných
