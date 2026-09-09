@@ -475,32 +475,41 @@ identity just for this one edge case. Revisit if it becomes noticeable once more
 merges happen mid-run more often.
 
 **HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
-portrait with a level badge, HP bar, XP bar, a grid of PROCEDURALLY-built schopnost slots
-(`AbilitiesContainer`, populated by `hud.gd`'s `_build_abilities_ui()` — one widget per
-`GameManager.ABILITY_ORDER` entry, grayed out while `owned_abilities` has no instance of that
-`ability_id`, otherwise shows `short_name` + copy count + the *highest* owned rarity, e.g.
-"Jádro / 2x Stříbro"), and six (currently decorative, unrelated — future equipment loot)
-`ItemSlot1..6` rects, now a single row. Procedural (not hand-authored `.tscn` nodes) specifically
-because the pool now has 9 entries and is expected to keep growing — same reasoning as the shop's
-mini-slot grid below; adding a new `ABILITIES` entry needs zero `hud.tscn` changes. Right-side
-elements are anchored to the right edge and the bars stretch, so the bar survives window resizing.
-**The gold counter (`GoldLabel`) moved out of `BottomBar` 2026-09-09** — it now lives at the top of
-the screen (`Control/GoldLabel`, left-aligned) alongside `LoopLabel`/`WaveLabel`, matching that
-counter row's style instead of sitting in the bottom bar; `ShopButton` was removed entirely in the
-same change
+portrait with a level badge, HP bar, XP bar, and six (currently decorative, unrelated — future
+equipment loot) `ItemSlot1..6` rects, a single row. **The gold counter (`GoldLabel`) moved out of
+`BottomBar` 2026-09-09** — it now lives at the top of the screen (`Control/GoldLabel`,
+left-aligned) alongside `LoopLabel`/`WaveLabel`, matching that counter row's style instead of
+sitting in the bottom bar; `ShopButton` was removed entirely in the same change (see "Shop opens
+periodically" below).
 
-**`AbilitiesContainer` and `ItemSlot1..6` swapped positions 2026-09-09** (explicit user request):
-`AbilitiesContainer` now sits where the item slots used to be — right-anchored
-(`anchor_left`/`anchor_right = 1.0`, matching the shop's mini-slot anchoring style), laid out into
-`ABILITY_SLOT_ROWS` (2) rows instead of one long row, since 9 schopnosti no longer fit in a single
-row at their old absolute-left position. `_build_abilities_ui()` computes `columns =
-ceili(total / ABILITY_SLOT_ROWS)` and places widget `i` at `row = i / columns`, `col = i % columns`
-— this stays correct as `ABILITY_ORDER` grows, no hardcoded slot count. `ItemSlot1..6` moved the
-other way, to `AbilitiesContainer`'s old absolute-left spot (`offset_left = 310`, matching the
-HP/XP bars' left edge), now as a single row of 6 instead of the old 3-column/2-row grid — they're
-still hand-authored nodes in `hud.tscn` (not procedural, since there are always exactly 6 and no
-future-growth concern like `ABILITIES` has), just repositioned.
-(see "Shop opens periodically" below).
+**`ItemSlot1..6` and the schopnost stack swapped positions 2026-09-09** (explicit user request):
+`ItemSlot1..6` moved into `BottomBar` at `offset_left = 310` (matching the HP/XP bars' left edge),
+as a single row of 6 instead of the old 3-column/2-row grid — still hand-authored nodes in
+`hud.tscn` (not procedural, since there are always exactly 6 and no future-growth concern like
+`ABILITIES` has). The schopnost slots moved the other way, out of `BottomBar` entirely.
+
+**Schopnost slots live OUTSIDE `BottomBar`, as a vertical stack on the left side of the play area**
+(`Control/AbilitiesContainer`, `offset_left = 20` matching `GoldLabel`'s left edge, `offset_top =
+60` just below the `Zlato`/`Kolo`/`Vlna` row) — moved here from a grid inside `BottomBar`
+2026-09-09 (explicit user request, second change the same day as the swap above). This is also a
+bigger behavior change, not just a reposition: **slots are now POSITIONAL, one per owned INSTANCE
+in `GameManager.owned_abilities`, not one dedicated slot per `ABILITY_ORDER` type** — the same
+principle `_refresh_shop_slots()` already used for `ItemSlot1..6`/`active_shop_items`. The first
+schopnost ever picked lands in slot 0, the second in slot 1, and so on; a slot for a type the
+player doesn't own is simply never created (no more grayed-out `"short_name\n-"` placeholder for
+every unpicked schopnost — that only made sense when there was one fixed slot per type). Because
+`owned_abilities` grows on every pick and shrinks by 1 on every merge (2 consumed → 1 appended, see
+`_try_merge_ability()`), `hud.gd`'s `_refresh_abilities()` rebuilds the ENTIRE stack from scratch
+on every `ability_inventory_changed` signal (`queue_free()` every child, then recreate) rather than
+maintaining a persistent widget pool indexed by type — there's no stable identity to update in
+place across a merge (same reasoning already documented for `player.gd`'s `_ability_progress`
+reset). **Column wrap keeps the stack from ever reaching `BottomBar`**: slots stack downward and
+wrap into a new column to the right after `ABILITY_STACK_MAX_ROWS` (6) — `col = i /
+ABILITY_STACK_MAX_ROWS`, `row = i % ABILITY_STACK_MAX_ROWS` — chosen so even a full column (6 × 52px
+tall) ends well above `BottomBar`'s top edge for the project's 720px-tall window; this is a static
+budget (like every other HUD offset in this project, see `ground.gd`'s "no dynamic viewport-based
+layout" precedent), not computed from the actual viewport height at runtime, so a much shorter
+window would need this constant revisited by hand.
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
@@ -722,4 +731,4 @@ don't proactively redesign the layout for this alone.
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop)
-- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)
+- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above)
