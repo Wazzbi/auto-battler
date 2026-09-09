@@ -479,18 +479,21 @@ Went through several reshuffles on 2026-09-09 as the user iterated on where thin
 this describes the current state, current as the authoritative reference (treat any older
 description you find elsewhere as stale):
 
-- **Top-left**: `Portrait`/`LevelBadge`/`LevelLabel` (`offset_left = 20`, `offset_top = 10` —
-  top edge deliberately matches `HPBar`'s top edge, see below) beside `HPBar`/`XPBar`
-  (`offset_left = 118`, same relative arrangement/sizing `BottomBar` used to have, just moved as
-  one block), then `GoldLabel` directly below `XPBar` and left-aligned with it (`offset_left =
-  118`, `offset_top = 66`), then `AbilitiesContainer` below that (`offset_left = 20` — back to
-  `Portrait`'s left edge, not `GoldLabel`'s; explicit user request, an intentional asymmetry, not
-  an inconsistency — `offset_top = 98`). All direct children of `Control`. Moved here from
-  `BottomBar` 2026-09-09 (explicit user request) — none of them are anchored/stretched to a bar
-  width anymore, they're all fixed-offset. Alignment fine-tuned in a follow-up the same day:
-  `Portrait`'s top was nudged up 10px to match `HPBar`'s top exactly, and `GoldLabel` moved from
-  under the whole portrait/bars row (left-aligned with `Portrait`) to sit directly under `XPBar`
-  specifically (left-aligned with the bars instead) — `AbilitiesContainer` shifted up to follow.
+- **Top-left**: `Portrait`/`LevelBadge`/`LevelLabel` (`offset_left = 20`, `offset_top = 20` —
+  top edge deliberately matches `HPBar`'s top edge, see below, AND the top margin deliberately
+  matches the 20px left margin) beside `HPBar`/`XPBar` (`offset_left = 118`, same relative
+  arrangement/sizing `BottomBar` used to have, just moved as one block), then `GoldLabel` directly
+  below `XPBar` and left-aligned with it (`offset_left = 118`, `offset_top = 76`), then
+  `AbilitiesContainer` below that (`offset_left = 20` — back to `Portrait`'s left edge, not
+  `GoldLabel`'s; explicit user request, an intentional asymmetry, not an inconsistency —
+  `offset_top = 108`). All direct children of `Control`. Moved here from `BottomBar` 2026-09-09
+  (explicit user request) — none of them are anchored/stretched to a bar width anymore, they're
+  all fixed-offset. Alignment fine-tuned in two follow-ups the same day: first `Portrait` nudged up
+  10px to match `HPBar`'s top exactly and `GoldLabel` moved from under the whole portrait/bars row
+  to sit directly under `XPBar` instead (left-aligned with the bars); then the WHOLE top-left block
+  shifted down 10px together (so `Portrait`/`HPBar` stayed aligned with each other) once the user
+  noticed the resulting 10px top margin looked inconsistent next to the 20px left margin —
+  `AbilitiesContainer` shifted down to follow both times.
 - **Top-right**: `LoopLabel` ("Kolo N") and `WaveLabel` ("Vlna N"), right-anchored, side by side
   (`WaveLabel` closest to the corner). Moved here from a fixed absolute position near screen-center
   2026-09-09, same change as the top-left move above.
@@ -522,7 +525,7 @@ place across a merge (same reasoning already documented for `player.gd`'s `_abil
 reset). **Column wrap keeps the stack from ever reaching `BottomBar`**: slots stack downward and
 wrap into a new column to the right after `ABILITY_STACK_MAX_ROWS` (6) — `col = i /
 ABILITY_STACK_MAX_ROWS`, `row = i % ABILITY_STACK_MAX_ROWS` — chosen so even a full column (6 × 52px
-tall), starting from `AbilitiesContainer`'s `offset_top = 98`, ends (`y = 406`) well above
+tall), starting from `AbilitiesContainer`'s `offset_top = 108`, ends (`y = 416`) well above
 `BottomBar`'s top edge for the project's 720px-tall window; this is a static budget (like every
 other HUD offset in this project, see `ground.gd`'s "no dynamic viewport-based layout" precedent),
 not computed from the actual viewport height at runtime, so a much shorter window — or moving
