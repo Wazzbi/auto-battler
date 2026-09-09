@@ -35,6 +35,10 @@ signal landed
 @export var move_speed: float = 60.0 # px/s postupu, když nikdo není v dosahu
 @export var projectile_scene: PackedScene
 @export var impact_effect_scene: PackedScene
+## Vizuál pro schopnost "Orbitální bombardování" (trigger "time_elapsed",
+## efekt "aoe_strike") - stejný script jako impact_effect_scene (ImpactEffect),
+## jen s větším poloměrem/jinou barvou v samotné .tscn, viz _trigger_aoe_strike().
+@export var orbital_strike_effect_scene: PackedScene
 
 ## Nastavení drop-in animace
 @export var fall_height: float = 900.0
@@ -54,25 +58,27 @@ var level_end_x: float = INF
 ## panelu v HUD (viz hud.gd), na resetu hry (nová instance hráče) se sama
 ## vrátí na false.
 var debug_invincible: bool = false
-## Počítadlo výstřelů PRO KAŽDOU vlastněnou schopnost s triggerem
-## "shot_count" (viz GameManager.owned_abilities), stejný index/pořadí jako
-## owned_abilities - přebuduje se od nuly při KAŽDÉ změně vlastnictví
-## (_on_ability_inventory_changed()), i jen kosmetické (sloučení). To je
-## vědomý kompromis: sloučená schopnost tak ztratí rozpracovaný postup ke
-## svému příštímu spuštění, ale instance v poli nemají stabilní identitu
-## napříč sloučeními, takže "zachovat postup" by vyžadovalo sledovat identitu
-## navíc jen pro tenhle okrajový případ.
-var _ability_shot_counters: Array[int] = []
+## Postup KAŽDÉ vlastněné AKTIVNÍ schopnosti (viz GameManager.owned_abilities)
+## směrem k jejímu dalšímu spuštění - stejný index/pořadí jako owned_abilities.
+## Jednotka závisí na triggeru té konkrétní instance: "shot_count" počítá
+## celočíselně výstřely (viz _consume_ability_triggers()), "time_elapsed"
+## počítá sekundy (viz _process_time_based_abilities()) - float, aby šlo
+## přičítat `delta`. Přebuduje se od nuly při KAŽDÉ změně vlastnictví
+## (_on_ability_inventory_changed()), i jen kosmetické (sloučení, nebo přidání
+## úplně jiné schopnosti) - vědomý kompromis: sloučená schopnost tak ztratí
+## rozpracovaný postup ke svému příštímu spuštění, ale instance v poli nemají
+## stabilní identitu napříč sloučeními, takže "zachovat postup" by
+## vyžadovalo sledovat identitu navíc jen pro tenhle okrajový případ.
+var _ability_progress: Array[float] = []
 
 
 func _ready() -> void:
 	add_to_group("player")
 
-	# Progrese (úrovně, draftnuté itemy, nákupy v obchodě) mění staty za
+	# Progrese (úrovně, pasivní schopnosti, nákupy v obchodě) mění staty za
 	# běhu - reagujeme na všechny tři signály, HUD do statů hráče nikdy
 	# nesahá přímo.
 	GameManager.level_changed.connect(_on_level_changed)
-	GameManager.draft_inventory_changed.connect(_on_draft_inventory_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
 	GameManager.ability_inventory_changed.connect(_on_ability_inventory_changed)
 
@@ -124,9 +130,10 @@ func _play_squash_effect() -> void:
 	squash_tween.tween_property(visual, "scale", Vector2.ONE, 0.15)
 
 
-## Přepočítá staty na základě base hodnot + bonusů z vybraných itemů (úroveň
-## sama o sobě už žádný bonus nedává, viz GameManager.get_stat_bonus()).
-## Přírůstek max HP se přičte i k aktuálnímu HP, takže item na max HP trochu vyléčí.
+## Přepočítá staty na základě base hodnot + bonusů (automatický level growth,
+## pasivní schopnosti, obchod - viz GameManager.get_stat_bonus()). Přírůstek
+## max HP se přičte i k aktuálnímu HP, takže pasivní schopnost na max HP
+## trochu vyléčí.
 func _recalculate_stats() -> void:
 	var old_max_hp := max_hp if max_hp > 0 else base_max_hp
 	max_hp = base_max_hp + GameManager.get_stat_bonus("max_hp")
@@ -166,19 +173,17 @@ func _on_level_changed(_new_level: int) -> void:
 	_apply_progression_changes()
 
 
-func _on_draft_inventory_changed() -> void:
-	_apply_progression_changes()
-
-
 func _on_shop_inventory_changed() -> void:
 	_apply_progression_changes()
 
 
-## Schopnosti nemění staty (žádný get_stat_bonus() vstup) - jen potřebují
-## své počítadlo přerovnat na aktuální velikost/pořadí owned_abilities.
+## Pasivní schopnosti mění staty (přes get_stat_bonus()), aktivní ne - ale
+## obojí sdílí owned_abilities/_ability_progress, takže se přepočítává
+## a přerovnává vždy, i pro čistě aktivní přírůstek.
 func _on_ability_inventory_changed() -> void:
-	_ability_shot_counters.resize(GameManager.owned_abilities.size())
-	_ability_shot_counters.fill(0)
+	_apply_progression_changes()
+	_ability_progress.resize(GameManager.owned_abilities.size())
+	_ability_progress.fill(0.0)
 
 
 func _apply_progression_changes() -> void:
@@ -193,6 +198,8 @@ func _process(delta: float) -> void:
 	if hp < max_hp and hp > 0.0:
 		hp = minf(hp + get_hp_regen() * delta, max_hp)
 		hp_changed.emit(hp, max_hp)
+
+	_process_time_based_abilities(delta)
 
 	cooldown_timer -= delta
 	var targets := _find_nearest_enemies(get_target_count())
@@ -243,33 +250,76 @@ func _shoot(target: Node2D) -> void:
 
 ## Každý zavolaný _shoot() je "1 výstřel" pro účely schopností s triggerem
 ## "shot_count" - u multishotu se tak počítá KAŽDÝ jednotlivý projektil
-## zvlášť, ne jeden "kolo" útoku. Pro každou vlastněnou schopnost s tímhle
-## triggerem zvýší JEJÍ VLASTNÍ počítadlo (viz _ability_shot_counters) a při
+## zvlášť, ne jeden "kolo" útoku. Pro každou vlastněnou AKTIVNÍ schopnost s
+## tímhle triggerem zvýší JEJÍ VLASTNÍ postup (viz _ability_progress) a při
 ## dosažení prahu (podle rarity té konkrétní instance) ho vynuluje a
 ## aplikuje efekt. Víc vlastněných instancí se vyhodnocuje NEZÁVISLE - pokud
 ## by dvě spustily efekt na stejném výstřelu, jejich násobiče se navzájem
 ## vynásobí (ne sečtou), proto vrací násobič přes návratovou hodnotu místo
-## přímé úpravy get_damage().
+## přímé úpravy get_damage(). Přeskakuje pasivní schopnosti (nemají "trigger"
+## klíč vůbec) - proto se kontroluje "type" jako první.
 func _consume_ability_triggers() -> float:
 	var multiplier: float = 1.0
 	for i in GameManager.owned_abilities.size():
 		var entry: Dictionary = GameManager.owned_abilities[i]
 		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
-		if definition["trigger"] != "shot_count":
+		if definition["type"] != "active" or definition["trigger"] != "shot_count":
 			continue
 
-		_ability_shot_counters[i] += 1
+		_ability_progress[i] += 1.0
 		var interval: int = definition["trigger_values"][entry["rarity"]]
-		if _ability_shot_counters[i] >= interval:
-			_ability_shot_counters[i] = 0
+		if _ability_progress[i] >= interval:
+			_ability_progress[i] = 0.0
 			if definition["effect"] == "damage_multiplier":
-				multiplier *= float(definition["effect_value"])
+				multiplier *= float(definition["effect_params"]["multiplier"])
 
 	return multiplier
 
 
+## Časově spouštěné schopnosti (trigger "time_elapsed", např. "Orbitální
+## bombardování") tikají KAŽDÝ frame nezávisle na střelbě/dosahu - na rozdíl
+## od _consume_ability_triggers() (volané jen ze _shoot()) běží pořád, i když
+## hráč zrovna nemá koho zasáhnout. Stejný nezávislý-víc-instancí princip
+## jako u shot_count (viz výše), jen efekt ("aoe_strike") nevrací násobič,
+## rovnou zasáhne nepřátele sám (viz _trigger_aoe_strike()).
+func _process_time_based_abilities(delta: float) -> void:
+	for i in GameManager.owned_abilities.size():
+		var entry: Dictionary = GameManager.owned_abilities[i]
+		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
+		if definition["type"] != "active" or definition["trigger"] != "time_elapsed":
+			continue
+
+		_ability_progress[i] += delta
+		var charge_time: float = float(definition["trigger_values"][entry["rarity"]])
+		if _ability_progress[i] >= charge_time:
+			_ability_progress[i] = 0.0
+			if definition["effect"] == "aoe_strike":
+				_trigger_aoe_strike(definition["effect_params"])
+
+
+## "aoe_strike" zasáhne VŠECHNY živé nepřátele (ne jen okruh kolem hráče) -
+## "screen-wide" efekt, viz ABILITIES["orbital_bombardment"] v game_manager.gd.
+## Volá se přes take_damage(), stejně jako debug_skip_wave() v main.gd, aby
+## zásah prošel normální odměnou/XP a double-kill-safe _is_dead pojistkou v
+## enemy.gd, ne nějakou zkratkou kolem nich.
+func _trigger_aoe_strike(effect_params: Dictionary) -> void:
+	var damage: float = float(effect_params["damage"])
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(enemy):
+			enemy.take_damage(damage)
+	_spawn_orbital_strike_effect()
+
+
+func _spawn_orbital_strike_effect() -> void:
+	if orbital_strike_effect_scene == null:
+		return
+	var effect: Node2D = orbital_strike_effect_scene.instantiate()
+	get_tree().current_scene.add_child(effect)
+	effect.global_position = global_position
+
+
 ## Kolik % původního poškození projde i přes libovolně vysoké brnění - brání
-## tomu, aby naskládané brnění (base + draftnuté ranky) udělalo hráče
+## tomu, aby naskládané brnění (base + pasivní schopnosti) udělalo hráče
 ## nezranitelným vůči budoucím silnějším typům zásahů. Plochý odečet níž
 ## je naopak záměrně bez podlahy pro NEGATIVNÍ hodnoty, takže proti slabým
 ## zásahům (řádově pod hodnotou brnění) může efektivní poškození klesnout
