@@ -37,8 +37,7 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var hp_regen_label: Label = $Control/BottomBar/HPBar/RegenLabel
 @onready var xp_bar: ProgressBar = $Control/BottomBar/XPBar
 @onready var xp_label: Label = $Control/BottomBar/XPBar/XPLabel
-@onready var gold_label: Label = $Control/BottomBar/GoldLabel
-@onready var shop_button: Button = $Control/BottomBar/ShopButton
+@onready var gold_label: Label = $Control/GoldLabel
 
 @onready var shop_panel: Panel = $Control/ShopPanel
 @onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
@@ -195,9 +194,7 @@ func _ready() -> void:
 	_build_abilities_ui()
 	_setup_shop_cards()
 	_build_shop_stash_ui()
-	_refresh_shop_button_state()
 
-	shop_button.pressed.connect(_on_shop_button_pressed)
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
 	wave_cleared_timer.timeout.connect(func(): wave_cleared_label.hide())
@@ -460,19 +457,15 @@ func _on_shop_inventory_changed() -> void:
 		_refresh_shop_panel()
 
 
-## Nová nabídka (periodické otevření NEBO reroll) - překreslí karty a stav
-## tlačítka Obchod, i když je panel zrovna zavřený (aby byl při příštím
-## otevření/refreshi vždy aktuální).
+## Nová nabídka (periodické otevření NEBO reroll) - překreslí karty, pokud je
+## panel zrovna otevřený (aby byl vždy aktuální).
 func _on_shop_offer_changed(_offer_ids: Array) -> void:
 	if shop_panel.visible:
 		_refresh_shop_panel()
-	_refresh_shop_button_state()
 
 
-## Automatické otevření po vyčištění 10. vlny - na rozdíl od
-## _on_shop_button_pressed() se nekontroluje shop_available (to už je
-## pravda, GameManager ho nastavil, než tohle emitnul) ani se nečeká na
-## klik hráče.
+## Jediný způsob, jak se ShopPanel otevírá (tlačítko Obchod bylo odstraněno
+## 2026-09-09 - obchod je teď čistě automatický, po vyčištění 10. vlny/kola).
 func _on_shop_auto_open_requested() -> void:
 	_refresh_shop_panel()
 	shop_panel.show()
@@ -481,13 +474,6 @@ func _on_shop_auto_open_requested() -> void:
 
 func _on_shop_reroll_pressed() -> void:
 	GameManager.reroll_shop()
-
-
-## Tlačítko Obchod v BottomBaru je šedé/neaktivní, dokud hráč v aktuálním
-## běhu nedohraje 10. vlnu poprvé - viz GameManager.shop_available.
-func _refresh_shop_button_state() -> void:
-	shop_button.disabled = not GameManager.shop_available
-	shop_button.text = "Obchod" if GameManager.shop_available else "Obchod (po 10. vlně)"
 
 
 ## Aktualizuje karty podle AKTUÁLNÍ nabídky (GameManager.shop_offer, vždy
@@ -668,16 +654,6 @@ func show_wave_cleared_message(wave_number: int) -> void:
 ## Obchod hru pozastaví přes get_tree().paused. HUD má process_mode ALWAYS,
 ## takže jeho UI dál reaguje. Pauza je zatím záměrná, ale počítá se s tím, že
 ## se může zrušit - pak stačí vypustit řádky s `paused` (viz CLAUDE.md).
-func _on_shop_button_pressed() -> void:
-	if GameManager.state != GameManager.State.PLAYING:
-		return
-	if not GameManager.shop_available:
-		return
-	_refresh_shop_panel()
-	shop_panel.show()
-	get_tree().paused = true
-
-
 func _on_shop_close_pressed() -> void:
 	shop_panel.hide()
 	get_tree().paused = false

@@ -479,18 +479,22 @@ portrait with a level badge, HP bar, XP bar, a row of PROCEDURALLY-built schopno
 (`AbilitiesContainer`, populated by `hud.gd`'s `_build_abilities_ui()` — one widget per
 `GameManager.ABILITY_ORDER` entry, grayed out while `owned_abilities` has no instance of that
 `ability_id`, otherwise shows `short_name` + copy count + the *highest* owned rarity, e.g.
-"Jádro / 2x Stříbro"), six (currently decorative, unrelated — future equipment loot) `ItemSlot1..6`
-rects, gold, and the shop button. Procedural (not hand-authored `.tscn` nodes) specifically because
-the pool now has 9 entries and is expected to keep growing — same reasoning as the shop's mini-slot
-grid below; adding a new `ABILITIES` entry needs zero `hud.tscn` changes. Right-side elements are
-anchored to the right edge and the bars stretch, so the bar survives window resizing.
+"Jádro / 2x Stříbro"), and six (currently decorative, unrelated — future equipment loot)
+`ItemSlot1..6` rects. Procedural (not hand-authored `.tscn` nodes) specifically because the pool
+now has 9 entries and is expected to keep growing — same reasoning as the shop's mini-slot grid
+below; adding a new `ABILITIES` entry needs zero `hud.tscn` changes. Right-side elements are
+anchored to the right edge and the bars stretch, so the bar survives window resizing. **The gold
+counter (`GoldLabel`) moved out of `BottomBar` 2026-09-09** — it now lives at the top of the screen
+(`Control/GoldLabel`, left-aligned) alongside `LoopLabel`/`WaveLabel`, matching that counter row's
+style instead of sitting in the bottom bar; `ShopButton` was removed entirely in the same change
+(see "Shop opens periodically" below).
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
 along with the game. The pause is deliberate *for now*; the user has flagged that they may later
 want the game to keep running while the shop is open, so the pause lives only in
-`_on_shop_button_pressed()` / `_on_shop_close_pressed()` / `_close_shop()` /
-`_on_shop_auto_open_requested()` in `hud.gd` and nothing else depends on it.
+`_on_shop_close_pressed()` / `_close_shop()` / `_on_shop_auto_open_requested()` in `hud.gd` and
+nothing else depends on it.
 
 **Shop opens periodically, not any time** (`GameManager.shop_available`,
 `shop_auto_open_requested` signal, `_open_periodic_shop()`/`_start_new_loop()`): the shop unlocks
@@ -498,14 +502,16 @@ and shows a fresh offer automatically — panel pops open and pauses, no click n
 wave 10 is cleared and a new loop starts, reusing the existing loop-boundary code path rather than
 adding new event plumbing. This resolved a long-standing open design question (shop available any
 time vs. gated to a specific moment) via a Bazaar-inspired redesign brainstorm. `shop_available`
-turns true the first time this fires in a run and **stays true for the rest of that run** — the
-`ShopButton` in `Control/BottomBar` re-enables and its label drops the "(po 10. vlně)" suffix once
-unlocked, and stays clickable afterward purely to **re-open the current offer** (e.g. if the player
-closed it by accident) — clicking it never generates a new offer or costs anything; only the next
-wave-10 clear or a paid reroll does that. Before the first unlock, `_on_shop_button_pressed()`
-silently no-ops if clicked (shouldn't be reachable anyway since the button is disabled).
-`shop_available`/`shop_offer`/`shop_reroll_count` are run-scoped and reset in `reset_game()` like
-everything else — a new run has to clear wave 10 again, same as it has to re-collect levels/items.
+turns true the first time this fires in a run and stays true for the rest of that run (kept as
+run-scoped state, reset in `reset_game()` — a new run has to clear wave 10 again, same as it has to
+re-collect levels/items). **The manual `ShopButton` was removed 2026-09-09** (user asked to move the
+gold counter to the top bar and declutter `BottomBar`) — auto-open via
+`_on_shop_auto_open_requested()` is now the *only* way the panel appears. Known, accepted trade-off:
+if the player closes the panel (`_on_shop_close_pressed()`) before spending/rerolling everything
+they want, there is no way to reopen that same offer until the next wave-10 clear generates a new
+one — `shop_offer` itself isn't cleared by closing, so the unspent offer is still sitting in
+`GameManager` state, just with no UI path back to it this loop. Revisit if this turns out to be a
+real player frustration, not just a theoretical gap.
 
 **Shop auto-open defers if a schopnost offer is still pending** (`GameManager._shop_open_deferred`,
 `_try_open_pending_shop()`, added 2026-09-09): if the killing blow on wave 10's last enemy grants
@@ -514,8 +520,8 @@ enough XP to level up, that level-up (and its schopnost offer) resolves *synchro
 decrement `enemies_alive` and notice the wave is clear a few lines later. Without this guard,
 `_open_periodic_shop()` would fire `shop_auto_open_requested` while `AbilityDraftPanel` was already
 open, popping `ShopPanel` on top of it. `_open_periodic_shop()` now always generates the offer
-immediately (`shop_available`/`shop_offer` update on schedule, so the shop button's label etc. stay
-correct) but only actually emits `shop_auto_open_requested` — the thing that shows+pauses the panel
+immediately (`shop_available`/`shop_offer` update on schedule) but only actually emits
+`shop_auto_open_requested` — the thing that shows+pauses the panel
 — through `_try_open_pending_shop()`, which defers (sets `_shop_open_deferred = true`) if
 `pending_ability_drafts > 0` or `_current_ability_offer` isn't empty. `resolve_ability_draft()` calls
 `_try_open_pending_shop()` again at its own tail, so the shop opens automatically the moment the

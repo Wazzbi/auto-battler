@@ -26,6 +26,16 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
+[node name="GoldLabel" type="Label" parent="Control" unique_id=1910423879]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 220.0
+offset_bottom = 44.0
+theme_override_font_sizes/font_size = 15
+text = "Zlato: 0"
+horizontal_alignment = 0
+
 [node name="LoopLabel" type="Label" parent="Control" unique_id=525284411]
 layout_mode = 0
 offset_left = 460.0
@@ -362,30 +372,6 @@ text = "-"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
-
-[node name="ShopButton" type="Button" parent="Control/BottomBar" unique_id=1143364953]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -166.0
-offset_top = 14.0
-offset_right = -16.0
-offset_bottom = 58.0
-text = "Obchod"
-
-[node name="GoldLabel" type="Label" parent="Control/BottomBar" unique_id=1910423879]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -166.0
-offset_top = 66.0
-offset_right = -16.0
-offset_bottom = 92.0
-theme_override_font_sizes/font_size = 15
-text = "Zlato: 0"
-horizontal_alignment = 1
 
 [node name="ShopPanel" type="Panel" parent="Control" unique_id=460703985]
 visible = false
