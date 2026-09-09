@@ -522,9 +522,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -360.0
-offset_top = -155.0
+offset_top = -260.0
 offset_right = 360.0
-offset_bottom = 155.0
+offset_bottom = 260.0
 
 [node name="Title" type="Label" parent="Control/ShopPanel" unique_id=1857439836]
 layout_mode = 0
@@ -548,18 +548,28 @@ layout_mode = 0
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 156.0
-offset_bottom = 26.0
+offset_bottom = 20.0
 theme_override_font_sizes/font_size = 11
 text = "Název"
 horizontal_alignment = 1
 autowrap_mode = 2
 
+[node name="RarityLabel" type="Label" parent="Control/ShopPanel/ShopCard0"]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 20.0
+offset_right = 156.0
+offset_bottom = 34.0
+theme_override_font_sizes/font_size = 9
+text = "Nevlastníš"
+horizontal_alignment = 1
+
 [node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard0"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 28.0
+offset_top = 36.0
 offset_right = 156.0
-offset_bottom = 90.0
+offset_bottom = 92.0
 theme_override_font_sizes/font_size = 9
 text = "Popis"
 horizontal_alignment = 1
@@ -568,7 +578,7 @@ autowrap_mode = 2
 [node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard0"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 92.0
+offset_top = 94.0
 offset_right = 156.0
 offset_bottom = 110.0
 theme_override_font_sizes/font_size = 10
@@ -581,6 +591,7 @@ offset_left = 4.0
 offset_top = 112.0
 offset_right = 156.0
 offset_bottom = 140.0
+theme_override_font_sizes/font_size = 10
 text = "Koupit"
 
 [node name="ShopCard1" type="Panel" parent="Control/ShopPanel"]
@@ -595,18 +606,28 @@ layout_mode = 0
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 156.0
-offset_bottom = 26.0
+offset_bottom = 20.0
 theme_override_font_sizes/font_size = 11
 text = "Název"
 horizontal_alignment = 1
 autowrap_mode = 2
 
+[node name="RarityLabel" type="Label" parent="Control/ShopPanel/ShopCard1"]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 20.0
+offset_right = 156.0
+offset_bottom = 34.0
+theme_override_font_sizes/font_size = 9
+text = "Nevlastníš"
+horizontal_alignment = 1
+
 [node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard1"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 28.0
+offset_top = 36.0
 offset_right = 156.0
-offset_bottom = 90.0
+offset_bottom = 92.0
 theme_override_font_sizes/font_size = 9
 text = "Popis"
 horizontal_alignment = 1
@@ -615,7 +636,7 @@ autowrap_mode = 2
 [node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard1"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 92.0
+offset_top = 94.0
 offset_right = 156.0
 offset_bottom = 110.0
 theme_override_font_sizes/font_size = 10
@@ -628,6 +649,7 @@ offset_left = 4.0
 offset_top = 112.0
 offset_right = 156.0
 offset_bottom = 140.0
+theme_override_font_sizes/font_size = 10
 text = "Koupit"
 
 [node name="ShopCard2" type="Panel" parent="Control/ShopPanel"]
@@ -642,18 +664,28 @@ layout_mode = 0
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 156.0
-offset_bottom = 26.0
+offset_bottom = 20.0
 theme_override_font_sizes/font_size = 11
 text = "Název"
 horizontal_alignment = 1
 autowrap_mode = 2
 
+[node name="RarityLabel" type="Label" parent="Control/ShopPanel/ShopCard2"]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 20.0
+offset_right = 156.0
+offset_bottom = 34.0
+theme_override_font_sizes/font_size = 9
+text = "Nevlastníš"
+horizontal_alignment = 1
+
 [node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard2"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 28.0
+offset_top = 36.0
 offset_right = 156.0
-offset_bottom = 90.0
+offset_bottom = 92.0
 theme_override_font_sizes/font_size = 9
 text = "Popis"
 horizontal_alignment = 1
@@ -662,7 +694,7 @@ autowrap_mode = 2
 [node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard2"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 92.0
+offset_top = 94.0
 offset_right = 156.0
 offset_bottom = 110.0
 theme_override_font_sizes/font_size = 10
@@ -675,6 +707,7 @@ offset_left = 4.0
 offset_top = 112.0
 offset_right = 156.0
 offset_bottom = 140.0
+theme_override_font_sizes/font_size = 10
 text = "Koupit"
 
 [node name="ShopCard3" type="Panel" parent="Control/ShopPanel"]
@@ -689,18 +722,28 @@ layout_mode = 0
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 156.0
-offset_bottom = 26.0
+offset_bottom = 20.0
 theme_override_font_sizes/font_size = 11
 text = "Název"
 horizontal_alignment = 1
 autowrap_mode = 2
 
+[node name="RarityLabel" type="Label" parent="Control/ShopPanel/ShopCard3"]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 20.0
+offset_right = 156.0
+offset_bottom = 34.0
+theme_override_font_sizes/font_size = 9
+text = "Nevlastníš"
+horizontal_alignment = 1
+
 [node name="DescLabel" type="Label" parent="Control/ShopPanel/ShopCard3"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 28.0
+offset_top = 36.0
 offset_right = 156.0
-offset_bottom = 90.0
+offset_bottom = 92.0
 theme_override_font_sizes/font_size = 9
 text = "Popis"
 horizontal_alignment = 1
@@ -709,7 +752,7 @@ autowrap_mode = 2
 [node name="CostLabel" type="Label" parent="Control/ShopPanel/ShopCard3"]
 layout_mode = 0
 offset_left = 4.0
-offset_top = 92.0
+offset_top = 94.0
 offset_right = 156.0
 offset_bottom = 110.0
 theme_override_font_sizes/font_size = 10
@@ -722,6 +765,7 @@ offset_left = 4.0
 offset_top = 112.0
 offset_right = 156.0
 offset_bottom = 140.0
+theme_override_font_sizes/font_size = 10
 text = "Koupit"
 
 [node name="RerollButton" type="Button" parent="Control/ShopPanel"]
@@ -732,12 +776,44 @@ offset_right = 460.0
 offset_bottom = 244.0
 text = "Přehodit (20)"
 
+[node name="ActiveLabel" type="Label" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 252.0
+offset_right = 500.0
+offset_bottom = 268.0
+theme_override_font_sizes/font_size = 12
+text = "Aktivní itemy (0/6)"
+
+[node name="ActiveItemsContainer" type="Control" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 270.0
+offset_right = 710.0
+offset_bottom = 344.0
+
+[node name="StashLabel" type="Label" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 352.0
+offset_right = 500.0
+offset_bottom = 368.0
+theme_override_font_sizes/font_size = 12
+text = "Sklad (0/9)"
+
+[node name="StashContainer" type="Control" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 370.0
+offset_right = 710.0
+offset_bottom = 444.0
+
 [node name="CloseButton" type="Button" parent="Control/ShopPanel" unique_id=1539487263]
 layout_mode = 0
 offset_left = 300.0
-offset_top = 252.0
+offset_top = 452.0
 offset_right = 420.0
-offset_bottom = 284.0
+offset_bottom = 484.0
 text = "Zavřít obchod"
 
 [node name="GameOverPanel" type="Panel" parent="Control" unique_id=2052936013]

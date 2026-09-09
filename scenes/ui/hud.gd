@@ -42,19 +42,25 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
 @onready var shop_reroll_button: Button = $Control/ShopPanel/RerollButton
 ## Jedna karta na jeden slot AKTUÁLNÍ nabídky (GameManager.shop_offer, vždy
-## SHOP_OFFER_SIZE položek) - na rozdíl od dřívějška, kdy karty 1:1
-## odpovídaly celému SHOP_ITEM_ORDER, teď se překreslují podle toho, co
-## zrovna padlo/bylo přehozeno, viz _refresh_shop_panel().
+## SHOP_OFFER_SIZE položek). Nabídka teď nese i raritu (viz
+## _generate_shop_offer() v game_manager.gd), takže karty jsou vždy jen
+## "Koupit" - žádné vlastnictví/vylepšení/prodej se tu neřeší, to je práce
+## aktivních/sklad slotů níže.
 @onready var shop_cards: Array = [
 	$Control/ShopPanel/ShopCard0,
 	$Control/ShopPanel/ShopCard1,
 	$Control/ShopPanel/ShopCard2,
 	$Control/ShopPanel/ShopCard3,
 ]
-## Zobrazuje vlastněné obchodní itemy v BottomBaru - na rozdíl od
-## _item_slots (draftnuté itemy, pevné pořadí podle ITEM_ORDER) se tyhle
-## plní dynamicky podle GameManager.owned_shop_items (0-6 vlastněných kusů),
-## viz _refresh_shop_slots().
+@onready var shop_active_label: Label = $Control/ShopPanel/ActiveLabel
+@onready var shop_active_container: Control = $Control/ShopPanel/ActiveItemsContainer
+@onready var shop_stash_label: Label = $Control/ShopPanel/StashLabel
+@onready var shop_stash_container: Control = $Control/ShopPanel/StashContainer
+## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (jen zobrazení, žádná
+## interakce - prodej/přesun do skladu se řeší jen uvnitř otevřeného
+## obchodu, viz _active_slot_widgets). Na rozdíl od _item_slots (draftnuté
+## itemy, pevné pořadí podle ITEM_ORDER) se tyhle plní pozičně podle
+## GameManager.active_shop_items, viz _refresh_shop_slots().
 @onready var shop_slot_nodes: Array = [
 	$Control/BottomBar/ItemSlot1,
 	$Control/BottomBar/ItemSlot2,
@@ -63,6 +69,14 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 	$Control/BottomBar/ItemSlot5,
 	$Control/BottomBar/ItemSlot6,
 ]
+## Šířka/mezera miniaturních slotů pro aktivní/sklad itemy uvnitř obchodu -
+## vytváří se procedurálně (viz _build_shop_stash_ui()), ne ručně v hud.tscn,
+## protože 6+9=15 skoro identických bloků by bylo zbytečně křehké psát
+## ručně. Každý widget je Dictionary {"panel", "label", "buttons": Array}.
+const SHOP_MINI_SLOT_WIDTH: float = 74.0
+const SHOP_MINI_SLOT_GAP: float = 6.0
+var _active_slot_widgets: Array = []
+var _stash_slot_widgets: Array = []
 
 @onready var draft_panel: Panel = $Control/DraftPanel
 @onready var draft_cards: Array = [
@@ -163,6 +177,7 @@ func _ready() -> void:
 
 	_cache_item_nodes()
 	_setup_shop_cards()
+	_build_shop_stash_ui()
 	_refresh_shop_button_state()
 
 	shop_button.pressed.connect(_on_shop_button_pressed)
@@ -366,11 +381,10 @@ func _refresh_stat_labels() -> void:
 	stat_armor.text = "Brnění: %.0f" % player_ref.get_armor()
 
 
-## Napojí každou kartu na její SLOT INDEX (0-3), ne na konkrétní item ID -
-## na rozdíl od dřívějška teď karty ukazují cokoliv, co zrovna padne do dané
-## pozice v GameManager.shop_offer (mění se s každým rerollem/novou nabídkou),
-## takže se musí ptát na aktuální obsah slotu při každém kliknutí, ne na to,
-## co bylo připojené při startu.
+## Napojí každou kartu na její SLOT INDEX (0-3) v GameManager.shop_offer -
+## nabídka teď nese i vylosovanou raritu (viz _generate_shop_offer()), takže
+## karta je vždy jen "Koupit za cenu odpovídající téhle raritě", žádné
+## vlastnictví/vylepšení/prodej se tu neřeší (to dělají aktivní/sklad sloty).
 func _setup_shop_cards() -> void:
 	for i in shop_cards.size():
 		var card: Panel = shop_cards[i]
@@ -378,18 +392,8 @@ func _setup_shop_cards() -> void:
 		action_button.pressed.connect(_on_shop_card_action_pressed.bind(i))
 
 
-## Koupě/prodej rozhoduje podle AKTUÁLNÍHO obsahu slotu a vlastnictví v
-## okamžiku kliknutí - GameManager si to stejně ověří sám (can_buy_shop_item()/
-## owned_shop_items.has()), tohle jen zjistí, který item je v tuhle chvíli
-## v daném slotu nabídky, a zavolá správnou ze dvou funkcí.
 func _on_shop_card_action_pressed(slot_index: int) -> void:
-	if slot_index >= GameManager.shop_offer.size():
-		return
-	var item_id: String = GameManager.shop_offer[slot_index]
-	if GameManager.owned_shop_items.has(item_id):
-		GameManager.sell_shop_item(item_id)
-	else:
-		GameManager.buy_shop_item(item_id)
+	GameManager.buy_shop_item(slot_index)
 
 
 func _on_shop_inventory_changed() -> void:
@@ -429,9 +433,9 @@ func _refresh_shop_button_state() -> void:
 
 
 ## Aktualizuje karty podle AKTUÁLNÍ nabídky (GameManager.shop_offer, vždy
-## SHOP_OFFER_SIZE položek) a cenu/dostupnost rerollu - volá se při otevření
-## obchodu a při každé změně zlata/inventáře/nabídky, dokud je obchod
-## otevřený.
+## SHOP_OFFER_SIZE položek, každá s vlastní vylosovanou raritou) a cenu/
+## dostupnost rerollu - volá se při otevření obchodu a při každé změně
+## zlata/inventáře/nabídky, dokud je obchod otevřený.
 func _refresh_shop_panel() -> void:
 	for i in shop_cards.size():
 		var card: Panel = shop_cards[i]
@@ -441,44 +445,156 @@ func _refresh_shop_panel() -> void:
 			continue
 		card.show()
 
-		var item_id: String = GameManager.shop_offer[i]
+		var offer_entry: Dictionary = GameManager.shop_offer[i]
+		var item_id: String = offer_entry["item_id"]
+		var rarity: int = offer_entry["rarity"]
 		var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
-		var name_label: Label = card.get_node("NameLabel")
-		var desc_label: Label = card.get_node("DescLabel")
-		var cost_label: Label = card.get_node("CostLabel")
+
+		card.get_node("NameLabel").text = definition["name"]
+		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
+		card.get_node("DescLabel").text = GameManager.get_shop_item_desc(item_id, rarity)
+		card.get_node("CostLabel").text = "Cena: %d" % GameManager.get_shop_item_cost(item_id, rarity)
+
 		var action_button: Button = card.get_node("ActionButton")
-
-		name_label.text = definition["name"]
-		desc_label.text = definition["desc"]
-
-		if GameManager.owned_shop_items.has(item_id):
-			cost_label.text = "Vlastníš"
-			action_button.text = "Prodat"
-			action_button.disabled = false
-		else:
-			cost_label.text = "Cena: %d" % int(definition["cost"])
-			action_button.text = "Koupit"
-			action_button.disabled = not GameManager.can_buy_shop_item(item_id)
+		action_button.text = "Koupit"
+		action_button.disabled = not GameManager.can_buy_shop_item(i)
 
 	shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
 	shop_reroll_button.disabled = not GameManager.can_reroll_shop()
 
+	_refresh_shop_stash_ui()
 
-## Zobrazuje vlastněné obchodní itemy v BottomBaru (mimo obchod samotný) -
-## na rozdíl od _refresh_items() (pevné pořadí podle ITEM_ORDER) se sloty
-## plní postupně podle owned_shop_items, takže prázdné sloty jsou vždy na
-## konci bez ohledu na to, který konkrétní item byl prodán.
+
+## Vytvoří 6 aktivních + 9 sklad miniaturních slotů PROCEDURÁLNĚ (viz
+## _create_shop_mini_slot()) - psát 15 skoro identických bloků ručně v
+## hud.tscn by bylo zbytečně křehké. Volá se jednou v _ready().
+func _build_shop_stash_ui() -> void:
+	for i in GameManager.SHOP_ACTIVE_SLOTS:
+		var widget: Dictionary = _create_shop_mini_slot(shop_active_container, i, ["Uskladnit"])
+		widget["buttons"][0].pressed.connect(_on_active_slot_stash_pressed.bind(i))
+		_active_slot_widgets.append(widget)
+
+	for i in GameManager.SHOP_STASH_SLOTS:
+		var widget: Dictionary = _create_shop_mini_slot(shop_stash_container, i, ["Aktivovat", "Prodat"])
+		widget["buttons"][0].pressed.connect(_on_stash_slot_activate_pressed.bind(i))
+		widget["buttons"][1].pressed.connect(_on_stash_slot_sell_pressed.bind(i))
+		_stash_slot_widgets.append(widget)
+
+
+## Jeden miniaturní slot: Panel s Labelem (2 řádky - krátký název + rarita)
+## a N tlačítky pod sebou. Vrací Dictionary s referencemi, aby refresh/
+## wiring nemusely znovu procházet strom uzlů přes get_node().
+func _create_shop_mini_slot(parent: Control, index: int, button_texts: Array) -> Dictionary:
+	var panel := Panel.new()
+	panel.position = Vector2(index * (SHOP_MINI_SLOT_WIDTH + SHOP_MINI_SLOT_GAP), 0.0)
+	panel.size = Vector2(SHOP_MINI_SLOT_WIDTH, 28.0 + button_texts.size() * 18.0)
+	parent.add_child(panel)
+
+	var label := Label.new()
+	label.position = Vector2(2.0, 2.0)
+	label.size = Vector2(SHOP_MINI_SLOT_WIDTH - 4.0, 24.0)
+	label.add_theme_font_size_override("font_size", 8)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(label)
+
+	var buttons: Array = []
+	for bi in button_texts.size():
+		var button := Button.new()
+		button.position = Vector2(2.0, 28.0 + bi * 18.0)
+		button.size = Vector2(SHOP_MINI_SLOT_WIDTH - 4.0, 16.0)
+		button.add_theme_font_size_override("font_size", 7)
+		button.text = button_texts[bi]
+		panel.add_child(button)
+		buttons.append(button)
+
+	return {"panel": panel, "label": label, "buttons": buttons}
+
+
+func _on_active_slot_stash_pressed(index: int) -> void:
+	GameManager.move_shop_item_to_stash(index)
+
+
+func _on_stash_slot_activate_pressed(index: int) -> void:
+	GameManager.move_shop_item_to_active(index)
+
+
+func _on_stash_slot_sell_pressed(index: int) -> void:
+	GameManager.sell_shop_item("stash", index)
+
+
+## Překreslí aktivní/sklad miniaturní sloty a hlavičky "(N/6)"/"(N/9)" -
+## volá se z _refresh_shop_panel(), takže pokaždé, když je obchod otevřený
+## a něco se změnilo (nákup, sloučení, přesun, prodej).
+func _refresh_shop_stash_ui() -> void:
+	shop_active_label.text = "Aktivní itemy (%d/%d)" % [
+		GameManager.active_shop_items.size(), GameManager.SHOP_ACTIVE_SLOTS
+	]
+	shop_stash_label.text = "Sklad (%d/%d)" % [
+		GameManager.stash_shop_items.size(), GameManager.SHOP_STASH_SLOTS
+	]
+
+	for i in _active_slot_widgets.size():
+		var widget: Dictionary = _active_slot_widgets[i]
+		if i < GameManager.active_shop_items.size():
+			var entry: Dictionary = GameManager.active_shop_items[i]
+			_fill_shop_mini_slot(widget, entry)
+			widget["buttons"][0].disabled = false
+		else:
+			_clear_shop_mini_slot(widget)
+			widget["buttons"][0].disabled = true
+
+	for i in _stash_slot_widgets.size():
+		var widget: Dictionary = _stash_slot_widgets[i]
+		if i < GameManager.stash_shop_items.size():
+			var entry: Dictionary = GameManager.stash_shop_items[i]
+			_fill_shop_mini_slot(widget, entry)
+			widget["buttons"][0].disabled = GameManager.active_shop_items.size() >= GameManager.SHOP_ACTIVE_SLOTS
+			widget["buttons"][1].disabled = false
+		else:
+			_clear_shop_mini_slot(widget)
+			widget["buttons"][0].disabled = true
+			widget["buttons"][1].disabled = true
+
+
+func _fill_shop_mini_slot(widget: Dictionary, entry: Dictionary) -> void:
+	var definition: Dictionary = GameManager.SHOP_ITEMS[entry["item_id"]]
+	var label: Label = widget["label"]
+	label.text = "%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]]]
+	widget["panel"].modulate = Color.WHITE
+	label.tooltip_text = "%s (%s)\n%s" % [
+		definition["name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]],
+		GameManager.get_shop_item_desc(entry["item_id"], entry["rarity"])
+	]
+
+
+func _clear_shop_mini_slot(widget: Dictionary) -> void:
+	widget["label"].text = "-"
+	widget["label"].tooltip_text = ""
+	widget["panel"].modulate = LOCKED_ITEM_MODULATE
+
+
+## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (mimo obchod samotný) - na
+## rozdíl od _refresh_items() (pevné pořadí podle ITEM_ORDER) se sloty plní
+## POZIČNĚ podle GameManager.active_shop_items (Array), takže prázdné sloty
+## jsou vždy na konci bez ohledu na to, který konkrétní item byl prodán/
+## uskladněn. Sklad se tu nezobrazuje vůbec - ten je vidět jen uvnitř
+## otevřeného obchodu (viz _refresh_shop_stash_ui()).
 func _refresh_shop_slots() -> void:
 	for i in shop_slot_nodes.size():
 		var slot: ColorRect = shop_slot_nodes[i]
 		var label: Label = slot.get_node("Label")
 
-		if i < GameManager.owned_shop_items.size():
-			var item_id: String = GameManager.owned_shop_items[i]
-			var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
-			label.text = definition["short_name"]
+		if i < GameManager.active_shop_items.size():
+			var entry: Dictionary = GameManager.active_shop_items[i]
+			var definition: Dictionary = GameManager.SHOP_ITEMS[entry["item_id"]]
+			label.text = "%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]]]
 			slot.modulate = Color.WHITE
-			slot.tooltip_text = "%s\n%s" % [definition["name"], definition["desc"]]
+			slot.tooltip_text = "%s (%s)\n%s" % [
+				definition["name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]],
+				GameManager.get_shop_item_desc(entry["item_id"], entry["rarity"])
+			]
 		else:
 			label.text = "-"
 			slot.modulate = LOCKED_ITEM_MODULATE
