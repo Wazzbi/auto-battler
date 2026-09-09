@@ -235,21 +235,21 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="AbilitiesContainer" type="Control" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 310.0
-offset_top = 60.0
-offset_right = 900.0
-offset_bottom = 118.0
-
-[node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
 layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -330.0
+offset_left = -332.0
 offset_top = 14.0
-offset_right = -286.0
-offset_bottom = 58.0
+offset_right = -16.0
+offset_bottom = 114.0
+
+[node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
+layout_mode = 0
+offset_left = 310.0
+offset_top = 64.0
+offset_right = 354.0
+offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot1"]
@@ -264,14 +264,11 @@ vertical_alignment = 1
 autowrap_mode = 2
 
 [node name="ItemSlot2" type="ColorRect" parent="Control/BottomBar" unique_id=162173072]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -280.0
-offset_top = 14.0
-offset_right = -236.0
-offset_bottom = 58.0
+layout_mode = 0
+offset_left = 360.0
+offset_top = 64.0
+offset_right = 404.0
+offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot2"]
@@ -286,14 +283,11 @@ vertical_alignment = 1
 autowrap_mode = 2
 
 [node name="ItemSlot3" type="ColorRect" parent="Control/BottomBar" unique_id=113830123]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -230.0
-offset_top = 14.0
-offset_right = -186.0
-offset_bottom = 58.0
+layout_mode = 0
+offset_left = 410.0
+offset_top = 64.0
+offset_right = 454.0
+offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot3"]
@@ -308,13 +302,10 @@ vertical_alignment = 1
 autowrap_mode = 2
 
 [node name="ItemSlot4" type="ColorRect" parent="Control/BottomBar" unique_id=558387754]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -330.0
+layout_mode = 0
+offset_left = 460.0
 offset_top = 64.0
-offset_right = -286.0
+offset_right = 504.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
@@ -330,13 +321,10 @@ vertical_alignment = 1
 autowrap_mode = 2
 
 [node name="ItemSlot5" type="ColorRect" parent="Control/BottomBar" unique_id=1839271119]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -280.0
+layout_mode = 0
+offset_left = 510.0
 offset_top = 64.0
-offset_right = -236.0
+offset_right = 554.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 
@@ -352,13 +340,10 @@ vertical_alignment = 1
 autowrap_mode = 2
 
 [node name="ItemSlot6" type="ColorRect" parent="Control/BottomBar" unique_id=146363010]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -230.0
+layout_mode = 0
+offset_left = 560.0
 offset_top = 64.0
-offset_right = -186.0
+offset_right = 604.0
 offset_bottom = 108.0
 color = Color(0.14, 0.15, 0.19, 1)
 

@@ -81,9 +81,14 @@ var _active_slot_widgets: Array = []
 var _stash_slot_widgets: Array = []
 
 ## Stejný princip pro schopnosti (viz _build_abilities_ui()) - užší než
-## obchodní sloty, protože nemají tlačítka, jen text.
+## obchodní sloty, protože nemají tlačítka, jen text. Sloty se od 2026-09-09
+## řadí do ABILITY_SLOT_ROWS řádků (dřív jeden dlouhý řádek) - vešly se tak
+## na místo, které předtím zabíraly ItemSlot1..6 (viz "Prohozeny sloty" v
+## CLAUDE.md), místo aby se do jednoho řádku muselo vejít všech 9 schopností.
 const ABILITY_MINI_SLOT_WIDTH: float = 60.0
+const ABILITY_MINI_SLOT_HEIGHT: float = 48.0
 const ABILITY_MINI_SLOT_GAP: float = 4.0
+const ABILITY_SLOT_ROWS: int = 2
 @onready var abilities_container: Control = $Control/BottomBar/AbilitiesContainer
 
 ## Jediný panel volby schopnosti (viz "Schopnosti" v CLAUDE.md) - 3 karty,
@@ -226,18 +231,29 @@ func _process(delta: float) -> void:
 ## Vytvoří jeden mini-slot na schopnost PROCEDURÁLNĚ pro každou položku
 ## ABILITY_ORDER (stejný princip jako obchodní _create_shop_mini_slot(), jen
 ## bez tlačítek - schopnosti se neprodávají ani nepřesouvají, jen zobrazují).
-## Volá se jednou v _ready(); počet slotů roste automaticky s ABILITY_ORDER,
+## Rozloží sloty do ABILITY_SLOT_ROWS řádků (počet sloupců se dopočítá z
+## celkového počtu schopností), ne do jednoho dlouhého řádku - viz konstanty
+## výše. Volá se jednou v _ready(); mřížka roste automaticky s ABILITY_ORDER,
 ## žádná ruční úprava hud.tscn není potřeba, když přibude další schopnost.
 func _build_abilities_ui() -> void:
-	for i in GameManager.ABILITY_ORDER.size():
+	var total: int = GameManager.ABILITY_ORDER.size()
+	var columns: int = ceili(float(total) / float(ABILITY_SLOT_ROWS))
+
+	for i in total:
+		var row: int = i / columns
+		var col: int = i % columns
+
 		var panel := Panel.new()
-		panel.position = Vector2(i * (ABILITY_MINI_SLOT_WIDTH + ABILITY_MINI_SLOT_GAP), 0.0)
-		panel.size = Vector2(ABILITY_MINI_SLOT_WIDTH, 48.0)
+		panel.position = Vector2(
+			col * (ABILITY_MINI_SLOT_WIDTH + ABILITY_MINI_SLOT_GAP),
+			row * (ABILITY_MINI_SLOT_HEIGHT + ABILITY_MINI_SLOT_GAP)
+		)
+		panel.size = Vector2(ABILITY_MINI_SLOT_WIDTH, ABILITY_MINI_SLOT_HEIGHT)
 		abilities_container.add_child(panel)
 
 		var label := Label.new()
 		label.position = Vector2(2.0, 2.0)
-		label.size = Vector2(ABILITY_MINI_SLOT_WIDTH - 4.0, 44.0)
+		label.size = Vector2(ABILITY_MINI_SLOT_WIDTH - 4.0, ABILITY_MINI_SLOT_HEIGHT - 4.0)
 		label.add_theme_font_size_override("font_size", 8)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
