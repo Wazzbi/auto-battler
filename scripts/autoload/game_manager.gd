@@ -46,6 +46,25 @@ const ENEMY_HP_GROWTH_PER_LOOP: float = 0.5
 const XP_BASE: int = 40
 const XP_PER_LEVEL_GROWTH: int = 40
 
+## Automatický přírůstek statu za KAŽDOU úroveň nad 1 (get_stat_bonus() ho
+## sčítá k draftu i obchodu, žádné zvláštní zapojení není potřeba - hráč se
+## na level_changed přepočítává už kvůli itemům). Vrácené 2026-09-09 poté,
+## co bylo záměrně odstraněné dřív (viz historie/CLAUDE.md) - tehdy šlo o
+## "každý bod statu má mít viditelný původ ve volbě hráče", teď to řeší jiný
+## problém: run čistě závislý na draft/shop štěstí může být křehký (viz
+## "Balance caveat" v CLAUDE.md). Hodnoty jsou záměrně MALÉ vůči itemům
+## (např. jeden Stříbrný "Přebíječ jader" dá +9.6 poškození, tohle dá +0.5
+## za úroveň) - je to podlaha, ne hlavní zdroj síly, aby volby pořád byly
+## to, co run definuje.
+const LEVEL_STAT_GROWTH := {
+	"damage": 0.5,
+	"attack_speed": 0.02,
+	"attack_range": 2.0,
+	"max_hp": 3.0,
+	"armor": 0.3,
+	"hp_regen": 0.05,
+}
+
 ## --- Item/loot draft --------------------------------------------------
 ## Náhrada za dřívější strom schopností (Q/W/E/R). Místo utrácení bodů do
 ## pevně daných 4 schopností si hráč při každém level-upu vybírá 1 ze 3
@@ -514,6 +533,9 @@ func resolve_draft(item_id: String) -> bool:
 ## daná (žádný "neviditelný" automatický přírůstek vedle viditelné volby).
 func get_stat_bonus(stat_id: String) -> float:
 	var bonus: float = 0.0
+
+	if LEVEL_STAT_GROWTH.has(stat_id):
+		bonus += float(LEVEL_STAT_GROWTH[stat_id]) * float(player_level - 1)
 
 	for item_id in ITEM_ORDER:
 		var definition: Dictionary = ITEMS[item_id]
