@@ -283,218 +283,187 @@ rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact
 There are no sprite assets to manage; if you need to change how something looks, look for a
 `_draw()` override or `Polygon2D` node rather than an image file.
 
-**Progression (XP → levels → item draft)**: enemies grant `reward` (gold) *and* `xp_reward` on
+**Progression (XP → levels → schopnosti)**: enemies grant `reward` (gold) *and* `xp_reward` on
 death via `GameManager.enemy_defeated(reward, xp_reward)`. XP accumulates toward
 `xp_for_next_level()` (`XP_BASE + (level - 1) * XP_PER_LEVEL_GROWTH`); `add_xp()` loops so one big
 XP chunk can grant several levels at once. **`XP_BASE` is tuned to 40, not the curve's original 60**,
-specifically so the first level-up (and first draft choice) lands before the end of wave 1 rather
-than partway through wave 2 — with the base enemy's `xp_reward` of 12 and `main.gd`'s wave-1 count
-of 4, that's exactly 48 XP from clearing wave 1 alone. This was a deliberate pacing choice (verified
-with a throwaway headless simulation of waves 1-3, not just eyeballed): a new run should show the
-player *something* — a draft card — almost immediately, rather than several minutes of pure combat
-before the first meaningful choice appears. Each level queues one "item draft" (see below) *and*
-grants a small automatic stat bump via `GameManager.LEVEL_STAT_GROWTH` (a flat per-stat amount ×
-`player_level - 1`, added in `get_stat_bonus()`) — there is still no per-stat purchasing or ability
-tree, so the draft remains the only *choice*-driven growth, but a bare level-up is no longer a
-complete no-op for stats.
+specifically so the first level-up lands before the end of wave 1 rather than partway through wave
+2 — with the base enemy's `xp_reward` of 12 and `main.gd`'s wave-1 count of 4, that's exactly 48 XP
+from clearing wave 1 alone. This was a deliberate pacing choice (verified with a throwaway headless
+simulation of waves 1-3, not just eyeballed). Every level grants a small automatic stat bump via
+`GameManager.LEVEL_STAT_GROWTH` (a flat per-stat amount × `player_level - 1`, added in
+`get_stat_bonus()`); the real *choice*-driven growth comes from "Schopnosti" (see below), offered
+once every `ABILITY_LEVEL_INTERVAL` levels rather than every single one.
 
 **`LEVEL_STAT_GROWTH` was re-added 2026-09-09 after being deliberately removed earlier** (see git
 history) — the original removal was about making every stat point trace back to a visible, chosen
-item so nothing was an invisible sum; the re-addition solves a different problem, flagged as the
-"Balance caveat" below: a run's power depended *entirely* on draft luck, so a string of bad draft
-offers could leave a level-15 character barely stronger than a level-1 one. `LEVEL_STAT_GROWTH`'s
-values are deliberately small relative to items (e.g. one Silver-rarity "Přebíječ jader" grants +9.6
-damage; a level of automatic growth grants +0.5) — it's a floor under a run's power, not a
-replacement for the draft/shop as the main source of it, so player choices still define *most* of a
-build's identity.
+pick so nothing was an invisible sum; the re-addition solves a different problem, flagged as the
+"Balance caveat" below: a run's power depended *entirely* on draft luck, so a string of bad offers
+could leave a level-15 character barely stronger than a level-1 one. `LEVEL_STAT_GROWTH`'s values
+are deliberately small relative to a picked schopnost (e.g. one Silver-rarity "Přebíječ jader"
+grants +9.6 damage; a level of automatic growth grants +0.5) — it's a floor under a run's power, not
+a replacement for schopnosti/shop as the main source of it, so player choices still define *most* of
+a build's identity.
 
 **Stats flow**: base stats live as `@export` vars on `player.gd` (`base_damage`,
 `base_attack_speed`, `base_attack_range`, `base_max_hp`, `base_armor`). Effective stats come from
 getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`,
 `get_hp_regen()`, `get_armor()`) that add `GameManager.get_stat_bonus(stat_id)` — **the single place
 where progression turns into numbers**, summing three sources: `LEVEL_STAT_GROWTH` (automatic, keyed
-by `player_level`), the draft's `draft_items`, and the shop's `active_shop_items`. The player
-recomputes on the `level_changed` and `draft_inventory_changed` signals — `level_changed` now
-actually changes stats again (via the level-growth term), not just a UI sync no-op. **Balance caveat
-(partially addressed)**: a run's power still depends heavily on what the (currently small, 7-item)
-draft pool happens to offer — going several levels without seeing a given stat's item is possible
-(~57% chance per level to miss any one specific item with `DRAFT_CHOICE_COUNT` 3 of 7) — but
-`LEVEL_STAT_GROWTH` now guarantees a non-zero floor regardless of draft luck, so a bad-luck run is
-weaker, not stat-flat. Not claimed to fully solve fragility, just to soften the worst case.
+by `player_level`), owned *passive* schopnosti, and the shop's `active_shop_items`. The player
+recomputes on the `level_changed` and `ability_inventory_changed` signals. **Balance caveat
+(partially addressed)**: a run's power still depends heavily on what the schopnosti pool happens to
+offer — but `LEVEL_STAT_GROWTH` guarantees a non-zero floor regardless of draft luck, so a bad-luck
+run is weaker, not stat-flat. Not claimed to fully solve fragility, just to soften the worst case.
 
-**Armor (`base_armor`, `get_armor()`, `kinetic_dampers` item)**: a flat, per-hit damage reduction —
-`take_damage()` in `player.gd` computes `reduced_amount = max(amount - get_armor(), amount *
-MIN_DAMAGE_RATIO)` (`MIN_DAMAGE_RATIO` 0.1, so at least 10% of any hit always gets through, even
-against a fully-stacked armor build — this stops armor from ever granting outright immunity to a
-future, harder-hitting enemy type). This is a standard genre tool for a specific failure mode:
+**Armor (`base_armor`, `get_armor()`, `kinetic_dampers` schopnost)**: a flat, per-hit damage
+reduction — `take_damage()` in `player.gd` computes `reduced_amount = max(amount - get_armor(),
+amount * MIN_DAMAGE_RATIO)` (`MIN_DAMAGE_RATIO` 0.1, so at least 10% of any hit always gets through,
+even against a fully-stacked armor build — this stops armor from ever granting outright immunity to
+a future, harder-hitting enemy type). This is a standard genre tool for a specific failure mode:
 "death by many small simultaneous hits" (several enemies each landing modest contact damage) rather
 than "death by one big hit" — unlike a percentage-based mitigation stat, a *flat* reduction hits
 weak/frequent damage sources hardest, which is exactly the profile of this game's enemies (see
 "data-backed fix" below). `base_armor` defaults to 2.0 (all current enemies deal exactly 5 contact
 damage, so base armor alone cuts that to 3 — a 40% reduction before any item at all);
 `kinetic_dampers` grants +2 armor at Bronze rarity (matching `base_armor`'s scale), scaling up with
-rarity/merges like any other draft item (see "Draft rarity + merge" above).
+rarity/merges like any other passive schopnost (see "Schopnosti" below).
 
 **This was a data-backed fix, not a guess** — same headless simulation approach as the ranged/sniper
-ramp above (real `main.tscn`, "Auto" draft picking, sped up via `Engine.time_scale`). Before armor,
-even with the ranged/sniper ramp already in place, 0/10 runs survived both of the first two loops (20
-waves) and the average death wave was ~4.1; after adding armor, in a follow-up batch of 10 runs, 7
-died between wave 5 of loop 1 and wave 10 of **loop 2** (one run died on the very last wave of loop 1
-after clearing it entirely; another died on the very last wave of loop 2, i.e. 19 of 20 waves
-cleared), and the other 3 were still going when the simulation's time budget ran out. No config
-change here is claimed to make the game *strictly* survivable end-to-end — it moved the typical
-death point from "wave 2-4 of loop 1" to "deep into loop 1 or partway through loop 2," which is the
-kind of improvement that's meant to be judged by playtesting feel, not chased to a specific number.
+ramp above (real `main.tscn`, auto-picking progression choices, sped up via `Engine.time_scale`).
+Before armor, even with the ranged/sniper ramp already in place, 0/10 runs survived both of the first
+two loops (20 waves) and the average death wave was ~4.1; after adding armor, in a follow-up batch of
+10 runs, 7 died between wave 5 of loop 1 and wave 10 of **loop 2** (one run died on the very last
+wave of loop 1 after clearing it entirely; another died on the very last wave of loop 2, i.e. 19 of
+20 waves cleared), and the other 3 were still going when the simulation's time budget ran out. No
+config change here is claimed to make the game *strictly* survivable end-to-end — it moved the
+typical death point from "wave 2-4 of loop 1" to "deep into loop 1 or partway through loop 2," which
+is the kind of improvement that's meant to be judged by playtesting feel, not chased to a specific
+number.
 
-**Item/loot draft replaced the old ability tree** (`GameManager.ITEMS`/`ITEM_ORDER`, `hud.gd`,
-`Control/DraftPanel` in `hud.tscn`): instead of a fixed Q/W/E/R grid the player spent points into,
-each level-up now queues an offer of `DRAFT_CHOICE_COUNT` (3) *random* items — same "pick one of
-three" pattern as Vampire Survivors' level-up cards. This was a deliberate replacement, not an
-addition: the previous ability system gave a flat, always-the-same choice every run (see the
-brainstorm this came from), while randomized offers make each run's build meaningfully different.
+**Schopnosti (`GameManager.ABILITIES`/`ABILITY_ORDER`, `Control/AbilityDraftPanel` in `hud.tscn`) —
+the single, unified progression-choice system**, replacing what used to be two separate systems: an
+"item draft" (single-stat passive items, offered every level) and "aktivní schopnosti" (trigger/
+effect abilities, offered every 5 levels, `double_tap` only). **Merged 2026-09-09 on explicit user
+direction** — the user asked to drop the per-level item draft entirely and fold everything into one
+"schopnost" (ability) concept, since both were fundamentally the same shape (pick 1 of N random
+picks, roll a rarity, merge duplicates) and keeping two names/two panels for what amounts to one
+mechanic no longer made sense once both used rarity+merge. Every `ABILITIES` entry has a `"type"`:
+- **`"passive"`** (the 7 former draft items: `power_core`, `rapid_coils`, `long_barrel`,
+  `split_rounds`, `reinforced_plating`, `nanite_repair`, `kinetic_dampers`) — `{"stat": String,
+  "value": float}`, a single stat bonus scaled by `PASSIVE_EFFECT_MULTIPLIERS[rarity]`
+  (`get_stat_bonus()` sums these). Deliberately still single-stat, unlike the shop's multi-stat
+  items — that's what keeps schopnosti feeling distinct from the shop, not just a second path to the
+  same numbers.
+- **`"active"`** (`double_tap`, `orbital_bombardment`) — `{"trigger": String, "trigger_values":
+  Array (one value per `ShopRarity` tier), "effect": String, "effect_params": Dictionary}`. Resolved
+  entirely in `player.gd` (see below), NOT in `get_stat_bonus()`.
 
-**Draft rarity + merge (2026-09-09)**: draft items now use the SAME rarity/merge principle as the
-shop (see "Rarity + merge system" below) — each offered item also rolls a rarity
-(`DRAFT_RARITY_WEIGHTS`), and owning `DRAFT_MERGE_THRESHOLD` (**2**, not the shop's 3) identical
-copies at the same rarity auto-merges them into 1 copy one tier higher
-(`_try_merge_draft_item()`). The lower threshold is deliberate: draft offers are free and random
-with no reroll, so the player has far less control than in the shop over which duplicate they get
-next — requiring fewer copies compensates for that lost control. `DRAFT_RARITY_MULTIPLIERS` is its
-own (gentler) curve, not shared with `SHOP_RARITY_MULTIPLIERS` — a 2-copy threshold grows power
-faster than a 3-copy one for the same multiplier curve, so draft's curve was tuned down to
-compensate; both enum and rarity *names* (`ShopRarity`, `SHOP_RARITY_NAMES`) ARE shared, since both
-systems display the same 4 tiers (Bronz/Stříbro/Zlato/Diamant), just with different weights/
-multipliers/thresholds. **Draft deliberately stays single-stat** (`ITEMS[item_id]["value"]` is a
-single Bronze-tier stat value, unlike the shop's multi-stat `"stats"` dict) — that's still what
-differentiates draft as its own system, not just a second path to the same numbers as the shop.
-Like the shop, an item's rarity/desc text is generated dynamically (`get_draft_item_desc()`) rather
-than stored statically, so it always matches what the specific rolled tier actually gives.
+**Offer/merge mechanics**: `ABILITY_CHOICE_COUNT` (**3**, restored to the old draft's "pick one of
+three" feel now that the unified pool is big enough for a real choice — was briefly 1 while
+`double_tap` was the only ability that existed). `ABILITY_LEVEL_INTERVAL` (**5**) — an offer queues
+once every 5 player levels, not every level like the old item draft; schopnosti are meant to be a
+rarer, more deliberate moment now that a single pick can be a build-defining active ability, not
+just a numeric bump. `ABILITY_MERGE_THRESHOLD` (**2**, not the shop's 3) — schopnosti are free/
+random with no reroll, so a lower merge threshold compensates for the player's lower control over
+which duplicate they get next. Offers roll a rarity per slot (`ABILITY_RARITY_WEIGHTS`, same
+70/20/8/2% shape as the shop) and reuse the shared `ShopRarity` enum/`SHOP_RARITY_NAMES` display
+strings. `owned_abilities: Array[Dictionary]` (each `{"ability_id": String, "rarity": int}`) has no
+active/stash split (unlike the shop) — every owned instance always counts, since there's no
+purchase-slot pressure to manage; one `ability_id` can have several simultaneously-owned instances
+at different rarities (e.g. 1 merged Silver copy + 1 fresh Bronze one), which is why
+`get_stat_bonus()`/the trigger resolvers sum/check every owned instance rather than a single "rank."
 
-**`draft_items: Array[Dictionary]`** (each `{"item_id": String, "rarity": int}`) replaced the old
-flat `item_ranks: Dictionary` (item_id → single rank int) — since a merge can leave a player owning
-several *different* rarities of the same item_id simultaneously (e.g. 1 already-merged Silver copy
-+ 1 fresh Bronze copy picked afterward, before a 2nd Bronze triggers another merge), a single
-"rank" number can no longer represent an item's state; `get_stat_bonus()` now sums every owned
-instance's Bronze `"value"` × `DRAFT_RARITY_MULTIPLIERS[rarity]`, same pattern as the shop's
-`active_shop_items` loop. Unlike the shop, there's no active/stash split for draft — every owned
-instance always counts, since draft offers are always just `DRAFT_CHOICE_COUNT` free items with no
-purchase-slot pressure to manage.
+**Rarity scales differently for passive vs. active schopnosti** — passives scale the stat *value*
+(`PASSIVE_EFFECT_MULTIPLIERS`, `[1.0, 1.5, 2.25, 3.5]`, its own gentler curve vs. the shop's
+`SHOP_RARITY_MULTIPLIERS` since the 2-copy merge threshold grows power faster for the same curve).
+Actives instead scale **trigger FREQUENCY**, not effect magnitude — e.g. `double_tap`'s
+`trigger_values` is `[6, 5, 4, 3]` (shots needed per tier) while `effect_params.multiplier` (2.0×)
+stays constant across all tiers; `orbital_bombardment`'s `trigger_values` is `[20.0, 15.0, 11.0,
+8.0]` (charge seconds per tier, first-pass numbers, not yet balance-tuned) while
+`effect_params.damage` (30.0, hits every alive enemy) stays constant. This is a deliberate,
+consistent rule for every active ability: "higher rarity = fires more often," not "hits harder" —
+simpler to reason about than mixing which axis scales per-ability. **Multiple owned instances of
+the same active schopnost trigger fully independently** — two Diamond `double_tap` copies both proc
+on the same 3rd shot, multiplying together (4× that hit), not adding.
 
-**Draft flow / one offer at a time**: `_level_up()` increments `GameManager.pending_drafts` and
-calls `_try_offer_next_draft()`, which only actually rolls and emits `item_draft_ready` if
-`_current_offer` is empty — **this guard is load-bearing**, not decorative: a single big XP grant
-(e.g. the Debug panel's "+500 XP") can call `_level_up()` several times synchronously inside
-`add_xp()`'s loop, and without the guard each of those calls would roll and emit its own offer,
-stomping `_current_offer` and desyncing `pending_drafts` from what's actually on screen. Offers are
-resolved one at a time via `resolve_draft(offer_index: int)` (indexed, like the shop's
-`buy_shop_item(offer_index)` — not by item_id, since the offer now also carries a rolled rarity
-that an item_id alone wouldn't identify), which clears `_current_offer` and calls
-`_try_offer_next_draft()` again — so a big XP grant queues N drafts that the HUD walks through
-sequentially, not simultaneously.
+**The single unified offer/queue replaced two separate ones** — `pending_ability_drafts`/
+`_current_ability_offer`/`resolve_ability_draft(offer_index)` are now the only such state
+(`pending_drafts`/`_current_offer`/`resolve_draft()`/`ITEMS`/`ITEM_ORDER`/`draft_items`/
+`item_draft_ready`/`draft_inventory_changed`/`DraftPanel` are all gone — if you see any of these
+referenced, they're stale). `_level_up()` increments `pending_ability_drafts` only when
+`player_level % ABILITY_LEVEL_INTERVAL == 0`, then calls `_try_offer_next_ability_draft()`, which
+only actually rolls and emits `ability_draft_ready` if `_current_ability_offer` is empty — **this
+guard is load-bearing**, not decorative: a single big XP grant (e.g. the Debug panel's "+500 XP")
+can call `_level_up()` several times synchronously inside `add_xp()`'s loop, and without the guard
+each qualifying call would roll and emit its own offer, stomping the current one. Offers resolve one
+at a time via `resolve_ability_draft(offer_index: int)`, which clears the offer and calls
+`_try_offer_next_ability_draft()` again — so a big XP grant that crosses the interval more than once
+queues N offers the HUD walks through sequentially.
 
-**Draft pauses the game, unlike the old ability buttons did** (`_show_draft_panel()` /
-`_on_draft_pick_pressed()` in `hud.gd`, mirroring the Shop's `get_tree().paused` pattern) — a
-level-up card is meant to be a deliberate stop-and-choose moment. The "Auto vylepšení" toggle
-(`Control/DebugPanel/AutoUpgradeToggle`, **default OFF**) resolves offers with a uniformly random
-pick and skips the panel/pause entirely. Toggling it **on** while a draft is already showing must
-proactively resolve it (`_on_draft_auto_toggled()`) — otherwise the panel would stay stuck open
-forever, since nothing else would ever call `resolve_draft()` for it.
+**`AbilityDraftPanel` pauses the game** (`_show_ability_draft_panel()` / `_on_ability_pick_pressed()`
+in `hud.gd`, mirroring the Shop's `get_tree().paused` pattern) — a schopnost pick is meant to be a
+deliberate stop-and-choose moment. The "Auto vylepšení" toggle (`Control/DebugPanel/
+AutoUpgradeToggle`, **default OFF**) resolves offers with a uniformly random pick and skips the
+panel/pause entirely — it started out as a regular `Control/BottomBar` button (like the pre-draft
+ability system's Auto-assign) but was moved into `DebugPanel`, since a literal random-pick button
+sitting permanently next to real player-facing controls undercut the entire point of offering a real
+choice, and only ever made sense as a playtesting convenience anyway. Toggling it **on** while an
+offer is already showing must proactively resolve it (`_on_ability_auto_toggled()`) — otherwise the
+panel would stay stuck open forever, since nothing else would call `resolve_ability_draft()` for it.
+**Noted for later**: once the game loops indefinitely past wave 10 (see below), an experienced player
+with a settled build might legitimately want to "farm" further loops without stopping for every
+schopnost card — if that turns out to be a real desired playstyle, auto-resolve could earn a real,
+non-debug home again (e.g. build-aware weighting instead of a uniform random pick). Not worth
+building now.
 
-**Auto-resolve lives in the Debug panel, not the main HUD** — it started out as a regular
-`Control/BottomBar` button (like the old ability system's Auto-assign), but was moved into
-`DebugPanel` and renamed from "Auto" to "Auto vylepšení": the entire point of switching to
-randomized item drafts was to give the player a real, visible choice each level, so a literal
-random-pick button sitting permanently next to real player-facing controls (Shop, item slots)
-undercut that and only ever made sense as a playtesting/debug convenience anyway — CLAUDE.md already
-described it that way before the move. It defaults OFF for the same reason (deliberate flip from the
-old ability system's default-ON Auto). The random-pick logic itself is still a deliberately simple
-placeholder (no weighting by current build) — same caveat the old ability Auto-assign had.
-**Since 2026-09-09, the same toggle also auto-resolves the separate active-ability offers**
-(`AbilityDraftPanel`, see below) — it's still just one "skip the choice pause" testing convenience,
-not two, so one toggle covering both queues was simpler than adding a second checkbox for a pool
-that (for now) has exactly one entry.
-**Noted for later**: once the game loops indefinitely past wave 10 (see below), an experienced
-player who already has a settled build might legitimately want to "farm" further loops without
-stopping for every draft card — if that turns out to be a real desired playstyle during a future
-QoL/balance pass, auto-resolve could earn a real, non-debug home again (e.g. only unlocked after
-finishing loop 1, or with build-aware weighting instead of a uniform random pick). Not worth building
-now — just don't be surprised if this resurfaces as a real feature request later.
+**Trigger/effect resolution lives in `player.gd`, not `game_manager.gd`** — GameManager only owns the
+*data* (what schopnosti exist, which ones the player owns, at what rarity). `player.gd` has TWO
+separate consumer functions, one per trigger type, both reading/writing a shared per-owned-instance
+progress array (`_ability_progress: Array[float]`, parallel-indexed to
+`GameManager.owned_abilities`):
+- **`_consume_ability_triggers()`** — called once per individual `_shoot()` (so with multishot, each
+  projectile is its own "shot" for trigger-counting purposes, not one shot per volley). For every
+  owned instance with `trigger == "shot_count"`, increments its progress by 1; at the rarity's
+  `trigger_values` threshold, resets to 0 and (for `effect == "damage_multiplier"`) multiplies a
+  returned multiplier by `effect_params.multiplier`. `_shoot()` does `get_damage() *
+  _consume_ability_triggers()` before handing the number to the projectile — `get_damage()` itself
+  stays pure stat math, with the schopnost's burst damage applied only to that one shot.
+- **`_process_time_based_abilities(delta)`** — called every frame from `_process()`, independent of
+  shooting/range (so it keeps charging even with no enemy in sight). For every owned instance with
+  `trigger == "time_elapsed"`, increments its progress by `delta` (a float, not an integer shot
+  count); at the rarity's `trigger_values` charge time, resets to 0 and (for `effect ==
+  "aoe_strike"`) calls `_trigger_aoe_strike()`, which deals `effect_params.damage` to **every alive
+  enemy** (`get_tree().get_nodes_in_group("enemies")`) through their normal `take_damage()` — same
+  reasoning as `debug_skip_wave()` in `main.gd`: routing through the real method keeps reward/XP and
+  the double-kill-safe `_is_dead` guard intact, no shortcut around them — then spawns a visual via
+  `orbital_strike_effect_scene` (a `PackedScene` export reusing `impact_effect.gd`'s script with a
+  bigger radius/different color set directly in `orbital_strike_effect.tscn`, no new script needed).
 
-**Active abilities — a THIRD, separate pool from draft and shop** (`GameManager.ABILITIES`/
-`ABILITY_ORDER`, `Control/AbilityDraftPanel` in `hud.tscn`, 2026-09-09): where draft and shop items
-both give a *passive* stat bonus (`get_stat_bonus()`), an ability defines a **trigger** (when it
-fires) and an **effect** (what it does) — `double_tap` ("every Nth shot deals double damage") is the
-first one, and exists specifically as a proof-of-concept for this trigger/effect architecture, the
-third and final piece of the "roguelike deck-builder" plan (see
-`project_roguelike_deckbuilder_direction` in memory). The user explicitly chose a **separate** pool
-over folding abilities into the existing `ITEMS`/`SHOP_ITEMS` dicts — abilities get their own offer
-queue, own panel, own state (`owned_abilities`), not a "stat item that happens to have an effect
-field" mixed into the regular draft/shop offers.
+**This trigger/effect handling is currently hardcoded for the two existing pairs**
+(`shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`) — both in `player.gd` and in
+`GameManager.get_ability_desc()`'s description text — deliberately not yet generalized into a
+dispatch table; a third, genuinely different pair is what should drive that generalization, not a
+guess at what it'll need in advance.
 
-**Ability offers use the same rarity+merge principle as draft items, but on their own cadence and
-threshold**: `ABILITY_LEVEL_INTERVAL` (5) — an offer queues only once every 5 player levels, not
-every level like the stat draft, since abilities are meant to read as rarer, more special moments;
-`ABILITY_CHOICE_COUNT` (1) — only one ability exists so far, so offering 3 identical cards would be
-a fake choice (the constant is still there and `_roll_ability_options()` already clamps to
-`mini(ABILITY_CHOICE_COUNT, pool.size())`, so raising it later just works once more abilities
-exist); `ABILITY_MERGE_THRESHOLD` (2, same as draft's `DRAFT_MERGE_THRESHOLD`, not the shop's 3) —
-2 owned copies of the same ability at the same rolled rarity auto-merge into 1 copy one tier higher
-(`_try_merge_ability()`), reusing the shared `ShopRarity` enum/`SHOP_RARITY_NAMES` display strings.
-**Rarity here scales the ability's TRIGGER FREQUENCY, not a flat power multiplier** —
-`ABILITIES["double_tap"]["trigger_values"]` is `[6, 5, 4, 3]` (shots needed per tier, BRONZE→DIAMOND)
-while `effect_value` (2.0× damage) stays constant across all tiers; this is a deliberate difference
-from the shop's `SHOP_RARITY_MULTIPLIERS` approach — "gets more powerful" for a trigger-based active
-ability reads more naturally as "fires more often" than as "the number gets bigger while the number
-is already itself a multiplier." `owned_abilities: Array[Dictionary]` has no active/stash split
-(same reasoning as `draft_items`) — every owned instance always counts, and **multiple owned
-instances of the same ability trigger fully independently** (see `player.gd` below), so e.g. two
-Diamond `double_tap` copies both proc on the same 3rd shot, multiplying together (4× that hit), not
-adding.
-
-**Stat drafts always resolve before an ability offer is shown, even if both become pending on the
-same level-up** (`_try_offer_next_ability_draft()` in `game_manager.gd` additionally requires
-`_current_offer.is_empty()`, and `resolve_draft()` calls `_try_offer_next_ability_draft()` at its
-tail) — this was a real bug caught before merging, not a hypothetical: `ABILITY_LEVEL_INTERVAL` (5)
-guarantees a collision with the ordinary per-level stat draft on levels 5, 10, 15, ... Without the
-guard, `DraftPanel` and `AbilityDraftPanel` (both screen-centered) would pop up on top of each other
-in the same frame, and resolving whichever pick happened first would call `get_tree().paused =
-false` while the other panel was *still open* underneath. `hud.gd`'s `_on_draft_pick_pressed()`/
-`_on_ability_pick_pressed()` both now only unpause when `GameManager.pending_drafts <= 0 AND
-GameManager.pending_ability_drafts <= 0` — the same principle already used for the shared "Auto
-vylepšení" auto-toggle handler (see below), extended to cover both queues.
-
-**The trigger/effect resolution itself lives in `player.gd`, not `game_manager.gd`** — GameManager
-only owns the *data* (what abilities exist, which ones the player owns, at what rarity);
-`_consume_ability_triggers()` in `player.gd` is called once per individual `_shoot()` call (so with
-multishot, each projectile is its own "shot" for trigger-counting purposes, not one shot per volley)
-and does the actual bookkeeping: increments a per-owned-instance counter (`_ability_shot_counters`,
-parallel-indexed to `GameManager.owned_abilities`), and when an instance's counter reaches its
-rarity's `trigger_values` entry, resets it and multiplies the returned damage multiplier by that
-instance's `effect_value`. `_shoot()` then does `get_damage() * _consume_ability_triggers()` before
-handing the number to the projectile — this keeps `get_damage()` itself unaffected (still pure stat
-math), with the ability's burst damage applied only to that one shot. **This trigger/effect handling
-is currently hardcoded for the one existing `(trigger: "shot_count", effect: "damage_multiplier")`
-pair** — both here and in `GameManager.get_ability_desc()`'s description text — deliberately not yet
-generalized into a dispatch table, since a second ability with a genuinely different trigger or
-effect is what should drive that generalization, not a guess at what it'll need in advance.
-
-**`_ability_shot_counters` resets to all-zero on ANY ability inventory change, not just changes to
-the specific instance affected** (`player.gd`'s `_on_ability_inventory_changed()`, connected to
+**`_ability_progress` resets to all-zero on ANY schopnost inventory change, not just changes to the
+specific instance affected** (`player.gd`'s `_on_ability_inventory_changed()`, connected to
 `GameManager.ability_inventory_changed`) — a deliberate, documented simplification: owned instances
 don't have a stable identity across a merge (2 consumed instances become 1 new one, at a different
 array index), so "preserve this instance's progress toward its next proc" would need to track
-identity just for this one edge case. With only one ability existing right now this never shows up
-in practice (there's nothing else to lose progress on); revisit if it becomes noticeable once more
-abilities exist and merges happen mid-run more often.
+identity just for this one edge case. Revisit if it becomes noticeable once more schopnosti exist and
+merges happen mid-run more often.
 
 **HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
-portrait with a level badge, HP bar, XP bar, seven picked-item slots (`PickedItemSlot0..6`, indexed
-to match `GameManager.ITEM_ORDER` — grayed out while `draft_items` has no instance of that item_id,
-otherwise shows `short_name` + copy count + the *highest* owned rarity, e.g. "Jádro / 2x Stříbro",
-since one item_id can have multiple simultaneously-owned instances at different rarities — see
-"Draft rarity + merge" above), six (currently decorative, unrelated — future equipment loot)
-`ItemSlot1..6` rects, gold, and the shop button. Right-side elements are anchored to the right edge
-and the bars stretch, so the bar survives window resizing.
+portrait with a level badge, HP bar, XP bar, a row of PROCEDURALLY-built schopnost slots
+(`AbilitiesContainer`, populated by `hud.gd`'s `_build_abilities_ui()` — one widget per
+`GameManager.ABILITY_ORDER` entry, grayed out while `owned_abilities` has no instance of that
+`ability_id`, otherwise shows `short_name` + copy count + the *highest* owned rarity, e.g.
+"Jádro / 2x Stříbro"), six (currently decorative, unrelated — future equipment loot) `ItemSlot1..6`
+rects, gold, and the shop button. Procedural (not hand-authored `.tscn` nodes) specifically because
+the pool now has 9 entries and is expected to keep growing — same reasoning as the shop's mini-slot
+grid below; adding a new `ABILITIES` entry needs zero `hud.tscn` changes. Right-side elements are
+anchored to the right edge and the bars stretch, so the bar survives window resizing.
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
@@ -547,21 +516,21 @@ Currently 520px tall (offer row + reroll button + active row + stash row + close
 under budget, but with much less spare margin than before now that the active/stash sections exist;
 any future addition needs to actively check this rather than assume there's room.
 
-**Shop items are a separate system from the item draft** (`GameManager.SHOP_ITEMS`/
-`SHOP_ITEM_ORDER`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is free, randomly offered,
-and single-stat, a shop item is: bought with gold from a rotating offer that already carries a
-rolled **rarity** (see below), and grants **multiple stats at once** (e.g. "Přebíječ jader" = +6
-damage AND +0.2 attack speed at Bronze) — both now use the same rarity/merge growth mechanic (see
-"Draft rarity + merge" above and "Rarity + merge system" below), just with different thresholds/
-curves and single- vs multi-stat payloads. This was a deliberate design pivot mid-brainstorm,
-modeled after League of Legends' item system (discrete multi-stat items) then further reshaped
-after The Bazaar (Steam card/auto-battler) for the rarity/merge/stash mechanics below — the draft
-and shop are meant to feel like different systems, not two currencies buying the same thing.
-`get_stat_bonus(stat_id)` sums both the draft's `draft_items` contribution and **active** shop
+**Shop items are a separate system from passive schopnosti** (`GameManager.SHOP_ITEMS`/
+`SHOP_ITEM_ORDER`, `Control/ShopPanel` in `hud.tscn`). Where a passive schopnost is free, randomly
+offered, and single-stat, a shop item is: bought with gold from a rotating offer that already
+carries a rolled **rarity** (see below), and grants **multiple stats at once** (e.g. "Přebíječ
+jader" = +6 damage AND +0.2 attack speed at Bronze) — both now use the same rarity/merge growth
+mechanic (see "Schopnosti" above and "Rarity + merge system" below), just with different
+thresholds/curves and single- vs multi-stat payloads. This was a deliberate design pivot
+mid-brainstorm, modeled after League of Legends' item system (discrete multi-stat items) then
+further reshaped after The Bazaar (Steam card/auto-battler) for the rarity/merge/stash mechanics
+below — schopnosti and shop are meant to feel like different systems, not two currencies buying the
+same thing. `get_stat_bonus(stat_id)` sums both owned *passive* schopnosti and **active** shop
 items' `stats` (× rarity multiplier) contribution for a given stat — a player can own both "Jádro
-síly" (draft) *and* "Přebíječ jader" (shop, which also grants damage) at the same time; their
-damage bonuses just add together, no conflict. **Only active shop items count — stashed ones
-don't** (see below); draft items have no such split, every owned instance always counts.
+síly" (passive schopnost) *and* "Přebíječ jader" (shop, which also grants damage) at the same time;
+their damage bonuses just add together, no conflict. **Only active shop items count — stashed ones
+don't** (see below); schopnosti have no such split, every owned instance always counts.
 
 **Rarity + merge system** (`GameManager.ShopRarity` enum, `SHOP_RARITY_NAMES`/
 `SHOP_RARITY_WEIGHTS`/`SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS`): built 2026-09-08,
@@ -657,18 +626,18 @@ reuse the *real* code paths rather than shortcutting past them:
   it also speeds up Timers, Tweens, and the Game Over/Victory countdown, and (unlike everything
   else on this panel) is **not** reset by a scene reload; the button re-syncs its own label from
   the actual `Engine.time_scale` in `_setup_debug_panel()` so it doesn't lie after a restart.
-- **Vynutit draft** calls `GameManager.debug_force_draft()` to queue an offer immediately, bypassing
-  the level-up requirement — the fastest way to test the draft UI/flow without grinding XP.
-- **Vynutit ability draft** is the same idea for the separate ability pool —
-  `GameManager.debug_force_ability_draft()` queues an `AbilityDraftPanel` offer immediately,
-  bypassing `ABILITY_LEVEL_INTERVAL`.
-- **Max/Reset itemy** are a blunt build-testing tool — max gives every item exactly 1 Diamond-rarity
-  instance, reset clears `draft_items` entirely. Unlike the old ability respec, reset does **not**
-  refund anything to re-spend, because items were never bought with a spendable currency in the
-  first place — they're free picks from a draft, so "reset" is just a clean slate for the next
-  level-up.
+- **Vynutit schopnost** (node `ForceAbilityDraftButton`) calls `GameManager.debug_force_ability_draft()`
+  to queue an `AbilityDraftPanel` offer immediately, bypassing `ABILITY_LEVEL_INTERVAL` — the
+  fastest way to test the schopnost UI/flow without grinding XP.
+- **Max/Reset schopnosti** (node names `MaxItemsButton`/`ResetItemsButton`, kept from before the
+  2026-09-09 draft/ability merge — only the Button `text` and `hud.gd` variable names changed) are a
+  blunt build-testing tool — max gives every `ABILITIES` entry exactly 1 Diamond-rarity instance via
+  `debug_max_abilities()`, reset clears `owned_abilities` entirely via `debug_reset_abilities()`.
+  Reset does **not** refund anything to re-spend, because schopnosti were never bought with a
+  spendable currency in the first place — they're free picks, so "reset" is just a clean slate for
+  the next level-up.
 - **Auto vylepšení** is the moved/renamed old BottomBar "Auto" toggle (see above) — it's here rather
-  than in the main HUD specifically because its only real use is skipping the draft-choice pause
+  than in the main HUD specifically because its only real use is skipping the schopnost-choice pause
   during testing.
 - **Free reroll** sets `GameManager.debug_free_reroll`, making shop rerolls free (see "Reroll
   costs..." above) — for testing the shop offer/reroll flow without grinding gold. Same
@@ -683,7 +652,7 @@ don't proactively redesign the layout for this alone.
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()` is where active-ability trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier`, see "Active abilities" above)
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
 - `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_wave`/`variant_ramp_full_wave` (loop-1-only ramp for when ranged/sniper start appearing)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `is_ranged`/`projectile_scene`
@@ -692,5 +661,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), draft item definitions (`ITEMS`, single-stat, `"value"` = Bronze-tier amount), `DRAFT_CHOICE_COUNT`, `DRAFT_MERGE_THRESHOLD` (2-copy draft merge), `DRAFT_RARITY_WEIGHTS`/`DRAFT_RARITY_MULTIPLIERS` (draft's own rarity curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to items/shop), active ability definitions (`ABILITIES`, e.g. `double_tap`'s `trigger_values` per rarity tier and `effect_value`), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT`, `ABILITY_LEVEL_INTERVAL` (how many levels between ability offers), `ABILITY_MERGE_THRESHOLD`, `ABILITY_RARITY_WEIGHTS`
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size), `ABILITY_LEVEL_INTERVAL` (5, levels between offers), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)

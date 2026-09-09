@@ -224,157 +224,12 @@ text = "XP 0 / 60"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PickedItemSlot0" type="ColorRect" parent="Control/BottomBar"]
+[node name="AbilitiesContainer" type="Control" parent="Control/BottomBar"]
 layout_mode = 0
 offset_left = 310.0
-offset_top = 66.0
-offset_right = 376.0
-offset_bottom = 114.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot0"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "Jádro
-0/5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="PickedItemSlot1" type="ColorRect" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 382.0
-offset_top = 66.0
-offset_right = 448.0
-offset_bottom = 114.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot1"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "Palba
-0/5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="PickedItemSlot2" type="ColorRect" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 454.0
-offset_top = 66.0
-offset_right = 520.0
-offset_bottom = 114.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot2"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "Dostřel
-0/5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="PickedItemSlot3" type="ColorRect" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 526.0
-offset_top = 66.0
-offset_right = 592.0
-offset_bottom = 114.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot3"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "Rozptyl
-0/5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="PickedItemSlot4" type="ColorRect" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 598.0
-offset_top = 66.0
-offset_right = 664.0
-offset_bottom = 114.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot4"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "Pancíř
-0/5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="PickedItemSlot5" type="ColorRect" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 670.0
-offset_top = 66.0
-offset_right = 736.0
-offset_bottom = 114.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot5"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "Regen
-0/5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="PickedItemSlot6" type="ColorRect" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 742.0
-offset_top = 66.0
-offset_right = 808.0
-offset_bottom = 114.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/PickedItemSlot6"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "Tlumiče
-0/5"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="AbilitySlot0" type="ColorRect" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 814.0
-offset_top = 66.0
-offset_right = 880.0
-offset_bottom = 114.0
-color = Color(0.19, 0.14, 0.24, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/AbilitySlot0"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 11
-text = "D. zásah
--"
-horizontal_alignment = 1
-vertical_alignment = 1
+offset_top = 60.0
+offset_right = 900.0
+offset_bottom = 118.0
 
 [node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
 layout_mode = 1
@@ -914,7 +769,7 @@ anchor_right = 1.0
 offset_left = -490.0
 offset_top = 50.0
 offset_right = -10.0
-offset_bottom = 662.0
+offset_bottom = 618.0
 
 [node name="Title" type="Label" parent="Control/DebugPanel"]
 layout_mode = 0
@@ -983,13 +838,13 @@ offset_right = 460.0
 offset_bottom = 226.0
 text = "+1000 Zlato"
 
-[node name="ForceDraftButton" type="Button" parent="Control/DebugPanel"]
+[node name="ForceAbilityDraftButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 234.0
 offset_right = 230.0
 offset_bottom = 270.0
-text = "Vynutit draft"
+text = "Vynutit schopnost"
 
 [node name="MaxItemsButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
@@ -997,38 +852,30 @@ offset_left = 250.0
 offset_top = 234.0
 offset_right = 460.0
 offset_bottom = 270.0
-text = "Max itemy"
-
-[node name="ForceAbilityDraftButton" type="Button" parent="Control/DebugPanel"]
-layout_mode = 0
-offset_left = 20.0
-offset_top = 278.0
-offset_right = 460.0
-offset_bottom = 314.0
-text = "Vynutit ability draft"
+text = "Max schopnosti"
 
 [node name="ResetItemsButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 322.0
+offset_top = 278.0
 offset_right = 230.0
-offset_bottom = 358.0
-text = "Reset itemy"
+offset_bottom = 314.0
+text = "Reset schopnosti"
 
 [node name="AddLoopButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 250.0
-offset_top = 322.0
+offset_top = 278.0
 offset_right = 460.0
-offset_bottom = 358.0
+offset_bottom = 314.0
 text = "+1 Kolo"
 
 [node name="AutoUpgradeToggle" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 366.0
+offset_top = 322.0
 offset_right = 460.0
-offset_bottom = 402.0
+offset_bottom = 358.0
 toggle_mode = true
 button_pressed = false
 text = "Auto vylepšení"
@@ -1036,9 +883,9 @@ text = "Auto vylepšení"
 [node name="FreeRerollToggle" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 410.0
+offset_top = 366.0
 offset_right = 460.0
-offset_bottom = 446.0
+offset_bottom = 402.0
 toggle_mode = true
 button_pressed = false
 text = "Free reroll: Vypnuto"
@@ -1046,44 +893,44 @@ text = "Free reroll: Vypnuto"
 [node name="SpawnEliteButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 454.0
+offset_top = 410.0
 offset_right = 230.0
-offset_bottom = 490.0
+offset_bottom = 446.0
 text = "Spawnout Elite"
 
 [node name="SpawnRangedButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 250.0
-offset_top = 454.0
+offset_top = 410.0
 offset_right = 460.0
-offset_bottom = 490.0
+offset_bottom = 446.0
 text = "Spawnout dálkového"
 
 [node name="SpawnSniperButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 494.0
+offset_top = 450.0
 offset_right = 460.0
-offset_bottom = 530.0
+offset_bottom = 486.0
 text = "Spawnout snipera"
 
 [node name="SpeedButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 538.0
+offset_top = 494.0
 offset_right = 460.0
-offset_bottom = 574.0
+offset_bottom = 530.0
 text = "Rychlost: 1x"
 
 [node name="CloseButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 150.0
-offset_top = 592.0
+offset_top = 548.0
 offset_right = 330.0
-offset_bottom = 628.0
+offset_bottom = 584.0
 text = "Zavřít"
 
-[node name="DraftPanel" type="Panel" parent="Control"]
+[node name="AbilityDraftPanel" type="Panel" parent="Control"]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -1096,187 +943,22 @@ offset_top = -170.0
 offset_right = 300.0
 offset_bottom = 170.0
 
-[node name="Title" type="Label" parent="Control/DraftPanel"]
+[node name="Title" type="Label" parent="Control/AbilityDraftPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 16.0
 offset_right = 580.0
 offset_bottom = 50.0
 theme_override_font_sizes/font_size = 22
-text = "Vyber vylepšení!"
+text = "Vyber schopnost!"
 horizontal_alignment = 1
-
-[node name="Card0" type="Panel" parent="Control/DraftPanel"]
-layout_mode = 0
-offset_left = 20.0
-offset_top = 60.0
-offset_right = 200.0
-offset_bottom = 300.0
-
-[node name="NameLabel" type="Label" parent="Control/DraftPanel/Card0"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = 170.0
-offset_bottom = 50.0
-theme_override_font_sizes/font_size = 15
-text = "Název"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="DescLabel" type="Label" parent="Control/DraftPanel/Card0"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 55.0
-offset_right = 170.0
-offset_bottom = 170.0
-theme_override_font_sizes/font_size = 12
-text = "Popis"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="RarityLabel" type="Label" parent="Control/DraftPanel/Card0"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 174.0
-offset_right = 170.0
-offset_bottom = 194.0
-theme_override_font_sizes/font_size = 12
-text = "Bronz"
-horizontal_alignment = 1
-
-[node name="PickButton" type="Button" parent="Control/DraftPanel/Card0"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 200.0
-offset_right = 170.0
-offset_bottom = 232.0
-text = "Vybrat"
-
-[node name="Card1" type="Panel" parent="Control/DraftPanel"]
-layout_mode = 0
-offset_left = 210.0
-offset_top = 60.0
-offset_right = 390.0
-offset_bottom = 300.0
-
-[node name="NameLabel" type="Label" parent="Control/DraftPanel/Card1"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = 170.0
-offset_bottom = 50.0
-theme_override_font_sizes/font_size = 15
-text = "Název"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="DescLabel" type="Label" parent="Control/DraftPanel/Card1"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 55.0
-offset_right = 170.0
-offset_bottom = 170.0
-theme_override_font_sizes/font_size = 12
-text = "Popis"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="RarityLabel" type="Label" parent="Control/DraftPanel/Card1"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 174.0
-offset_right = 170.0
-offset_bottom = 194.0
-theme_override_font_sizes/font_size = 12
-text = "Bronz"
-horizontal_alignment = 1
-
-[node name="PickButton" type="Button" parent="Control/DraftPanel/Card1"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 200.0
-offset_right = 170.0
-offset_bottom = 232.0
-text = "Vybrat"
-
-[node name="Card2" type="Panel" parent="Control/DraftPanel"]
-layout_mode = 0
-offset_left = 400.0
-offset_top = 60.0
-offset_right = 580.0
-offset_bottom = 300.0
-
-[node name="NameLabel" type="Label" parent="Control/DraftPanel/Card2"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = 170.0
-offset_bottom = 50.0
-theme_override_font_sizes/font_size = 15
-text = "Název"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="DescLabel" type="Label" parent="Control/DraftPanel/Card2"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 55.0
-offset_right = 170.0
-offset_bottom = 170.0
-theme_override_font_sizes/font_size = 12
-text = "Popis"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="RarityLabel" type="Label" parent="Control/DraftPanel/Card2"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 174.0
-offset_right = 170.0
-offset_bottom = 194.0
-theme_override_font_sizes/font_size = 12
-text = "Bronz"
-horizontal_alignment = 1
-
-[node name="PickButton" type="Button" parent="Control/DraftPanel/Card2"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 200.0
-offset_right = 170.0
-offset_bottom = 232.0
-text = "Vybrat"
-
-[node name="AbilityDraftPanel" type="Panel" parent="Control"]
-visible = false
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -110.0
-offset_top = -160.0
-offset_right = 110.0
-offset_bottom = 160.0
-
-[node name="Title" type="Label" parent="Control/AbilityDraftPanel"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 16.0
-offset_right = 210.0
-offset_bottom = 50.0
-theme_override_font_sizes/font_size = 20
-text = "Nová schopnost!"
-horizontal_alignment = 1
-autowrap_mode = 2
 
 [node name="Card0" type="Panel" parent="Control/AbilityDraftPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 56.0
+offset_top = 60.0
 offset_right = 200.0
-offset_bottom = 296.0
+offset_bottom = 300.0
 
 [node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
 layout_mode = 0
@@ -1311,6 +993,100 @@ text = "Bronz"
 horizontal_alignment = 1
 
 [node name="PickButton" type="Button" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 200.0
+offset_right = 170.0
+offset_bottom = 232.0
+text = "Přijmout"
+
+[node name="Card1" type="Panel" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 210.0
+offset_top = 60.0
+offset_right = 390.0
+offset_bottom = 300.0
+
+[node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 170.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 15
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 55.0
+offset_right = 170.0
+offset_bottom = 170.0
+theme_override_font_sizes/font_size = 12
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 174.0
+offset_right = 170.0
+offset_bottom = 194.0
+theme_override_font_sizes/font_size = 12
+text = "Bronz"
+horizontal_alignment = 1
+
+[node name="PickButton" type="Button" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 200.0
+offset_right = 170.0
+offset_bottom = 232.0
+text = "Přijmout"
+
+[node name="Card2" type="Panel" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 400.0
+offset_top = 60.0
+offset_right = 580.0
+offset_bottom = 300.0
+
+[node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 170.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 15
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 55.0
+offset_right = 170.0
+offset_bottom = 170.0
+theme_override_font_sizes/font_size = 12
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 174.0
+offset_right = 170.0
+offset_bottom = 194.0
+theme_override_font_sizes/font_size = 12
+text = "Bronz"
+horizontal_alignment = 1
+
+[node name="PickButton" type="Button" parent="Control/AbilityDraftPanel/Card2"]
 layout_mode = 0
 offset_left = 10.0
 offset_top = 200.0
