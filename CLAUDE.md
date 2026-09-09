@@ -516,10 +516,20 @@ description you find elsewhere as stale):
   unclickable. Keep this node-order dependency in mind if `DebugButton` (or anything else meant to
   float on top of `BottomBar`) moves again.
 - **`BottomBar` itself** now holds only the stat readouts (`StatDamage`/`StatSpeed`/`StatRange`/
-  `StatHP`/`StatArmor`) and `ItemSlot1..6` — a single row at `offset_left = 310` (matching the old
-  HP/XP bars' left edge from before they moved), currently decorative/unrelated (future equipment
+  `StatHP`/`StatArmor`) and `ItemSlot1..6` — currently decorative/unrelated (future equipment
   loot). `ShopButton` was removed entirely earlier the same day (see "Shop opens periodically"
-  below); nothing in `BottomBar` reads `GameManager.shop_available` anymore.
+  below); nothing in `BottomBar` reads `GameManager.shop_available` anymore. **`ItemSlot1..6` are
+  112×112 squares, centered horizontally in `BottomBar`** (`offset_left = 264` → `offset_right =
+  1016` for the 6-slot row as a whole, out of the project's 1280px baseline width — symmetric
+  264px margin on each side) and vertically filling the bar's height minus a 14px margin top and
+  bottom (`offset_top = 14`, `offset_bottom = 126`, out of `BottomBar`'s 140px height) — explicit
+  user request 2026-09-09 ("center them, grow to fill available height, keep the margin, stay
+  square"). Slot-to-slot gap is 16px (`offset_left` steps by 128 = 112 + 16). Squares grew from the
+  original 44×44 (were left-aligned at `offset_left = 310`, matching the HP/XP bars' old left edge
+  from before those moved) — that original size/position is now stale if you see it referenced
+  anywhere. The `Label` child of each slot is untouched (`font_size = 9`, anchored to fill the
+  parent) — noticeably small relative to the new 112px box, but wasn't part of this request; revisit
+  if it reads as too small once real item icons/text exist here.
 
 **Schopnost slots (`AbilitiesContainer`) are POSITIONAL, one per owned INSTANCE**
 in `GameManager.owned_abilities`, not one dedicated slot per `ABILITY_ORDER` type — the same

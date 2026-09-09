@@ -215,10 +215,10 @@ text = "Brnění: 2"
 
 [node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
 layout_mode = 0
-offset_left = 310.0
-offset_top = 64.0
-offset_right = 354.0
-offset_bottom = 108.0
+offset_left = 264.0
+offset_top = 14.0
+offset_right = 376.0
+offset_bottom = 126.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot1"]
@@ -234,10 +234,10 @@ autowrap_mode = 2
 
 [node name="ItemSlot2" type="ColorRect" parent="Control/BottomBar" unique_id=162173072]
 layout_mode = 0
-offset_left = 360.0
-offset_top = 64.0
-offset_right = 404.0
-offset_bottom = 108.0
+offset_left = 392.0
+offset_top = 14.0
+offset_right = 504.0
+offset_bottom = 126.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot2"]
@@ -253,10 +253,10 @@ autowrap_mode = 2
 
 [node name="ItemSlot3" type="ColorRect" parent="Control/BottomBar" unique_id=113830123]
 layout_mode = 0
-offset_left = 410.0
-offset_top = 64.0
-offset_right = 454.0
-offset_bottom = 108.0
+offset_left = 520.0
+offset_top = 14.0
+offset_right = 632.0
+offset_bottom = 126.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot3"]
@@ -272,10 +272,10 @@ autowrap_mode = 2
 
 [node name="ItemSlot4" type="ColorRect" parent="Control/BottomBar" unique_id=558387754]
 layout_mode = 0
-offset_left = 460.0
-offset_top = 64.0
-offset_right = 504.0
-offset_bottom = 108.0
+offset_left = 648.0
+offset_top = 14.0
+offset_right = 760.0
+offset_bottom = 126.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot4"]
@@ -291,10 +291,10 @@ autowrap_mode = 2
 
 [node name="ItemSlot5" type="ColorRect" parent="Control/BottomBar" unique_id=1839271119]
 layout_mode = 0
-offset_left = 510.0
-offset_top = 64.0
-offset_right = 554.0
-offset_bottom = 108.0
+offset_left = 776.0
+offset_top = 14.0
+offset_right = 888.0
+offset_bottom = 126.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot5"]
@@ -310,10 +310,10 @@ autowrap_mode = 2
 
 [node name="ItemSlot6" type="ColorRect" parent="Control/BottomBar" unique_id=146363010]
 layout_mode = 0
-offset_left = 560.0
-offset_top = 64.0
-offset_right = 604.0
-offset_bottom = 108.0
+offset_left = 904.0
+offset_top = 14.0
+offset_right = 1016.0
+offset_bottom = 126.0
 color = Color(0.14, 0.15, 0.19, 1)
 
 [node name="Label" type="Label" parent="Control/BottomBar/ItemSlot6"]
