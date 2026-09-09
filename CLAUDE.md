@@ -507,6 +507,26 @@ silently no-ops if clicked (shouldn't be reachable anyway since the button is di
 `shop_available`/`shop_offer`/`shop_reroll_count` are run-scoped and reset in `reset_game()` like
 everything else — a new run has to clear wave 10 again, same as it has to re-collect levels/items.
 
+**Shop auto-open defers if a schopnost offer is still pending** (`GameManager._shop_open_deferred`,
+`_try_open_pending_shop()`, added 2026-09-09): if the killing blow on wave 10's last enemy grants
+enough XP to level up, that level-up (and its schopnost offer) resolves *synchronously* inside
+`enemy_defeated()` → `add_xp()` → `_level_up()`, **before** `enemy_defeated()` even gets to
+decrement `enemies_alive` and notice the wave is clear a few lines later. Without this guard,
+`_open_periodic_shop()` would fire `shop_auto_open_requested` while `AbilityDraftPanel` was already
+open, popping `ShopPanel` on top of it. `_open_periodic_shop()` now always generates the offer
+immediately (`shop_available`/`shop_offer` update on schedule, so the shop button's label etc. stay
+correct) but only actually emits `shop_auto_open_requested` — the thing that shows+pauses the panel
+— through `_try_open_pending_shop()`, which defers (sets `_shop_open_deferred = true`) if
+`pending_ability_drafts > 0` or `_current_ability_offer` isn't empty. `resolve_ability_draft()` calls
+`_try_open_pending_shop()` again at its own tail, so the shop opens automatically the moment the
+*last* pending schopnost offer resolves — correctly waiting out multi-level XP bursts, not just the
+first offer. **`hud.gd` needed a matching fix, not just GameManager**: `_on_ability_pick_pressed()`/
+`_on_ability_auto_toggled()` used to unconditionally `get_tree().paused = false` once
+`pending_ability_drafts` hit 0 — but `resolve_ability_draft()` can synchronously open the shop
+*during that same call* (via the deferred-open path above), so blindly unpausing afterward would let
+the game run for a frame under the newly-opened `ShopPanel`. Both handlers now check `not
+shop_panel.visible` before unpausing.
+
 **The offer is `SHOP_OFFER_SIZE` (4) random items out of the full 7-item pool, not all 7 at once**
 (`GameManager.shop_offer`, `_generate_shop_offer()`) — picked via `SHOP_ITEM_ORDER.duplicate();
 pool.shuffle(); pool.slice(0, SHOP_OFFER_SIZE)`, so duplicates within one offer are impossible.
