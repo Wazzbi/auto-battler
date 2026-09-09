@@ -59,11 +59,11 @@ var debug_invincible: bool = false
 func _ready() -> void:
 	add_to_group("player")
 
-	# Progrese (úrovně, ranky draftnutých itemů, nákupy v obchodě) mění staty
-	# za běhu - reagujeme na všechny tři signály, HUD do statů hráče nikdy
+	# Progrese (úrovně, draftnuté itemy, nákupy v obchodě) mění staty za
+	# běhu - reagujeme na všechny tři signály, HUD do statů hráče nikdy
 	# nesahá přímo.
 	GameManager.level_changed.connect(_on_level_changed)
-	GameManager.item_rank_changed.connect(_on_item_rank_changed)
+	GameManager.draft_inventory_changed.connect(_on_draft_inventory_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
 
 	_recalculate_stats()
@@ -156,7 +156,7 @@ func _on_level_changed(_new_level: int) -> void:
 	_apply_progression_changes()
 
 
-func _on_item_rank_changed(_item_id: String, _new_rank: int) -> void:
+func _on_draft_inventory_changed() -> void:
 	_apply_progression_changes()
 
 

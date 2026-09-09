@@ -151,10 +151,11 @@ var _item_slots: Array = []
 ## chtít nechat vybírat itemy náhodně místo skutečné volby, takže to patří
 ## mezi dev/testovací nástroje, ne mezi trvale viditelné ovládací prvky.
 var _draft_auto_enabled: bool = false
-## Poslední nabídnuté itemy (viz _on_item_draft_ready) - potřeba, aby
-## _on_draft_auto_toggled() mohl doresit nabídku, na kterou hráč zrovna
-## kouká, i když je zrovna otevřená přes DraftPanel, ne přes Auto větev.
-var _last_offered_ids: Array = []
+## Poslední nabídnuté itemy, každý {"item_id": String, "rarity": int} (viz
+## _on_item_draft_ready) - potřeba, aby _on_draft_auto_toggled() mohl doresit
+## nabídku, na kterou hráč zrovna kouká, i když je zrovna otevřená přes
+## DraftPanel, ne přes Auto větev.
+var _last_offer: Array = []
 
 
 func _ready() -> void:
@@ -163,7 +164,7 @@ func _ready() -> void:
 	GameManager.xp_changed.connect(_on_xp_changed)
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.item_draft_ready.connect(_on_item_draft_ready)
-	GameManager.item_rank_changed.connect(_on_item_rank_changed)
+	GameManager.draft_inventory_changed.connect(_on_draft_inventory_changed)
 	GameManager.loop_changed.connect(_on_loop_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
 	GameManager.shop_offer_changed.connect(_on_shop_offer_changed)
@@ -271,7 +272,7 @@ func _on_level_changed(new_level: int) -> void:
 	_refresh_stat_labels()
 
 
-func _on_item_rank_changed(_item_id: String, _new_rank: int) -> void:
+func _on_draft_inventory_changed() -> void:
 	_refresh_items()
 	_refresh_stat_labels()
 
@@ -282,60 +283,60 @@ func _on_item_rank_changed(_item_id: String, _new_rank: int) -> void:
 func _on_draft_auto_toggled(enabled: bool) -> void:
 	_draft_auto_enabled = enabled
 	if enabled and GameManager.pending_drafts > 0:
-		var pick: String = _last_offered_ids[randi() % _last_offered_ids.size()]
-		GameManager.resolve_draft(pick) # se zapnutým Auto se přes _on_item_draft_ready samo prořeže i případné další čekající
+		var pick_index: int = randi() % _last_offer.size()
+		GameManager.resolve_draft(pick_index) # se zapnutým Auto se přes _on_item_draft_ready samo prořeže i případné další čekající
 		draft_panel.hide()
 		get_tree().paused = false
 
 
 ## Přijde vždy, když je k dispozici nová draft nabídka (typicky po level-upu).
+## `offered` má vždy DRAFT_CHOICE_COUNT prvků, každý {"item_id", "rarity"}.
 ## S vypnutým Auto výběrem zobrazí DraftPanel a hru pozastaví (stejně jako
 ## Obchod) - hráč musí vybrat, než se hra pustí dál. Se zapnutým Auto výběrem
 ## nabídku rovnou vyřídí náhodným pickem bez zastavení hry (viz
 ## GameManager.resolve_draft() - samo zavolá další nabídku, pokud nějaká čeká).
-func _on_item_draft_ready(offered_ids: Array) -> void:
-	_last_offered_ids = offered_ids
+func _on_item_draft_ready(offered: Array) -> void:
+	_last_offer = offered
 
 	if _draft_auto_enabled:
-		var pick: String = offered_ids[randi() % offered_ids.size()]
-		GameManager.resolve_draft(pick)
+		var pick_index: int = randi() % offered.size()
+		GameManager.resolve_draft(pick_index)
 		return
 
-	_show_draft_panel(offered_ids)
+	_show_draft_panel(offered)
 
 
-func _show_draft_panel(offered_ids: Array) -> void:
+func _show_draft_panel(offered: Array) -> void:
 	for i in draft_cards.size():
 		var card: Panel = draft_cards[i]
-		if i >= offered_ids.size():
+		if i >= offered.size():
 			card.hide()
 			continue
 
-		var item_id: String = offered_ids[i]
+		var offer_entry: Dictionary = offered[i]
+		var item_id: String = offer_entry["item_id"]
+		var rarity: int = offer_entry["rarity"]
 		var definition: Dictionary = GameManager.ITEMS[item_id]
-		var current_rank: int = GameManager.item_ranks[item_id]
 
 		card.show()
 		card.get_node("NameLabel").text = definition["name"]
-		card.get_node("DescLabel").text = definition["desc"]
-		card.get_node("RankLabel").text = "%d/%d -> %d/%d" % [
-			current_rank, GameManager.MAX_ITEM_RANK, current_rank + 1, GameManager.MAX_ITEM_RANK
-		]
+		card.get_node("DescLabel").text = GameManager.get_draft_item_desc(item_id, rarity)
+		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
 
 		var pick_button: Button = card.get_node("PickButton")
 		# Karty se v draft_cards nemění, jen se přepisuje jejich obsah - proto
 		# je nutné staré spojení nejdřív odpojit, jinak by kliknutí na tutéž
-		# kartu po druhé nabídce zavolalo resolve_draft() se starým item_id.
+		# kartu po druhé nabídce zavolalo resolve_draft() se starým indexem.
 		for connection in pick_button.pressed.get_connections():
 			pick_button.pressed.disconnect(connection["callable"])
-		pick_button.pressed.connect(_on_draft_pick_pressed.bind(item_id))
+		pick_button.pressed.connect(_on_draft_pick_pressed.bind(i))
 
 	draft_panel.show()
 	get_tree().paused = true
 
 
-func _on_draft_pick_pressed(item_id: String) -> void:
-	GameManager.resolve_draft(item_id)
+func _on_draft_pick_pressed(offer_index: int) -> void:
+	GameManager.resolve_draft(offer_index)
 	# resolve_draft() může synchronně vyvolat DALŠÍ item_draft_ready (víc
 	# úrovní najednou z velkého přísunu XP), který už _show_draft_panel()
 	# znovu zavolal a panel nechal otevřený s novým obsahem - tady ho proto
@@ -358,17 +359,32 @@ func _refresh_progression() -> void:
 	_refresh_stat_labels()
 
 
+## Na rozdíl od dřívějšího jednoho čísla "rank" teď item_id může mít víc
+## současně vlastněných instancí na RŮZNÝCH raritách najednou (viz
+## GameManager.draft_items) - slot proto ukazuje počet kopií a nejvyšší
+## vlastněnou raritu, ne jediné číslo.
 func _refresh_items() -> void:
 	for i in GameManager.ITEM_ORDER.size():
 		var item_id: String = GameManager.ITEM_ORDER[i]
 		var definition: Dictionary = GameManager.ITEMS[item_id]
-		var rank: int = GameManager.item_ranks[item_id]
 		var slot: ColorRect = _item_slots[i]
 		var label: Label = slot.get_node("Label")
 
-		label.text = "%s\n%d/%d" % [definition["short_name"], rank, GameManager.MAX_ITEM_RANK]
-		slot.modulate = Color.WHITE if rank > 0 else LOCKED_ITEM_MODULATE
-		slot.tooltip_text = "%s\n%s" % [definition["name"], definition["desc"]]
+		var count: int = 0
+		var highest_rarity: int = -1
+		for entry in GameManager.draft_items:
+			if entry["item_id"] == item_id:
+				count += 1
+				highest_rarity = maxi(highest_rarity, entry["rarity"])
+
+		if count > 0:
+			label.text = "%s\n%dx %s" % [definition["short_name"], count, GameManager.SHOP_RARITY_NAMES[highest_rarity]]
+			slot.modulate = Color.WHITE
+			slot.tooltip_text = "%s\n%s" % [definition["name"], GameManager.get_draft_item_desc(item_id, highest_rarity)]
+		else:
+			label.text = "%s\n-" % definition["short_name"]
+			slot.modulate = LOCKED_ITEM_MODULATE
+			slot.tooltip_text = definition["name"]
 
 
 func _refresh_stat_labels() -> void:

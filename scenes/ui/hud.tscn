@@ -1108,14 +1108,14 @@ text = "Popis"
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="RankLabel" type="Label" parent="Control/DraftPanel/Card0"]
+[node name="RarityLabel" type="Label" parent="Control/DraftPanel/Card0"]
 layout_mode = 0
 offset_left = 10.0
 offset_top = 174.0
 offset_right = 170.0
 offset_bottom = 194.0
 theme_override_font_sizes/font_size = 12
-text = "0/5 -> 1/5"
+text = "Bronz"
 horizontal_alignment = 1
 
 [node name="PickButton" type="Button" parent="Control/DraftPanel/Card0"]
@@ -1155,14 +1155,14 @@ text = "Popis"
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="RankLabel" type="Label" parent="Control/DraftPanel/Card1"]
+[node name="RarityLabel" type="Label" parent="Control/DraftPanel/Card1"]
 layout_mode = 0
 offset_left = 10.0
 offset_top = 174.0
 offset_right = 170.0
 offset_bottom = 194.0
 theme_override_font_sizes/font_size = 12
-text = "0/5 -> 1/5"
+text = "Bronz"
 horizontal_alignment = 1
 
 [node name="PickButton" type="Button" parent="Control/DraftPanel/Card1"]
@@ -1202,14 +1202,14 @@ text = "Popis"
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="RankLabel" type="Label" parent="Control/DraftPanel/Card2"]
+[node name="RarityLabel" type="Label" parent="Control/DraftPanel/Card2"]
 layout_mode = 0
 offset_left = 10.0
 offset_top = 174.0
 offset_right = 170.0
 offset_bottom = 194.0
 theme_override_font_sizes/font_size = 12
-text = "0/5 -> 1/5"
+text = "Bronz"
 horizontal_alignment = 1
 
 [node name="PickButton" type="Button" parent="Control/DraftPanel/Card2"]
