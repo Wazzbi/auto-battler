@@ -1,9 +1,74 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://scenes/player/player.gd" id="1_player_script"]
 [ext_resource type="PackedScene" path="res://scenes/projectiles/projectile.tscn" id="2_projectile"]
 [ext_resource type="PackedScene" path="res://scenes/effects/impact_effect.tscn" id="3_impact_effect"]
 [ext_resource type="PackedScene" path="res://scenes/effects/orbital_strike_effect.tscn" id="4_orbital_strike_effect"]
+[ext_resource type="Texture2D" path="res://assets/player/run.png" id="5_run_sprite"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f0"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(0, 0, 130, 240)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f1"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(130, 0, 130, 240)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f2"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(260, 0, 130, 240)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f3"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(390, 0, 130, 240)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f4"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(0, 240, 130, 240)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f5"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(130, 240, 130, 240)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f6"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(260, 240, 130, 240)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_run_f7"]
+atlas = ExtResource("5_run_sprite")
+region = Rect2(390, 240, 130, 240)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_player_run"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f3")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_run_f7")
+}],
+"loop": true,
+"name": &"run",
+"speed": 10.0
+}]
 
 [node name="Player" type="Node2D"]
 script = ExtResource("1_player_script")
@@ -11,6 +76,10 @@ projectile_scene = ExtResource("2_projectile")
 impact_effect_scene = ExtResource("3_impact_effect")
 orbital_strike_effect_scene = ExtResource("4_orbital_strike_effect")
 
-[node name="Polygon2D" type="Polygon2D" parent="."]
-color = Color(0.2, 0.6, 1, 1)
-polygon = PackedVector2Array(-20, -30, 20, -30, 20, 30, -20, 30)
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+texture_filter = 1
+sprite_frames = SubResource("SpriteFrames_player_run")
+animation = &"run"
+autoplay = "run"
+scale = Vector2(0.375, 0.375)
+offset = Vector2(0, -7)

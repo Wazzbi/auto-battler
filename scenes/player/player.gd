@@ -45,7 +45,13 @@ signal landed
 @export var fall_duration: float = 0.55
 @export var fall_tilt_degrees: float = -10.0
 
-@onready var visual: Polygon2D = $Polygon2D
+@onready var visual: AnimatedSprite2D = $AnimatedSprite2D
+## Měřítko spritu nastavené ve scéně (viz player.tscn - 130x240px zdrojový
+## snímek zmenšený na ~90px výšky). _play_squash_effect() z něj musí
+## vycházet relativně, ne z Vector2.ONE - jinak by squash tween sprite
+## během efektu vrátil na jeho PLNOU nativní velikost (240px), místo aby ho
+## po doznění vrátil na jeho skutečnou zobrazovanou velikost.
+var _visual_base_scale: Vector2 = Vector2.ONE
 
 var max_hp: float
 var hp: float
@@ -74,6 +80,7 @@ var _ability_progress: Array[float] = []
 
 func _ready() -> void:
 	add_to_group("player")
+	_visual_base_scale = visual.scale
 
 	# Progrese (úrovně, pasivní schopnosti, nákupy v obchodě) mění staty za
 	# běhu - reagujeme na všechny tři signály, HUD do statů hráče nikdy
@@ -126,8 +133,8 @@ func _spawn_impact_effect() -> void:
 
 func _play_squash_effect() -> void:
 	var squash_tween := create_tween()
-	squash_tween.tween_property(visual, "scale", Vector2(1.35, 0.65), 0.08)
-	squash_tween.tween_property(visual, "scale", Vector2.ONE, 0.15)
+	squash_tween.tween_property(visual, "scale", _visual_base_scale * Vector2(1.35, 0.65), 0.08)
+	squash_tween.tween_property(visual, "scale", _visual_base_scale, 0.15)
 
 
 ## Přepočítá staty na základě base hodnot + bonusů (automatický level growth,

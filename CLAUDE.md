@@ -278,10 +278,58 @@ itself. **Mobile port note**: the pause-on-hover mechanic has no equivalent on t
 state), so this will need a different interaction — e.g. pause while a finger is down, or drop the
 pause and just show the countdown — when a mobile port is attempted.
 
-**Visuals are all procedural** — colored `Polygon2D` shapes for characters, and `_draw()`-based
-rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact ring effect.
-There are no sprite assets to manage; if you need to change how something looks, look for a
-`_draw()` override or `Polygon2D` node rather than an image file.
+**Visuals are mostly still procedural** — colored `Polygon2D` shapes for enemies, and `_draw()`-based
+rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact ring effect. If you
+need to change how one of THOSE looks, look for a `_draw()` override or `Polygon2D` node, not an
+image file.
+
+**The player is the first real pixel-art asset in the project** (`assets/player/run.png`,
+2026-09-09) — an 8-frame run cycle (4×2 grid, 130×240px per frame, AI-generated via Gemini,
+iterated through two drafts before this one: the first had baked-in labels/grid lines and a fake
+non-transparent checkerboard "background," this one has genuine PNG alpha). `player.tscn`'s
+`Polygon2D` was replaced with an `AnimatedSprite2D` (`sprite_frames` = a `SpriteFrames` resource
+with 8 `AtlasTexture` sub-resources slicing `run.png`, animation name `"run"`, `loop = true`,
+`speed = 10.0`, `autoplay = "run"`). **`texture_filter = 1` (Nearest) is set directly on the
+`AnimatedSprite2D` node**, not project-wide — this is the first texture in the project, so there
+was nothing else that could regress; if more pixel-art nodes get added, consider moving this to
+Project Settings > Rendering > Textures > Canvas Textures > Default Texture Filter instead of
+repeating it per-node.
+
+**Scale/offset were tuned to match the OLD Polygon2D's footprint, not derived from the art
+itself**: the source frame (240px tall) is scaled to `Vector2(0.375, 0.375)` (~90px on screen — the
+user explicitly chose to experiment with a taller character than the polygon's 60px, since the
+"keep enemies small for crowd readability" genre guidance (see the bullet-hell pacing note) is
+about ENEMIES specifically, not necessarily the single player character). The robot's feet sit
+around source-y 218 (measured by scanning alpha content per frame, average across all 8 frames),
+NOT at the frame's vertical center (source-y 120) — `AnimatedSprite2D.offset = Vector2(0, -7)`
+compensates so the visual "ground contact" point still lands where the old Polygon2D's bottom edge
+(`local y = +30`) used to, keeping the character's existing grounding correct rather than
+introducing a new floating/sinking bug. **This offset is specific to THIS spritesheet's proportions**
+— a differently-proportioned future sprite (different empty margin above the feet) needs this
+re-measured, not copy-pasted.
+
+**`_play_squash_effect()` in `player.gd` had to change to stay correct after this swap**: it
+used to tween `visual.scale` to hardcoded absolute values (`Vector2(1.35, 0.65)` then back to
+`Vector2.ONE`), which silently assumed the visual's resting scale was exactly 1.0 — true for the
+old un-scaled `Polygon2D`, but now `visual`'s resting scale is `0.375`. Left as absolute values,
+the squash tween would have snapped the sprite to its full native 240px size mid-effect and then
+settled at 1.0 afterward (undoing the 90px sizing entirely). Fixed by capturing
+`_visual_base_scale = visual.scale` once in `_ready()` and tweening relative to that
+(`_visual_base_scale * Vector2(1.35, 0.65)` → `_visual_base_scale`) instead. **Any future code that
+tweens/sets `visual.scale` to an absolute value needs the same relative treatment** — this is a
+general trap, not a one-off fix, since `visual`'s resting scale is no longer implicitly 1.0.
+
+**Known simplification**: the `"run"` animation autoplays and loops unconditionally — there's no
+idle/attack animation, so the character visibly "runs in place" even while stopped and shooting
+(`player.gd`'s move-when-clear logic still works correctly underneath, this is purely cosmetic).
+Not fixed since only a run cycle exists yet; revisit once idle/attack frames are available.
+
+**Per the pixel-art integration plan (see `project_pixelart_asset_integration` memory)**: this swap
+deliberately did NOT touch any enemy `hit_radius`/`melee_range`/gameplay constant — the player's
+`attack_range`/hitbox math is untouched, this was a visual-only change. Expect the SAME kind of
+scale/offset work (re-measure feet position, pick a scale, keep gameplay ranges separate from
+visual size) for every future sprite (enemies, Elite, projectiles) as they replace their
+`Polygon2D` placeholders.
 
 **Progression (XP → levels → schopnosti)**: enemies grant `reward` (gold) *and* `xp_reward` on
 death via `GameManager.enemy_defeated(reward, xp_reward)`. XP accumulates toward
@@ -763,6 +811,7 @@ don't proactively redesign the layout for this alone.
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
+- `scenes/player/player.tscn` — `AnimatedSprite2D`'s `scale` (on-screen character size) and `offset` (ground-alignment correction for the sprite's own empty margin above the feet) — see "The player is the first real pixel-art asset" above before changing either, they're paired (re-measure the offset if you change which spritesheet is used, not just if you change the scale)
 - `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
 - `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_wave`/`variant_ramp_full_wave` (loop-1-only ramp for when ranged/sniper start appearing)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `is_ranged`/`projectile_scene`
