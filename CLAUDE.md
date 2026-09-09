@@ -221,15 +221,15 @@ alive and `PLAYING` — not just after a loop transition, and not paused by comb
 `get_hp_regen()` = `base_hp_regen + GameManager.get_stat_bonus("hp_regen")`, mirroring every other
 stat getter, even though nothing currently grants an `"hp_regen"` bonus — free to hook up later
 without touching this getter. The HUD shows it as a small green `+X.X/s` label
-(`Control/BottomBar/HPBar/RegenLabel`) anchored to the right end of the HP bar, hidden whenever HP
+(`Control/HPBar/RegenLabel`) anchored to the right end of the HP bar, hidden whenever HP
 is already full (`_update_hp_regen_label()` in `hud.gd`) so it doesn't clutter the bar when it isn't
 doing anything.
 
-**HUD "Kolo" vs. "Úroveň"**: the top-of-screen `LoopLabel` ("Kolo N") is the loop counter above;
-it's deliberately *not* called "Úroveň" even though that's the literal translation, because
-"Úroveň" is already used in the bottom bar for the player's XP-based character level (the badge
-over the portrait). Reusing the same word for two different counters on screen at once would be
-confusing — rename both consistently if this ever needs to change.
+**HUD "Kolo" vs. "Úroveň"**: the top-right `LoopLabel` ("Kolo N") is the loop counter; it's
+deliberately *not* called "Úroveň" even though that's the literal translation, because "Úroveň" is
+already used for the player's XP-based character level (the badge over the portrait, top-left —
+see "HUD layout" below). Reusing the same word for two different counters on screen at once would
+be confusing — rename both consistently if this ever needs to change.
 
 **Elite enemy (final wave only)**: `scenes/enemies/elite_enemy.tscn` reuses `enemy.gd` (it's fully
 data-driven via `@export` vars, so no new script was needed) with `speed` halved, `max_hp` tripled,
@@ -474,26 +474,37 @@ array index), so "preserve this instance's progress toward its next proc" would 
 identity just for this one edge case. Revisit if it becomes noticeable once more schopnosti exist and
 merges happen mid-run more often.
 
-**HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
-portrait with a level badge, HP bar, XP bar, and six (currently decorative, unrelated — future
-equipment loot) `ItemSlot1..6` rects, a single row. **The gold counter (`GoldLabel`) moved out of
-`BottomBar` 2026-09-09** — it now lives at the top of the screen (`Control/GoldLabel`,
-left-aligned) alongside `LoopLabel`/`WaveLabel`, matching that counter row's style instead of
-sitting in the bottom bar; `ShopButton` was removed entirely in the same change (see "Shop opens
-periodically" below).
+**HUD layout — a top-left stack, top-right counters, and a slimmed-down `BottomBar`** (`hud.tscn`).
+Went through several reshuffles on 2026-09-09 as the user iterated on where things should live;
+this describes the current state, current as the authoritative reference (treat any older
+description you find elsewhere as stale):
 
-**`ItemSlot1..6` and the schopnost stack swapped positions 2026-09-09** (explicit user request):
-`ItemSlot1..6` moved into `BottomBar` at `offset_left = 310` (matching the HP/XP bars' left edge),
-as a single row of 6 instead of the old 3-column/2-row grid — still hand-authored nodes in
-`hud.tscn` (not procedural, since there are always exactly 6 and no future-growth concern like
-`ABILITIES` has). The schopnost slots moved the other way, out of `BottomBar` entirely.
+- **Top-left** (all direct children of `Control`, stacked top to bottom, left-anchored at
+  `offset_left = 20`): `Portrait`/`LevelBadge`/`LevelLabel` beside `HPBar`/`XPBar` (portrait at
+  `offset_top = 20`, bars starting at `offset_left = 118` to its right — same relative
+  arrangement/sizing `BottomBar` used to have, just moved as one block), then `GoldLabel`
+  (`offset_top = 104`, below the bars), then `AbilitiesContainer` (`offset_top = 136`, below
+  `GoldLabel`). Moved here from `BottomBar` 2026-09-09 (explicit user request) — none of them are
+  anchored/stretched to a bar width anymore, they're all fixed-offset like `GoldLabel` already was.
+- **Top-right**: `LoopLabel` ("Kolo N") and `WaveLabel` ("Vlna N"), right-anchored, side by side
+  (`WaveLabel` closest to the corner). Moved here from a fixed absolute position near screen-center
+  2026-09-09, same change as the top-left move above.
+- **Bottom-right, TEMPORARY** (user's own wording): `DebugButton`. Moved out of its long-standing
+  top-right spot 2026-09-09 to make room for `LoopLabel`/`WaveLabel` — expect this to move again
+  once the HUD's visual pass settles. Because `BottomBar` is an opaque `ColorRect`, `DebugButton`'s
+  node had to be moved to AFTER `BottomBar` (and its children) in `hud.tscn`'s child order, not just
+  re-anchored — an earlier-declared sibling renders UNDERNEATH a later one, so leaving it declared
+  before `BottomBar` while visually overlapping it would have made the button invisible and
+  unclickable. Keep this node-order dependency in mind if `DebugButton` (or anything else meant to
+  float on top of `BottomBar`) moves again.
+- **`BottomBar` itself** now holds only the stat readouts (`StatDamage`/`StatSpeed`/`StatRange`/
+  `StatHP`/`StatArmor`) and `ItemSlot1..6` — a single row at `offset_left = 310` (matching the old
+  HP/XP bars' left edge from before they moved), currently decorative/unrelated (future equipment
+  loot). `ShopButton` was removed entirely earlier the same day (see "Shop opens periodically"
+  below); nothing in `BottomBar` reads `GameManager.shop_available` anymore.
 
-**Schopnost slots live OUTSIDE `BottomBar`, as a vertical stack on the left side of the play area**
-(`Control/AbilitiesContainer`, `offset_left = 20` matching `GoldLabel`'s left edge, `offset_top =
-60` just below the `Zlato`/`Kolo`/`Vlna` row) — moved here from a grid inside `BottomBar`
-2026-09-09 (explicit user request, second change the same day as the swap above). This is also a
-bigger behavior change, not just a reposition: **slots are now POSITIONAL, one per owned INSTANCE
-in `GameManager.owned_abilities`, not one dedicated slot per `ABILITY_ORDER` type** — the same
+**Schopnost slots (`AbilitiesContainer`) are POSITIONAL, one per owned INSTANCE**
+in `GameManager.owned_abilities`, not one dedicated slot per `ABILITY_ORDER` type — the same
 principle `_refresh_shop_slots()` already used for `ItemSlot1..6`/`active_shop_items`. The first
 schopnost ever picked lands in slot 0, the second in slot 1, and so on; a slot for a type the
 player doesn't own is simply never created (no more grayed-out `"short_name\n-"` placeholder for
@@ -506,10 +517,11 @@ place across a merge (same reasoning already documented for `player.gd`'s `_abil
 reset). **Column wrap keeps the stack from ever reaching `BottomBar`**: slots stack downward and
 wrap into a new column to the right after `ABILITY_STACK_MAX_ROWS` (6) — `col = i /
 ABILITY_STACK_MAX_ROWS`, `row = i % ABILITY_STACK_MAX_ROWS` — chosen so even a full column (6 × 52px
-tall) ends well above `BottomBar`'s top edge for the project's 720px-tall window; this is a static
-budget (like every other HUD offset in this project, see `ground.gd`'s "no dynamic viewport-based
-layout" precedent), not computed from the actual viewport height at runtime, so a much shorter
-window would need this constant revisited by hand.
+tall), starting from `AbilitiesContainer`'s `offset_top = 136`, ends (`y = 444`) well above
+`BottomBar`'s top edge for the project's 720px-tall window; this is a static budget (like every
+other HUD offset in this project, see `ground.gd`'s "no dynamic viewport-based layout" precedent),
+not computed from the actual viewport height at runtime, so a much shorter window — or moving
+`AbilitiesContainer` further down the screen — would need this constant revisited by hand.
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
@@ -669,7 +681,8 @@ panel. Empty slots trail at the end regardless of which specific slot index was 
 reasoning as before.
 
 **Debug panel** (`hud.gd`, `scenes/ui/eye_icon.gd`): a dev-only panel toggled by the `DebugButton`
-in the top-right corner, which shows "Debug" plus a procedurally-drawn eye icon (open/closed,
+— TEMPORARILY in the bottom-right corner as of 2026-09-09, see "HUD layout" above — which shows
+"Debug" plus a procedurally-drawn eye icon (open/closed,
 `eye_icon.gd` — no image asset, consistent with the rest of the project's visuals) that mirrors
 whether the panel is open. Unlike the shop, opening it does **not** pause the game — the point is
 to see the effect of an action (kill, skip wave, spawn Elite, ...) happen live. Every action on the
