@@ -20,6 +20,14 @@ signal item_draft_ready(offered: Array)
 ## protože jeden item_id teď může mít víc současně vlastněných instancí na
 ## různých raritách, ne jediné číslo "rank".
 signal draft_inventory_changed
+## Emitne se, když je k dispozici nová nabídka schopností k výběru (viz
+## "Aktivní schopnosti" níže) - samostatný pool od draftu, vlastní panel v
+## HUD. `offered` má vždy ABILITY_CHOICE_COUNT prvků, každý
+## {"ability_id": String, "rarity": int}.
+signal ability_draft_ready(offered: Array)
+## Emitne se po přidání nebo sloučení schopnosti - HUD podle toho překreslí
+## AbilitySlot0.. (stejný důvod jako draft_inventory_changed).
+signal ability_inventory_changed
 signal loop_changed(new_loop: int)
 ## Emitne se po nákupu nebo prodeji v obchodě - viz "Obchod" níže.
 signal shop_inventory_changed
@@ -278,6 +286,50 @@ const SHOP_RARITY_MULTIPLIERS: Array[float] = [1.0, 1.6, 2.6, 4.2]
 ## bonus" z balance brainstormu, který k tomuhle systému vedl.
 const SHOP_RARITY_COST_RATIOS: Array[float] = [1.0, 1.4, 2.25, 3.75]
 
+## --- Aktivní schopnosti ---------------------------------------------------
+## TŘETÍ, SAMOSTATNÝ pool vedle draftu a obchodu (viz "Item/loot draft"/
+## "Obchod" výše) - na rozdíl od nich obě, které dávají jen PASIVNÍ bonus ke
+## statu, aktivní schopnost definuje TRIGGER (kdy se spustí) a EFFECT (co
+## udělá). `double_tap` je proof-of-concept celé téhle trigger/effect
+## architektury - první krok 3. (poslední) části plánu "roguelike deck
+## builder" (viz CLAUDE.md a paměť project_roguelike_deckbuilder_direction).
+## Nabídka funguje na stejném principu rarity+merge jako draft/obchod
+## (sdílí ShopRarity enum/SHOP_RARITY_NAMES), ale je ZÁMĚRNĚ oddělený pool s
+## vlastní frontou (pending_ability_drafts/_current_ability_offer) a vlastním
+## panelem v HUD - žádná schopnost se nemísí do ITEMS/SHOP_ITEMS nabídek.
+const ABILITIES := {
+	"double_tap": {
+		"name": "Dvojitý zásah",
+		"short_name": "D. zásah",
+		"trigger": "shot_count",
+		## Po kolika výstřelech se efekt spustí, podle rarity (index = ShopRarity).
+		## Rarita tu neškáluje SÍLU efektu (effect_value je na všech stupních
+		## stejné) ale jeho FREKVENCI - kratší interval = vyšší uptime. To je
+		## pro aktivní/trigger schopnost přirozenější škálování než násobení
+		## čísla, které už samo je násobič.
+		"trigger_values": [6, 5, 4, 3],
+		"effect": "damage_multiplier",
+		"effect_value": 2.0,
+	},
+}
+## Pořadí schopností v HUD - stejný účel jako ITEM_ORDER/SHOP_ITEM_ORDER.
+const ABILITY_ORDER: Array[String] = ["double_tap"]
+## Kolik schopností se nabídne v jedné nabídce. Zatím 1, protože ABILITIES
+## má jen jednu položku - nabídnout 3x tu samou schopnost by nebyla skutečná
+## volba. Jakmile přibudou další schopnosti, stačí tohle číslo zvýšit;
+## _roll_ability_options() se ořezává na `mini(ABILITY_CHOICE_COUNT, pool.size())`
+## takže funguje správně už teď i po rozšíření poolu.
+const ABILITY_CHOICE_COUNT: int = 1
+## Nabídka schopnosti se objeví jednou za tolik ÚROVNÍ (na rozdíl od draftu,
+## co nabízí každou úroveň) - schopnosti mají být vzácnější a výraznější
+## moment, ne rutinní pick jako staty. První-pass hodnota, viz
+## project_balance_deferred v paměti pro obecný přístup k tomuhle druhu čísel.
+const ABILITY_LEVEL_INTERVAL: int = 5
+## Stejný princip jako DRAFT_MERGE_THRESHOLD (2 kopie stačí, ne obchodní 3) -
+## schopnosti jsou free/náhodné bez rerollu stejně jako draft.
+const ABILITY_MERGE_THRESHOLD: int = 2
+const ABILITY_RARITY_WEIGHTS: Array[float] = [0.70, 0.20, 0.08, 0.02]
+
 var current_wave: int = 0
 ## Kolikáté kolo (průchod 10 vlnami) hráč zrovna hraje. Roste, hráčova
 ## progrese (úroveň/XP/itemy/měna) se ale mezi koly NERESETUJE -
@@ -309,6 +361,18 @@ var pending_drafts: int = 0
 ## indexu v tomhle poli ověřuje, že hráč vybírá opravdu z toho, co bylo
 ## nabídnuto.
 var _current_offer: Array[Dictionary] = []
+## Vlastněné aktivní schopnosti - stejný tvar jako draft_items/active_shop_items
+## ({"ability_id": String, "rarity": int}), stejné pravidlo, že jeden
+## ability_id může mít víc současně vlastněných instancí na RŮZNÝCH raritách
+## (viz draft_items výše). KAŽDÁ vlastněná instance spouští svůj efekt
+## NEZÁVISLE (viz player.gd's _consume_ability_triggers()) - 2 kopie stejné
+## schopnosti tak mohou na stejném výstřelu spustit efekt obě najednou
+## (násobiče se násobí, ne sčítají).
+var owned_abilities: Array[Dictionary] = []
+## Stejný princip jako pending_drafts/_current_offer, jen pro schopnosti -
+## viz _try_offer_next_ability_draft()/resolve_ability_draft().
+var pending_ability_drafts: int = 0
+var _current_ability_offer: Array[Dictionary] = []
 ## Aktivní obchodní itemy - přispívají do get_stat_bonus(). Každý prvek je
 ## Dictionary {"item_id": String, "rarity": ShopRarity, "cost_paid": int} -
 ## "cost_paid" je zlato vložené do TÉHLE konkrétní kopie (u sloučeného itemu
@@ -354,6 +418,9 @@ func reset_game() -> void:
 	pending_drafts = 0
 	_current_offer = []
 	draft_items.clear()
+	pending_ability_drafts = 0
+	_current_ability_offer = []
+	owned_abilities.clear()
 	active_shop_items.clear()
 	stash_shop_items.clear()
 	shop_offer.clear()
@@ -495,11 +562,16 @@ func add_xp(amount: int) -> void:
 func _level_up() -> void:
 	player_level += 1
 	pending_drafts += 1
-	# Level sám o sobě už žádný stat automaticky nezvedá (viz get_stat_bonus) -
-	# level_changed tu zůstává jen kvůli UI (odznak úrovně v HUD apod.), veškerý
-	# reálný růst statů přijde teprve s vybraným itemem z nabídky.
+	# Schopnost se nabízí jen jednou za ABILITY_LEVEL_INTERVAL úrovní, ne
+	# každou jako draft - viz "Aktivní schopnosti" výše.
+	if player_level % ABILITY_LEVEL_INTERVAL == 0:
+		pending_ability_drafts += 1
+	# level_changed teď skutečně mění staty (LEVEL_STAT_GROWTH, viz
+	# get_stat_bonus()), ne jen UI sync - ale draft/schopnost pořád zůstávají
+	# hlavním zdrojem růstu, level growth je jen malá podlaha navrch.
 	level_changed.emit(player_level)
 	_try_offer_next_draft()
+	_try_offer_next_ability_draft()
 
 
 ## Vylosuje DRAFT_CHOICE_COUNT náhodných ITEM_ORDER itemů (bez opakování
@@ -547,6 +619,10 @@ func resolve_draft(offer_index: int) -> bool:
 	_add_draft_item(offer_entry["item_id"], offer_entry["rarity"])
 
 	_try_offer_next_draft()
+	# Zkusí i schopnost, kdyby zrovna teď (poslední draft v sérii) doběhla
+	# fronta statů - viz komentář u _try_offer_next_ability_draft() níže,
+	# proč čeká, až _current_offer bude prázdné.
+	_try_offer_next_ability_draft()
 	return true
 
 
@@ -588,11 +664,102 @@ func _try_merge_draft_item(item_id: String, rarity: int) -> void:
 	_try_merge_draft_item(item_id, rarity + 1)
 
 
-## Celkový bonus ke statu = součet ranků vybraných itemů, které na stat
-## působí. Jediné místo, kde se progrese promítá do statů - player.gd si ho
-## jen přičítá ke svým base hodnotám. Úroveň sama o sobě už bonus nedává -
-## veškerý růst jde přes vybrané itemy, ať je jasné, čím je která hodnota
-## daná (žádný "neviditelný" automatický přírůstek vedle viditelné volby).
+## Vylosuje ABILITY_CHOICE_COUNT náhodných ABILITY_ORDER schopností (stejný
+## vzor jako _roll_draft_options()) a KAŽDÉ nezávisle vylosuje raritu podle
+## ABILITY_RARITY_WEIGHTS.
+func _roll_ability_options() -> Array[Dictionary]:
+	var pool: Array[String] = ABILITY_ORDER.duplicate()
+	pool.shuffle()
+	var picked_ids: Array = pool.slice(0, mini(ABILITY_CHOICE_COUNT, pool.size()))
+
+	var offered: Array[Dictionary] = []
+	for ability_id in picked_ids:
+		offered.append({"ability_id": ability_id, "rarity": _roll_rarity(ABILITY_RARITY_WEIGHTS)})
+	return offered
+
+
+## Stejný vzor jako _try_offer_next_draft(), jen pro schopnosti - navíc čeká,
+## až _current_offer (stat draft) doběhne do prázdna. Bez týhle podmínky by
+## na úrovni, kde vyjde ABILITY_LEVEL_INTERVAL, mohly DraftPanel i
+## AbilityDraftPanel naskočit současně (obě se centrují přes sebe) a
+## vyřešení jednoho by odpauzovalo hru, i když druhý pořád čeká na volbu.
+## Schopnosti tak vždy čekají, až se doberou VŠECHNY čekající staty jedné
+## úrovně, ne že by se do nich draft nějak míchal.
+func _try_offer_next_ability_draft() -> void:
+	if pending_ability_drafts <= 0 or not _current_ability_offer.is_empty():
+		return
+	if not _current_offer.is_empty():
+		return
+
+	_current_ability_offer = _roll_ability_options()
+	ability_draft_ready.emit(_current_ability_offer)
+
+
+## Stejný vzor jako resolve_draft(offer_index), jen pro schopnosti.
+func resolve_ability_draft(offer_index: int) -> bool:
+	if pending_ability_drafts <= 0 or offer_index < 0 or offer_index >= _current_ability_offer.size():
+		return false
+
+	var offer_entry: Dictionary = _current_ability_offer[offer_index]
+	pending_ability_drafts -= 1
+	_current_ability_offer = []
+
+	_add_ability(offer_entry["ability_id"], offer_entry["rarity"])
+
+	_try_offer_next_ability_draft()
+	return true
+
+
+func _add_ability(ability_id: String, rarity: int) -> void:
+	owned_abilities.append({"ability_id": ability_id, "rarity": rarity})
+	ability_inventory_changed.emit()
+	_try_merge_ability(ability_id, rarity)
+
+
+## Stejná logika jako _try_merge_draft_item(), jen s ABILITY_MERGE_THRESHOLD
+## a nad owned_abilities.
+func _try_merge_ability(ability_id: String, rarity: int) -> void:
+	if rarity >= ShopRarity.DIAMOND:
+		return
+
+	var matching_indices: Array = []
+	for i in owned_abilities.size():
+		if owned_abilities[i]["ability_id"] == ability_id and owned_abilities[i]["rarity"] == rarity:
+			matching_indices.append(i)
+
+	if matching_indices.size() < ABILITY_MERGE_THRESHOLD:
+		return
+
+	var to_consume: Array = matching_indices.slice(0, ABILITY_MERGE_THRESHOLD)
+	to_consume.sort_custom(func(a, b): return a > b)
+	for index in to_consume:
+		owned_abilities.remove_at(index)
+
+	owned_abilities.append({"ability_id": ability_id, "rarity": rarity + 1})
+	ability_inventory_changed.emit()
+	_try_merge_ability(ability_id, rarity + 1)
+
+
+## Popis schopnosti na dané raritě. Zatím natvrdo podle jediného existujícího
+## trigger/effect páru (shot_count -> damage_multiplier) - až přibude druhá
+## schopnost s jiným triggerem/efektem, přejde na obecnější match podle
+## definition["trigger"]/["effect"] (stejně jako get_shop_item_desc() prošlo
+## z jednoho itemu na obecný cyklus přes "stats" dict).
+func get_ability_desc(ability_id: String, rarity: int) -> String:
+	var definition: Dictionary = ABILITIES[ability_id]
+	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
+		var interval: int = definition["trigger_values"][rarity]
+		var mult: float = float(definition["effect_value"])
+		return "Každý %d. výstřel: %sx poškození" % [interval, _format_stat_number(mult)]
+	return definition["name"]
+
+
+## Celkový bonus ke statu - jediné místo, kde se progrese promítá do statů,
+## player.gd si ho jen přičítá ke svým base hodnotám. Sčítá tři zdroje:
+## automatický LEVEL_STAT_GROWTH (malá podlaha), draftnuté itemy a aktivní
+## obchodní itemy. Aktivní SCHOPNOSTI (viz "Aktivní schopnosti" výše) sem
+## záměrně NEpatří - nedávají pasivní bonus ke statu, mají vlastní
+## trigger/effect logiku (viz player.gd's _consume_ability_triggers()).
 func get_stat_bonus(stat_id: String) -> float:
 	var bonus: float = 0.0
 
@@ -826,6 +993,13 @@ func debug_add_currency(amount: int) -> void:
 func debug_force_draft() -> void:
 	pending_drafts += 1
 	_try_offer_next_draft()
+
+
+## DEBUG: rovnou vynutí jednu nabídku schopnosti bez čekání na
+## ABILITY_LEVEL_INTERVAL úrovní
+func debug_force_ability_draft() -> void:
+	pending_ability_drafts += 1
+	_try_offer_next_ability_draft()
 
 
 ## DEBUG: nastaví každý item rovnou na 1 kopii nejvyšší rarity (Diamant) -

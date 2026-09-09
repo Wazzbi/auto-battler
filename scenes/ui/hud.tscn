@@ -357,6 +357,25 @@ text = "Tlumiče
 horizontal_alignment = 1
 vertical_alignment = 1
 
+[node name="AbilitySlot0" type="ColorRect" parent="Control/BottomBar"]
+layout_mode = 0
+offset_left = 814.0
+offset_top = 66.0
+offset_right = 880.0
+offset_bottom = 114.0
+color = Color(0.19, 0.14, 0.24, 1)
+
+[node name="Label" type="Label" parent="Control/BottomBar/AbilitySlot0"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 11
+text = "D. zásah
+-"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
 layout_mode = 1
 anchors_preset = 1
@@ -895,7 +914,7 @@ anchor_right = 1.0
 offset_left = -490.0
 offset_top = 50.0
 offset_right = -10.0
-offset_bottom = 618.0
+offset_bottom = 662.0
 
 [node name="Title" type="Label" parent="Control/DebugPanel"]
 layout_mode = 0
@@ -980,33 +999,31 @@ offset_right = 460.0
 offset_bottom = 270.0
 text = "Max itemy"
 
-[node name="ResetItemsButton" type="Button" parent="Control/DebugPanel"]
+[node name="ForceAbilityDraftButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 278.0
-offset_right = 230.0
+offset_right = 460.0
 offset_bottom = 314.0
+text = "Vynutit ability draft"
+
+[node name="ResetItemsButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 322.0
+offset_right = 230.0
+offset_bottom = 358.0
 text = "Reset itemy"
 
 [node name="AddLoopButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 250.0
-offset_top = 278.0
-offset_right = 460.0
-offset_bottom = 314.0
-text = "+1 Kolo"
-
-[node name="AutoUpgradeToggle" type="Button" parent="Control/DebugPanel"]
-layout_mode = 0
-offset_left = 20.0
 offset_top = 322.0
 offset_right = 460.0
 offset_bottom = 358.0
-toggle_mode = true
-button_pressed = false
-text = "Auto vylepšení"
+text = "+1 Kolo"
 
-[node name="FreeRerollToggle" type="Button" parent="Control/DebugPanel"]
+[node name="AutoUpgradeToggle" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 366.0
@@ -1014,46 +1031,56 @@ offset_right = 460.0
 offset_bottom = 402.0
 toggle_mode = true
 button_pressed = false
+text = "Auto vylepšení"
+
+[node name="FreeRerollToggle" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 410.0
+offset_right = 460.0
+offset_bottom = 446.0
+toggle_mode = true
+button_pressed = false
 text = "Free reroll: Vypnuto"
 
 [node name="SpawnEliteButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 410.0
+offset_top = 454.0
 offset_right = 230.0
-offset_bottom = 446.0
+offset_bottom = 490.0
 text = "Spawnout Elite"
 
 [node name="SpawnRangedButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 250.0
-offset_top = 410.0
+offset_top = 454.0
 offset_right = 460.0
-offset_bottom = 446.0
+offset_bottom = 490.0
 text = "Spawnout dálkového"
 
 [node name="SpawnSniperButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 450.0
+offset_top = 494.0
 offset_right = 460.0
-offset_bottom = 486.0
+offset_bottom = 530.0
 text = "Spawnout snipera"
 
 [node name="SpeedButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 494.0
+offset_top = 538.0
 offset_right = 460.0
-offset_bottom = 530.0
+offset_bottom = 574.0
 text = "Rychlost: 1x"
 
 [node name="CloseButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 150.0
-offset_top = 548.0
+offset_top = 592.0
 offset_right = 330.0
-offset_bottom = 584.0
+offset_bottom = 628.0
 text = "Zavřít"
 
 [node name="DraftPanel" type="Panel" parent="Control"]
@@ -1219,3 +1246,74 @@ offset_top = 200.0
 offset_right = 170.0
 offset_bottom = 232.0
 text = "Vybrat"
+
+[node name="AbilityDraftPanel" type="Panel" parent="Control"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -110.0
+offset_top = -160.0
+offset_right = 110.0
+offset_bottom = 160.0
+
+[node name="Title" type="Label" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 16.0
+offset_right = 210.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 20
+text = "Nová schopnost!"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Card0" type="Panel" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 56.0
+offset_right = 200.0
+offset_bottom = 296.0
+
+[node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 170.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 15
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 55.0
+offset_right = 170.0
+offset_bottom = 170.0
+theme_override_font_sizes/font_size = 12
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 174.0
+offset_right = 170.0
+offset_bottom = 194.0
+theme_override_font_sizes/font_size = 12
+text = "Bronz"
+horizontal_alignment = 1
+
+[node name="PickButton" type="Button" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 200.0
+offset_right = 170.0
+offset_bottom = 232.0
+text = "Přijmout"
