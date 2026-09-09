@@ -569,10 +569,13 @@ func can_buy_shop_item(offer_index: int) -> bool:
 
 
 ## Koupí item z nabídky na indexu offer_index, v RARITĚ, kterou nabídka
-## vylosovala (ne vždy BRONZE, viz _generate_shop_offer()). Nová kopie jde
-## přednostně do aktivních slotů, do skladu jen když jsou aktivní plné -
-## koupě tak hráče nikdy zbytečně neblokuje, jen mu časem zaplní sklad.
-## Po přidání se zkusí sloučení (viz _try_merge_shop_item()).
+## vylosovala (ne vždy BRONZE, viz _generate_shop_offer()). Koupený slot se
+## z nabídky ODEBERE (hráč z jedné nabídky koupí 0 až SHOP_OFFER_SIZE kusů,
+## ne opakovaně pořád ten samý) - kdo chce zkusit štěstí na jiný výběr, musí
+## zaplatit reroll (viz reroll_shop()), ne překlikávat stejný slot. Nová
+## kopie jde přednostně do aktivních slotů, do skladu jen když jsou aktivní
+## plné - koupě tak hráče nikdy zbytečně neblokuje, jen mu časem zaplní
+## sklad. Po přidání se zkusí sloučení (viz _try_merge_shop_item()).
 func buy_shop_item(offer_index: int) -> bool:
 	if not can_buy_shop_item(offer_index):
 		return false
@@ -590,6 +593,9 @@ func buy_shop_item(offer_index: int) -> bool:
 		active_shop_items.append(instance)
 	else:
 		stash_shop_items.append(instance)
+
+	shop_offer.remove_at(offer_index)
+	shop_offer_changed.emit(shop_offer)
 
 	shop_inventory_changed.emit()
 	_try_merge_shop_item(item_id, rarity)

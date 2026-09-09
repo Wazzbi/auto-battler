@@ -469,7 +469,10 @@ low rarities common, Diamond rare) — buying an offered item costs
 rarity auto-merges them into 1 copy one rarity higher** (`_try_merge_shop_item()`, called after
 every purchase) — this is the *only* way an item gets stronger; there is no paid upgrade path
 anymore. The offer intentionally never filters out items the player already owns, since seeing a
-duplicate is the entire point. `get_shop_item_desc(item_id, tier)` formats the *actual* scaled
+duplicate is the entire point. **Buying a slot removes it from `shop_offer`** (`buy_shop_item()`
+calls `shop_offer.remove_at(offer_index)`) — the player buys anywhere from 0 to `SHOP_OFFER_SIZE`
+(4) items out of one offer, not the same slot repeatedly; wanting a different selection means
+paying for a reroll (see below), not re-clicking a card. `get_shop_item_desc(item_id, tier)` formats the *actual* scaled
 numbers for a given tier (no static `desc` string in `SHOP_ITEMS` — it would go stale the instant
 an item merges up) via `STAT_DISPLAY_NAMES`. **Special "build-enabler" unique effects unlocking at
 Gold are still just a design note, not built** — see `project_future_active_abilities` memory.
