@@ -12,9 +12,14 @@ signal xp_changed(current_xp: int, xp_needed: int)
 signal level_changed(new_level: int)
 ## Emitne se, když je k dispozici nová nabídka itemů k výběru (viz
 ## "Item/loot draft" níže) - HUD podle toho buď zobrazí DraftPanel, nebo
-## (má-li zapnutý Auto výběr) rovnou zavolá resolve_draft() sám.
-signal item_draft_ready(offered_ids: Array)
-signal item_rank_changed(item_id: String, new_rank: int)
+## (má-li zapnutý Auto výběr) rovnou zavolá resolve_draft() sám. `offered`
+## má vždy DRAFT_CHOICE_COUNT prvků, každý {"item_id": String, "rarity": int}.
+signal item_draft_ready(offered: Array)
+## Emitne se po přidání nebo sloučení draft itemu - HUD podle toho
+## překreslí PickedItemSlot0..6. Bez parametru (jako shop_inventory_changed),
+## protože jeden item_id teď může mít víc současně vlastněných instancí na
+## různých raritách, ne jediné číslo "rank".
+signal draft_inventory_changed
 signal loop_changed(new_loop: int)
 ## Emitne se po nákupu nebo prodeji v obchodě - viz "Obchod" níže.
 signal shop_inventory_changed
@@ -69,60 +74,57 @@ const LEVEL_STAT_GROWTH := {
 ## Náhrada za dřívější strom schopností (Q/W/E/R). Místo utrácení bodů do
 ## pevně daných 4 schopností si hráč při každém level-upu vybírá 1 ze 3
 ## náhodně nabídnutých itemů - stejný princip jako "level-up card" ve
-## Vampire Survivors. Efekt je záměrně stejně jednoduchý jako dřív u
-## schopností (pasivní bonus `per_rank` ke statu `stat` za každý rank) -
-## mění se JEN zdroj volby (náhodná nabídka místo pevného stromu), ne
-## herní dopad. Až budou mít itemy skutečné aktivní efekty, mění se jen
-## tahle tabulka a get_stat_bonus().
+## Vampire Survivors. Od 2026-09-09 používá STEJNÝ princip rarity+merge
+## jako obchod (viz "Rarita obchodních itemů" níže) - nabídka rovnou
+## losuje raritu (DRAFT_RARITY_WEIGHTS) a 2 stejné kopie stejné rarity
+## (DRAFT_MERGE_THRESHOLD, míň než obchodních 3 - draft je free/náhodný bez
+## rerollu, takže menší práh kompenzuje menší kontrolu hráče nad tím, co
+## příště dostane) se automaticky sloučí do 1 kopie o stupeň výš
+## (_try_merge_draft_item()). Draft ale záměrně ZŮSTÁVÁ jednostatový (na
+## rozdíl od vícestatového obchodu) - to je pořád to, co draft odlišuje
+## jako vlastní systém, ne jen druhou cestu ke stejným číslům.
 const ITEMS := {
 	"power_core": {
 		"name": "Jádro síly",
 		"short_name": "Jádro",
-		"desc": "+4 poškození za úroveň itemu",
 		"stat": "damage",
-		"per_rank": 4.0,
+		"value": 4.0,
 	},
 	"rapid_coils": {
 		"name": "Rychlopalné cívky",
 		"short_name": "Palba",
-		"desc": "+0.15 útoku/s za úroveň itemu",
 		"stat": "attack_speed",
-		"per_rank": 0.15,
+		"value": 0.15,
 	},
 	"long_barrel": {
 		"name": "Prodloužená hlaveň",
 		"short_name": "Dostřel",
-		"desc": "+40 dostřelu za úroveň itemu",
 		"stat": "attack_range",
-		"per_rank": 40.0,
+		"value": 40.0,
 	},
 	"split_rounds": {
 		"name": "Dělené střely",
 		"short_name": "Rozptyl",
-		"desc": "+1 zasažený cíl za úroveň itemu",
 		"stat": "multishot",
-		"per_rank": 1.0,
+		"value": 1.0,
 	},
 	"reinforced_plating": {
 		"name": "Zesílený pancíř",
 		"short_name": "Pancíř",
-		"desc": "+20 max. HP za úroveň itemu",
 		"stat": "max_hp",
-		"per_rank": 20.0,
+		"value": 20.0,
 	},
 	"nanite_repair": {
 		"name": "Nanitová oprava",
 		"short_name": "Regen",
-		"desc": "+0.5 regenerace HP/s za úroveň itemu",
 		"stat": "hp_regen",
-		"per_rank": 0.5,
+		"value": 0.5,
 	},
 	"kinetic_dampers": {
 		"name": "Kinetické tlumiče",
 		"short_name": "Tlumiče",
-		"desc": "+2 snížení poškození z každého zásahu za úroveň itemu",
 		"stat": "armor",
-		"per_rank": 2.0,
+		"value": 2.0,
 	},
 }
 ## Pořadí itemů v HUD - drží layout stabilní nezávisle na pořadí v Dictionary
@@ -130,9 +132,19 @@ const ITEM_ORDER: Array[String] = [
 	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating", "nanite_repair",
 	"kinetic_dampers"
 ]
-const MAX_ITEM_RANK: int = 5
 ## Kolik itemů se nabídne v jedné draft nabídce
 const DRAFT_CHOICE_COUNT: int = 3
+## Kolik stejných kopií stejné rarity stačí na sloučení do vyšší rarity -
+## míň než obchodních 3 (viz SHOP_RARITY_* sekce), protože draft nabízí jen
+## náhodně bez placeného rerollu.
+const DRAFT_MERGE_THRESHOLD: int = 2
+## Váhy/multiplikátory PRO DRAFT - vlastní (ne sdílené se SHOP_RARITY_*),
+## protože nižší merge threshold (2 místo 3) znamená rychlejší růst síly,
+## což je potřeba vyvážit jemnější křivkou násobitelů. Stejný first-pass
+## caveat jako u armor/ramp v CLAUDE.md - hodnoty budou potřeba doladit až
+## bude jasnější, jak rychle draft ve skutečnosti roste.
+const DRAFT_RARITY_WEIGHTS: Array[float] = [0.70, 0.20, 0.08, 0.02]
+const DRAFT_RARITY_MULTIPLIERS: Array[float] = [1.0, 1.5, 2.25, 3.5]
 
 ## --- Obchod -------------------------------------------------------------
 ## Na rozdíl od draftu (náhodná nabídka, free, staví se rankem stejného
@@ -242,10 +254,13 @@ const SHOP_REROLL_COST_STEP: int = 15
 
 ## --- Rarita obchodních itemů --------------------------------------------
 ## Item v nabídce má rovnou náhodně vylosovanou raritu (viz SHOP_RARITY_WEIGHTS
-## a _roll_shop_rarity()) - koupě tak nemusí být vždy na BRONZE. Vlastnictví
+## a _roll_rarity()) - koupě tak nemusí být vždy na BRONZE. Vlastnictví
 ## 3 kopií STEJNÉHO itemu NA STEJNÉ raritě je automaticky sloučí do 1 kopie
 ## o stupeň vyšší (_try_merge_shop_item()) - to je JEDINÝ způsob, jak item
-## posílit, žádné placené vylepšení už neexistuje.
+## posílit, žádné placené vylepšení už neexistuje. Tenhle enum (a
+## SHOP_RARITY_NAMES pro zobrazované názvy) je od 2026-09-09 sdílený i s
+## draft itemy (viz DRAFT_MERGE_THRESHOLD/DRAFT_RARITY_* výše) - obě
+## soustavy mají stejné 4 stupně, jen jiné váhy/multiplikátory/práh sloučení.
 enum ShopRarity { BRONZE, SILVER, GOLD, DIAMOND }
 const SHOP_RARITY_NAMES: Array[String] = ["Bronz", "Stříbro", "Zlato", "Diamant"]
 ## Pravděpodobnost, že nabídka vylosuje item na daném stupni (index =
@@ -275,14 +290,25 @@ var state: State = State.INTRO
 
 var player_level: int = 1
 var player_xp: int = 0
-var item_ranks: Dictionary = {}
+## Vlastněné draft itemy - přispívají do get_stat_bonus(). Každý prvek je
+## Dictionary {"item_id": String, "rarity": int (ShopRarity)} - stejný tvar
+## jako active_shop_items, jen bez "cost_paid" (draft je free). Jeden
+## item_id může mít víc současně vlastněných prvků na RŮZNÝCH raritách
+## (např. 1 Stříbrná kopie + 1 nová Bronzová po dalším pick-u, dokud
+## nevznikne 2. Bronzová a nesloučí se) - žádný strop na počet, na rozdíl
+## od obchodu (SHOP_ACTIVE_SLOTS/SHOP_STASH_SLOTS) draft nemá aktivní/sklad
+## dělení, protože nabídka je vždy jen DRAFT_CHOICE_COUNT itemů zdarma, ne
+## omezený nákup - není tu stejný tlak "moc věcí, málo místa" jako v obchodě.
+var draft_items: Array[Dictionary] = []
 ## Kolik draft nabídek čeká na vyřízení - víc než 1 může nastat, když hráč
 ## dostane hodně XP naráz a povýší o víc úrovní v jednom volání add_xp().
 ## HUD nabídky vyřizuje jednu po druhé (viz resolve_draft()).
 var pending_drafts: int = 0
-## Itemy nabídnuté v AKTUÁLNĚ čekající draft nabídce - resolve_draft() proti
-## nim ověřuje, že hráč vybírá opravdu z toho, co bylo nabídnuto.
-var _current_offer: Array = []
+## Itemy nabídnuté v AKTUÁLNĚ čekající draft nabídce (DRAFT_CHOICE_COUNT
+## prvků, každý {"item_id": String, "rarity": int}) - resolve_draft() proti
+## indexu v tomhle poli ověřuje, že hráč vybírá opravdu z toho, co bylo
+## nabídnuto.
+var _current_offer: Array[Dictionary] = []
 ## Aktivní obchodní itemy - přispívají do get_stat_bonus(). Každý prvek je
 ## Dictionary {"item_id": String, "rarity": ShopRarity, "cost_paid": int} -
 ## "cost_paid" je zlato vložené do TÉHLE konkrétní kopie (u sloučeného itemu
@@ -327,9 +353,7 @@ func reset_game() -> void:
 	player_xp = 0
 	pending_drafts = 0
 	_current_offer = []
-	item_ranks.clear()
-	for item_id in ITEM_ORDER:
-		item_ranks[item_id] = 0
+	draft_items.clear()
 	active_shop_items.clear()
 	stash_shop_items.clear()
 	shop_offer.clear()
@@ -406,19 +430,22 @@ func _generate_shop_offer() -> void:
 
 	shop_offer = []
 	for item_id in picked_ids:
-		shop_offer.append({"item_id": item_id, "rarity": _roll_shop_rarity()})
+		shop_offer.append({"item_id": item_id, "rarity": _roll_rarity(SHOP_RARITY_WEIGHTS)})
 	shop_offer_changed.emit(shop_offer)
 
 
-## Vylosuje raritu podle SHOP_RARITY_WEIGHTS (kumulativní pravděpodobnost).
-func _roll_shop_rarity() -> ShopRarity:
+## Vylosuje raritu podle zadaných vah (kumulativní pravděpodobnost) - sdílené
+## mezi obchodem (SHOP_RARITY_WEIGHTS) a draftem (DRAFT_RARITY_WEIGHTS), obě
+## soustavy používají stejný ShopRarity enum (4 stupně), jen jiné váhy/
+## multiplikátory.
+func _roll_rarity(weights: Array[float]) -> ShopRarity:
 	var roll: float = randf()
 	var cumulative: float = 0.0
-	for tier in SHOP_RARITY_WEIGHTS.size():
-		cumulative += SHOP_RARITY_WEIGHTS[tier]
+	for tier in weights.size():
+		cumulative += weights[tier]
 		if roll < cumulative:
 			return tier
-	return SHOP_RARITY_WEIGHTS.size() - 1 as ShopRarity # pojistka pro zaokrouhlovací chyby
+	return weights.size() - 1 as ShopRarity # pojistka pro zaokrouhlovací chyby
 
 
 ## Cena dalšího rerollu - roste s každým rerollem v AKTUÁLNÍ nabídce (viz
@@ -475,55 +502,90 @@ func _level_up() -> void:
 	_try_offer_next_draft()
 
 
-## Vylosuje až DRAFT_CHOICE_COUNT náhodných itemů, které ještě nejsou na
-## maximálním ranku. Volá se pokaždé znovu (ne jednou dopředu), aby nabídka
-## odrážela aktuální stav itemů v okamžiku, kdy se skutečně zobrazí.
-func _roll_draft_options() -> Array:
-	var eligible: Array = []
-	for item_id in ITEM_ORDER:
-		if item_ranks[item_id] < MAX_ITEM_RANK:
-			eligible.append(item_id)
-	eligible.shuffle()
-	return eligible.slice(0, mini(DRAFT_CHOICE_COUNT, eligible.size()))
+## Vylosuje DRAFT_CHOICE_COUNT náhodných ITEM_ORDER itemů (bez opakování
+## stejného ID v rámci JEDNÉ nabídky, stejně jako _generate_shop_offer()) a
+## KAŽDÉMU nezávisle vylosuje raritu podle DRAFT_RARITY_WEIGHTS - na rozdíl
+## od dřívějška se nabídka NEfiltruje podle toho, co už hráč vlastní (stejný
+## item na stejné raritě, kterou už má, je žádoucí - je to potenciální
+## 2. kopie pro sloučení, viz _try_merge_draft_item()).
+func _roll_draft_options() -> Array[Dictionary]:
+	var pool: Array[String] = ITEM_ORDER.duplicate()
+	pool.shuffle()
+	var picked_ids: Array = pool.slice(0, mini(DRAFT_CHOICE_COUNT, pool.size()))
+
+	var offered: Array[Dictionary] = []
+	for item_id in picked_ids:
+		offered.append({"item_id": item_id, "rarity": _roll_rarity(DRAFT_RARITY_WEIGHTS)})
+	return offered
 
 
 ## Pokud čeká aspoň jedna draft nabídka A zrovna žádná není rozehraná,
-## vylosuje itemy a emitne item_draft_ready. Když už nejsou žádné itemy pod
-## maximem (nic k nabídnutí), nabídku potichu "spotřebuje" bez zobrazení a
-## zkusí další frontu. Podmínka `_current_offer.is_empty()` je nutná - bez
-## ní by každý _level_up() ve stejném volání add_xp() (velký přísun XP naráz
-## povýší o víc úrovní ve smyčce) vygeneroval a emitnul VLASTNÍ nabídku, i
-## když už jedna čeká na vyřízení.
+## vylosuje itemy a emitne item_draft_ready. Podmínka `_current_offer.is_empty()`
+## je nutná - bez ní by každý _level_up() ve stejném volání add_xp() (velký
+## přísun XP naráz povýší o víc úrovní ve smyčce) vygeneroval a emitnul
+## VLASTNÍ nabídku, i když už jedna čeká na vyřízení.
 func _try_offer_next_draft() -> void:
 	if pending_drafts <= 0 or not _current_offer.is_empty():
 		return
 
-	var offered: Array = _roll_draft_options()
-	if offered.is_empty():
-		pending_drafts -= 1
-		_try_offer_next_draft()
-		return
-
-	_current_offer = offered
-	item_draft_ready.emit(offered)
+	_current_offer = _roll_draft_options()
+	item_draft_ready.emit(_current_offer)
 
 
-## Zavolá HUD, když hráč (nebo Auto výběr) vybere item z aktuální nabídky.
-## Vrací false, pokud zrovna žádná nabídka nečeká nebo item_id není mezi
-## nabídnutými (ochrana proti zastaralému/duplicitnímu kliknutí).
-func resolve_draft(item_id: String) -> bool:
-	if pending_drafts <= 0 or not _current_offer.has(item_id):
+## Zavolá HUD, když hráč (nebo Auto výběr) vybere item z aktuální nabídky
+## na daném indexu (stejný vzor jako buy_shop_item(offer_index) v obchodě).
+## Vrací false, pokud zrovna žádná nabídka nečeká nebo index je mimo rozsah
+## (ochrana proti zastaralému/duplicitnímu kliknutí).
+func resolve_draft(offer_index: int) -> bool:
+	if pending_drafts <= 0 or offer_index < 0 or offer_index >= _current_offer.size():
 		return false
 
+	var offer_entry: Dictionary = _current_offer[offer_index]
 	pending_drafts -= 1
 	_current_offer = []
 
-	var new_rank: int = int(item_ranks[item_id]) + 1
-	item_ranks[item_id] = new_rank
-	item_rank_changed.emit(item_id, new_rank)
+	_add_draft_item(offer_entry["item_id"], offer_entry["rarity"])
 
 	_try_offer_next_draft()
 	return true
+
+
+## Přidá novou draft instanci a zkusí sloučení - stejný vzor jako
+## buy_shop_item()/_try_merge_shop_item() v obchodě, jen bez gold/cost_paid.
+func _add_draft_item(item_id: String, rarity: int) -> void:
+	draft_items.append({"item_id": item_id, "rarity": rarity})
+	draft_inventory_changed.emit()
+	_try_merge_draft_item(item_id, rarity)
+
+
+## Když má hráč aspoň DRAFT_MERGE_THRESHOLD (2) kopií stejného itemu na
+## stejné raritě, automaticky je sloučí do 1 kopie o stupeň výš - stejná
+## logika jako _try_merge_shop_item(), jen s nižším prahem a bez
+## active/stash rozlišení (draft nemá sklad, viz draft_items výše).
+## Rekurzivní pro řídký případ, kdy sloučení náhodou vytvoří hned další
+## shodu (např. hromadný debug přírůstek).
+func _try_merge_draft_item(item_id: String, rarity: int) -> void:
+	if rarity >= ShopRarity.DIAMOND:
+		return
+
+	var matching_indices: Array = []
+	for i in draft_items.size():
+		if draft_items[i]["item_id"] == item_id and draft_items[i]["rarity"] == rarity:
+			matching_indices.append(i)
+
+	if matching_indices.size() < DRAFT_MERGE_THRESHOLD:
+		return
+
+	var to_consume: Array = matching_indices.slice(0, DRAFT_MERGE_THRESHOLD)
+	# Mazat od nejvyššího indexu, jinak by se nižší indexy posunuly a další
+	# remove_at() by smazal špatný prvek.
+	to_consume.sort_custom(func(a, b): return a > b)
+	for index in to_consume:
+		draft_items.remove_at(index)
+
+	draft_items.append({"item_id": item_id, "rarity": rarity + 1})
+	draft_inventory_changed.emit()
+	_try_merge_draft_item(item_id, rarity + 1)
 
 
 ## Celkový bonus ke statu = součet ranků vybraných itemů, které na stat
@@ -537,10 +599,10 @@ func get_stat_bonus(stat_id: String) -> float:
 	if LEVEL_STAT_GROWTH.has(stat_id):
 		bonus += float(LEVEL_STAT_GROWTH[stat_id]) * float(player_level - 1)
 
-	for item_id in ITEM_ORDER:
-		var definition: Dictionary = ITEMS[item_id]
+	for entry in draft_items:
+		var definition: Dictionary = ITEMS[entry["item_id"]]
 		if definition["stat"] == stat_id:
-			bonus += float(definition["per_rank"]) * float(item_ranks[item_id])
+			bonus += float(definition["value"]) * DRAFT_RARITY_MULTIPLIERS[entry["rarity"]]
 
 	for entry in active_shop_items:
 		var stats: Dictionary = SHOP_ITEMS[entry["item_id"]]["stats"]
@@ -567,11 +629,22 @@ func get_shop_item_desc(item_id: String, tier: ShopRarity) -> String:
 	for stat_id in stats:
 		var value: float = float(stats[stat_id]) * multiplier
 		var stat_name: String = STAT_DISPLAY_NAMES.get(stat_id, stat_id)
-		lines.append("+%s %s" % [_format_shop_stat_number(value), stat_name])
+		lines.append("+%s %s" % [_format_stat_number(value), stat_name])
 	return "\n".join(lines)
 
 
-func _format_shop_stat_number(value: float) -> String:
+## Popis draft itemu se statem přepočítaným na danou raritu - stejný princip
+## jako get_shop_item_desc(), jen pro jediný stat místo dict (draft zůstává
+## jednostatový, viz "Item/loot draft" výše). ITEMS[item_id]["value"] je
+## vždy BRONZE hodnota, DRAFT_RARITY_MULTIPLIERS ji škáluje na tier.
+func get_draft_item_desc(item_id: String, tier: ShopRarity) -> String:
+	var definition: Dictionary = ITEMS[item_id]
+	var value: float = float(definition["value"]) * DRAFT_RARITY_MULTIPLIERS[tier]
+	var stat_name: String = STAT_DISPLAY_NAMES.get(definition["stat"], definition["stat"])
+	return "+%s %s" % [_format_stat_number(value), stat_name]
+
+
+func _format_stat_number(value: float) -> String:
 	if is_equal_approx(value, round(value)):
 		return str(int(round(value)))
 	return "%.1f" % value
@@ -755,22 +828,21 @@ func debug_force_draft() -> void:
 	_try_offer_next_draft()
 
 
-## DEBUG: nastaví všechny itemy rovnou na maximální rank
+## DEBUG: nastaví každý item rovnou na 1 kopii nejvyšší rarity (Diamant) -
+## nejrychlejší cesta k "co nejsilnější build" pro testování.
 func debug_max_items() -> void:
+	draft_items.clear()
 	for item_id in ITEM_ORDER:
-		if item_ranks[item_id] < MAX_ITEM_RANK:
-			item_ranks[item_id] = MAX_ITEM_RANK
-			item_rank_changed.emit(item_id, MAX_ITEM_RANK)
+		draft_items.append({"item_id": item_id, "rarity": ShopRarity.DIAMOND})
+	draft_inventory_changed.emit()
 
 
-## DEBUG: vynuluje ranky všech itemů - pro rychlé vyzkoušení jiného buildu.
-## Na rozdíl od dřívějšího respecu schopností nevrací žádné "body" - itemy
-## se nekupují za body, jen se draftí při level-upu.
+## DEBUG: vymaže všechny draft itemy - pro rychlé vyzkoušení jiného buildu.
+## Stejně jako dřív nevrací žádné "body" - itemy se nekupují, jen se draftí
+## při level-upu.
 func debug_reset_items() -> void:
-	for item_id in ITEM_ORDER:
-		if item_ranks[item_id] > 0:
-			item_ranks[item_id] = 0
-			item_rank_changed.emit(item_id, 0)
+	draft_items.clear()
+	draft_inventory_changed.emit()
 
 
 ## DEBUG: přeskočí rovnou na další kolo (jen zvýší multiplikátor HP

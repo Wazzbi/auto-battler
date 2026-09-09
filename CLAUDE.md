@@ -313,9 +313,9 @@ build's identity.
 getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`,
 `get_hp_regen()`, `get_armor()`) that add `GameManager.get_stat_bonus(stat_id)` — **the single place
 where progression turns into numbers**, summing three sources: `LEVEL_STAT_GROWTH` (automatic, keyed
-by `player_level`), the draft's `item_ranks`, and the shop's `active_shop_items`. The player
-recomputes on the `level_changed` and `item_rank_changed` signals — `level_changed` now actually
-changes stats again (via the level-growth term), not just a UI sync no-op. **Balance caveat
+by `player_level`), the draft's `draft_items`, and the shop's `active_shop_items`. The player
+recomputes on the `level_changed` and `draft_inventory_changed` signals — `level_changed` now
+actually changes stats again (via the level-growth term), not just a UI sync no-op. **Balance caveat
 (partially addressed)**: a run's power still depends heavily on what the (currently small, 7-item)
 draft pool happens to offer — going several levels without seeing a given stat's item is possible
 (~57% chance per level to miss any one specific item with `DRAFT_CHOICE_COUNT` 3 of 7) — but
@@ -332,7 +332,8 @@ than "death by one big hit" — unlike a percentage-based mitigation stat, a *fl
 weak/frequent damage sources hardest, which is exactly the profile of this game's enemies (see
 "data-backed fix" below). `base_armor` defaults to 2.0 (all current enemies deal exactly 5 contact
 damage, so base armor alone cuts that to 3 — a 40% reduction before any item at all);
-`kinetic_dampers` grants +2 armor per rank, matching `base_armor`'s scale, up to `MAX_ITEM_RANK` (5).
+`kinetic_dampers` grants +2 armor at Bronze rarity (matching `base_armor`'s scale), scaling up with
+rarity/merges like any other draft item (see "Draft rarity + merge" above).
 
 **This was a data-backed fix, not a guess** — same headless simulation approach as the ranged/sniper
 ramp above (real `main.tscn`, "Auto" draft picking, sped up via `Engine.time_scale`). Before armor,
@@ -351,10 +352,33 @@ each level-up now queues an offer of `DRAFT_CHOICE_COUNT` (3) *random* items —
 three" pattern as Vampire Survivors' level-up cards. This was a deliberate replacement, not an
 addition: the previous ability system gave a flat, always-the-same choice every run (see the
 brainstorm this came from), while randomized offers make each run's build meaningfully different.
-Mechanically the payoff is identical to before — each item has a `stat` + `per_rank` pair and a
-rank up to `MAX_ITEM_RANK`, so it's still just a passive bonus, not a real active effect (same
-placeholder status the abilities had; when real active effects get built, `ITEMS` and
-`get_stat_bonus()` are still the only things that need to change).
+
+**Draft rarity + merge (2026-09-09)**: draft items now use the SAME rarity/merge principle as the
+shop (see "Rarity + merge system" below) — each offered item also rolls a rarity
+(`DRAFT_RARITY_WEIGHTS`), and owning `DRAFT_MERGE_THRESHOLD` (**2**, not the shop's 3) identical
+copies at the same rarity auto-merges them into 1 copy one tier higher
+(`_try_merge_draft_item()`). The lower threshold is deliberate: draft offers are free and random
+with no reroll, so the player has far less control than in the shop over which duplicate they get
+next — requiring fewer copies compensates for that lost control. `DRAFT_RARITY_MULTIPLIERS` is its
+own (gentler) curve, not shared with `SHOP_RARITY_MULTIPLIERS` — a 2-copy threshold grows power
+faster than a 3-copy one for the same multiplier curve, so draft's curve was tuned down to
+compensate; both enum and rarity *names* (`ShopRarity`, `SHOP_RARITY_NAMES`) ARE shared, since both
+systems display the same 4 tiers (Bronz/Stříbro/Zlato/Diamant), just with different weights/
+multipliers/thresholds. **Draft deliberately stays single-stat** (`ITEMS[item_id]["value"]` is a
+single Bronze-tier stat value, unlike the shop's multi-stat `"stats"` dict) — that's still what
+differentiates draft as its own system, not just a second path to the same numbers as the shop.
+Like the shop, an item's rarity/desc text is generated dynamically (`get_draft_item_desc()`) rather
+than stored statically, so it always matches what the specific rolled tier actually gives.
+
+**`draft_items: Array[Dictionary]`** (each `{"item_id": String, "rarity": int}`) replaced the old
+flat `item_ranks: Dictionary` (item_id → single rank int) — since a merge can leave a player owning
+several *different* rarities of the same item_id simultaneously (e.g. 1 already-merged Silver copy
++ 1 fresh Bronze copy picked afterward, before a 2nd Bronze triggers another merge), a single
+"rank" number can no longer represent an item's state; `get_stat_bonus()` now sums every owned
+instance's Bronze `"value"` × `DRAFT_RARITY_MULTIPLIERS[rarity]`, same pattern as the shop's
+`active_shop_items` loop. Unlike the shop, there's no active/stash split for draft — every owned
+instance always counts, since draft offers are always just `DRAFT_CHOICE_COUNT` free items with no
+purchase-slot pressure to manage.
 
 **Draft flow / one offer at a time**: `_level_up()` increments `GameManager.pending_drafts` and
 calls `_try_offer_next_draft()`, which only actually rolls and emits `item_draft_ready` if
@@ -362,7 +386,9 @@ calls `_try_offer_next_draft()`, which only actually rolls and emits `item_draft
 (e.g. the Debug panel's "+500 XP") can call `_level_up()` several times synchronously inside
 `add_xp()`'s loop, and without the guard each of those calls would roll and emit its own offer,
 stomping `_current_offer` and desyncing `pending_drafts` from what's actually on screen. Offers are
-resolved one at a time via `resolve_draft(item_id)`, which clears `_current_offer` and calls
+resolved one at a time via `resolve_draft(offer_index: int)` (indexed, like the shop's
+`buy_shop_item(offer_index)` — not by item_id, since the offer now also carries a rolled rarity
+that an item_id alone wouldn't identify), which clears `_current_offer` and calls
 `_try_offer_next_draft()` again — so a big XP grant queues N drafts that the HUD walks through
 sequentially, not simultaneously.
 
@@ -392,10 +418,12 @@ now — just don't be surprised if this resurfaces as a real feature request lat
 
 **HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
 portrait with a level badge, HP bar, XP bar, seven picked-item slots (`PickedItemSlot0..6`, indexed
-to match `GameManager.ITEM_ORDER` — grayed out at rank 0, shows `short_name` + rank once picked),
-six (currently decorative, unrelated — future equipment loot) `ItemSlot1..6` rects, gold, and the
-shop button. Right-side elements are anchored to the right edge and the bars stretch, so the bar
-survives window resizing.
+to match `GameManager.ITEM_ORDER` — grayed out while `draft_items` has no instance of that item_id,
+otherwise shows `short_name` + copy count + the *highest* owned rarity, e.g. "Jádro / 2x Stříbro",
+since one item_id can have multiple simultaneously-owned instances at different rarities — see
+"Draft rarity + merge" above), six (currently decorative, unrelated — future equipment loot)
+`ItemSlot1..6` rects, gold, and the shop button. Right-side elements are anchored to the right edge
+and the bars stretch, so the bar survives window resizing.
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
@@ -450,17 +478,19 @@ any future addition needs to actively check this rather than assume there's room
 
 **Shop items are a separate system from the item draft** (`GameManager.SHOP_ITEMS`/
 `SHOP_ITEM_ORDER`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is free, randomly offered,
-single-stat, and unlimited-rank, a shop item is: bought with gold from a rotating offer that already
-carries a rolled **rarity** (see below), grants **multiple stats at once** (e.g. "Přebíječ jader" =
-+6 damage AND +0.2 attack speed at Bronze), and merges with duplicates instead of being upgraded
-with gold. This was a deliberate design pivot mid-brainstorm, modeled after League of Legends' item
-system (discrete multi-stat items) then further reshaped after The Bazaar (Steam card/auto-battler)
-for the rarity/merge/stash mechanics below — the draft and shop are meant to feel like different
-systems, not two currencies buying the same thing. `get_stat_bonus(stat_id)` sums both the draft's
-`item_ranks` contribution and **active** shop items' `stats` (× rarity multiplier) contribution for
-a given stat — a player can own both "Jádro síly" (draft) *and* "Přebíječ jader" (shop, which also
-grants damage) at the same time; their damage bonuses just add together, no conflict. **Only active
-items count — stashed ones don't** (see below).
+and single-stat, a shop item is: bought with gold from a rotating offer that already carries a
+rolled **rarity** (see below), and grants **multiple stats at once** (e.g. "Přebíječ jader" = +6
+damage AND +0.2 attack speed at Bronze) — both now use the same rarity/merge growth mechanic (see
+"Draft rarity + merge" above and "Rarity + merge system" below), just with different thresholds/
+curves and single- vs multi-stat payloads. This was a deliberate design pivot mid-brainstorm,
+modeled after League of Legends' item system (discrete multi-stat items) then further reshaped
+after The Bazaar (Steam card/auto-battler) for the rarity/merge/stash mechanics below — the draft
+and shop are meant to feel like different systems, not two currencies buying the same thing.
+`get_stat_bonus(stat_id)` sums both the draft's `draft_items` contribution and **active** shop
+items' `stats` (× rarity multiplier) contribution for a given stat — a player can own both "Jádro
+síly" (draft) *and* "Přebíječ jader" (shop, which also grants damage) at the same time; their
+damage bonuses just add together, no conflict. **Only active shop items count — stashed ones
+don't** (see below); draft items have no such split, every owned instance always counts.
 
 **Rarity + merge system** (`GameManager.ShopRarity` enum, `SHOP_RARITY_NAMES`/
 `SHOP_RARITY_WEIGHTS`/`SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS`): built 2026-09-08,
@@ -468,8 +498,9 @@ replacing an earlier same-day "pay gold to upgrade an owned item" version after 
 they wanted The Bazaar's actual mechanic instead. Four tiers — BRONZE → SILVER → GOLD → DIAMOND —
 each multiplying an item's base (`stats` dict, always written as Bronze-tier values) by
 `SHOP_RARITY_MULTIPLIERS` (1.0×/1.6×/2.6×/4.2×, ~1.6× compounding per tier). **The shop offer rolls
-a random rarity per slot** (`_roll_shop_rarity()`, weights `SHOP_RARITY_WEIGHTS` = 70%/20%/8%/2% —
-low rarities common, Diamond rare) — buying an offered item costs
+a random rarity per slot** (`_roll_rarity(SHOP_RARITY_WEIGHTS)`, weights 70%/20%/8%/2% —
+low rarities common, Diamond rare; `_roll_rarity()` is shared with the draft's own rarity roll, see
+"Draft rarity + merge" above) — buying an offered item costs
 `SHOP_ITEMS[item_id]["cost"] * SHOP_RARITY_COST_RATIOS[tier]` (ratios 1.0/1.4/2.25/3.75) for
 *whatever* rarity got rolled, not always Bronze. **Owning 3 copies of the same item at the same
 rarity auto-merges them into 1 copy one rarity higher** (`_try_merge_shop_item()`, called after
@@ -557,10 +588,11 @@ reuse the *real* code paths rather than shortcutting past them:
   the actual `Engine.time_scale` in `_setup_debug_panel()` so it doesn't lie after a restart.
 - **Vynutit draft** calls `GameManager.debug_force_draft()` to queue an offer immediately, bypassing
   the level-up requirement — the fastest way to test the draft UI/flow without grinding XP.
-- **Max/Reset itemy** are a blunt build-testing tool — max sets every item straight to
-  `MAX_ITEM_RANK`, reset zeroes every rank. Unlike the old ability respec, reset does **not** refund
-  anything to re-spend, because items were never bought with a spendable currency in the first
-  place — they're free picks from a draft, so "reset" is just a clean slate for the next level-up.
+- **Max/Reset itemy** are a blunt build-testing tool — max gives every item exactly 1 Diamond-rarity
+  instance, reset clears `draft_items` entirely. Unlike the old ability respec, reset does **not**
+  refund anything to re-spend, because items were never bought with a spendable currency in the
+  first place — they're free picks from a draft, so "reset" is just a clean slate for the next
+  level-up.
 - **Auto vylepšení** is the moved/renamed old BottomBar "Auto" toggle (see above) — it's here rather
   than in the main HUD specifically because its only real use is skipping the draft-choice pause
   during testing.
@@ -586,5 +618,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (rarity tier power/cost curves), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to items/shop)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), draft item definitions (`ITEMS`, single-stat, `"value"` = Bronze-tier amount), `DRAFT_CHOICE_COUNT`, `DRAFT_MERGE_THRESHOLD` (2-copy draft merge), `DRAFT_RARITY_WEIGHTS`/`DRAFT_RARITY_MULTIPLIERS` (draft's own rarity curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to items/shop)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)
