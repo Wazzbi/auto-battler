@@ -475,18 +475,31 @@ identity just for this one edge case. Revisit if it becomes noticeable once more
 merges happen mid-run more often.
 
 **HUD is one bottom bar** (`Control/BottomBar` in `hud.tscn`) styled after MOBA HUDs: stat readouts,
-portrait with a level badge, HP bar, XP bar, a row of PROCEDURALLY-built schopnost slots
+portrait with a level badge, HP bar, XP bar, a grid of PROCEDURALLY-built schopnost slots
 (`AbilitiesContainer`, populated by `hud.gd`'s `_build_abilities_ui()` — one widget per
 `GameManager.ABILITY_ORDER` entry, grayed out while `owned_abilities` has no instance of that
 `ability_id`, otherwise shows `short_name` + copy count + the *highest* owned rarity, e.g.
 "Jádro / 2x Stříbro"), and six (currently decorative, unrelated — future equipment loot)
-`ItemSlot1..6` rects. Procedural (not hand-authored `.tscn` nodes) specifically because the pool
-now has 9 entries and is expected to keep growing — same reasoning as the shop's mini-slot grid
-below; adding a new `ABILITIES` entry needs zero `hud.tscn` changes. Right-side elements are
-anchored to the right edge and the bars stretch, so the bar survives window resizing. **The gold
-counter (`GoldLabel`) moved out of `BottomBar` 2026-09-09** — it now lives at the top of the screen
-(`Control/GoldLabel`, left-aligned) alongside `LoopLabel`/`WaveLabel`, matching that counter row's
-style instead of sitting in the bottom bar; `ShopButton` was removed entirely in the same change
+`ItemSlot1..6` rects, now a single row. Procedural (not hand-authored `.tscn` nodes) specifically
+because the pool now has 9 entries and is expected to keep growing — same reasoning as the shop's
+mini-slot grid below; adding a new `ABILITIES` entry needs zero `hud.tscn` changes. Right-side
+elements are anchored to the right edge and the bars stretch, so the bar survives window resizing.
+**The gold counter (`GoldLabel`) moved out of `BottomBar` 2026-09-09** — it now lives at the top of
+the screen (`Control/GoldLabel`, left-aligned) alongside `LoopLabel`/`WaveLabel`, matching that
+counter row's style instead of sitting in the bottom bar; `ShopButton` was removed entirely in the
+same change
+
+**`AbilitiesContainer` and `ItemSlot1..6` swapped positions 2026-09-09** (explicit user request):
+`AbilitiesContainer` now sits where the item slots used to be — right-anchored
+(`anchor_left`/`anchor_right = 1.0`, matching the shop's mini-slot anchoring style), laid out into
+`ABILITY_SLOT_ROWS` (2) rows instead of one long row, since 9 schopnosti no longer fit in a single
+row at their old absolute-left position. `_build_abilities_ui()` computes `columns =
+ceili(total / ABILITY_SLOT_ROWS)` and places widget `i` at `row = i / columns`, `col = i % columns`
+— this stays correct as `ABILITY_ORDER` grows, no hardcoded slot count. `ItemSlot1..6` moved the
+other way, to `AbilitiesContainer`'s old absolute-left spot (`offset_left = 310`, matching the
+HP/XP bars' left edge), now as a single row of 6 instead of the old 3-column/2-row grid — they're
+still hand-authored nodes in `hud.tscn` (not procedural, since there are always exactly 6 and no
+future-growth concern like `ABILITIES` has), just repositioned.
 (see "Shop opens periodically" below).
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
