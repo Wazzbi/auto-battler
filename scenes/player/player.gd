@@ -54,6 +54,15 @@ var level_end_x: float = INF
 ## panelu v HUD (viz hud.gd), na resetu hry (nová instance hráče) se sama
 ## vrátí na false.
 var debug_invincible: bool = false
+## Počítadlo výstřelů PRO KAŽDOU vlastněnou schopnost s triggerem
+## "shot_count" (viz GameManager.owned_abilities), stejný index/pořadí jako
+## owned_abilities - přebuduje se od nuly při KAŽDÉ změně vlastnictví
+## (_on_ability_inventory_changed()), i jen kosmetické (sloučení). To je
+## vědomý kompromis: sloučená schopnost tak ztratí rozpracovaný postup ke
+## svému příštímu spuštění, ale instance v poli nemají stabilní identitu
+## napříč sloučeními, takže "zachovat postup" by vyžadovalo sledovat identitu
+## navíc jen pro tenhle okrajový případ.
+var _ability_shot_counters: Array[int] = []
 
 
 func _ready() -> void:
@@ -65,6 +74,7 @@ func _ready() -> void:
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.draft_inventory_changed.connect(_on_draft_inventory_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
+	GameManager.ability_inventory_changed.connect(_on_ability_inventory_changed)
 
 	_recalculate_stats()
 	hp = max_hp
@@ -164,6 +174,13 @@ func _on_shop_inventory_changed() -> void:
 	_apply_progression_changes()
 
 
+## Schopnosti nemění staty (žádný get_stat_bonus() vstup) - jen potřebují
+## své počítadlo přerovnat na aktuální velikost/pořadí owned_abilities.
+func _on_ability_inventory_changed() -> void:
+	_ability_shot_counters.resize(GameManager.owned_abilities.size())
+	_ability_shot_counters.fill(0)
+
+
 func _apply_progression_changes() -> void:
 	_recalculate_stats()
 	hp_changed.emit(hp, max_hp)
@@ -217,10 +234,38 @@ func _find_nearest_enemies(count: int) -> Array:
 func _shoot(target: Node2D) -> void:
 	if projectile_scene == null:
 		return
+	var damage: float = get_damage() * _consume_ability_triggers()
 	var projectile: Node2D = projectile_scene.instantiate()
 	get_tree().current_scene.add_child(projectile)
 	projectile.global_position = global_position
-	projectile.setup(get_damage(), target)
+	projectile.setup(damage, target)
+
+
+## Každý zavolaný _shoot() je "1 výstřel" pro účely schopností s triggerem
+## "shot_count" - u multishotu se tak počítá KAŽDÝ jednotlivý projektil
+## zvlášť, ne jeden "kolo" útoku. Pro každou vlastněnou schopnost s tímhle
+## triggerem zvýší JEJÍ VLASTNÍ počítadlo (viz _ability_shot_counters) a při
+## dosažení prahu (podle rarity té konkrétní instance) ho vynuluje a
+## aplikuje efekt. Víc vlastněných instancí se vyhodnocuje NEZÁVISLE - pokud
+## by dvě spustily efekt na stejném výstřelu, jejich násobiče se navzájem
+## vynásobí (ne sečtou), proto vrací násobič přes návratovou hodnotu místo
+## přímé úpravy get_damage().
+func _consume_ability_triggers() -> float:
+	var multiplier: float = 1.0
+	for i in GameManager.owned_abilities.size():
+		var entry: Dictionary = GameManager.owned_abilities[i]
+		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
+		if definition["trigger"] != "shot_count":
+			continue
+
+		_ability_shot_counters[i] += 1
+		var interval: int = definition["trigger_values"][entry["rarity"]]
+		if _ability_shot_counters[i] >= interval:
+			_ability_shot_counters[i] = 0
+			if definition["effect"] == "damage_multiplier":
+				multiplier *= float(definition["effect_value"])
+
+	return multiplier
 
 
 ## Kolik % původního poškození projde i přes libovolně vysoké brnění - brání
