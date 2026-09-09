@@ -117,23 +117,23 @@ const DRAFT_CHOICE_COUNT: int = 3
 
 ## --- Obchod -------------------------------------------------------------
 ## Na rozdíl od draftu (náhodná nabídka, free, staví se rankem stejného
-## itemu) je obchod: koupíš za zlato, každý item JEN JEDNOU (žádné ranky) a
-## jsi omezený počtem slotů (MAX_SHOP_SLOTS) - běžná koupě tak vyžaduje
-## reálné rozhodnutí, co koupit a co vynechat, ne jen "vezmi všechno".
-## Itemy dávají víc statů najednou (na rozdíl od draftu, kde má každý item
-## jen jeden stat) - odlišuje to obchod jako vlastní systém, ne jen druhou
-## cestu ke stejným číslům.
+## itemu) je obchod: koupíš za zlato, jsi omezený počtem AKTIVNÍCH slotů
+## (SHOP_ACTIVE_SLOTS) - běžná koupě tak vyžaduje reálné rozhodnutí, co
+## koupit a co vynechat, ne jen "vezmi všechno". Itemy dávají víc statů
+## najednou (na rozdíl od draftu, kde má každý item jen jeden stat) -
+## odlišuje to obchod jako vlastní systém, ne jen druhou cestu ke stejným
+## číslům.
 ##
-## Dřív tu byl i "combine" strom (2 základní itemy -> 1 silnější tier-2 item)
-## - zrušený ve prospěch systému rarity (Bronz/Stříbro/Zlato/Diamant),
-## protože dělá v podstatě totéž (odměna za opakovanou investici), ale jako
-## jeden sjednocený systém místo dvou paralelních.
+## Dřív tu byl i "combine" strom (2 RŮZNÉ základní itemy -> 1 silnější
+## tier-2 item, gold-upgrade rarity) - oboje zrušené ve prospěch systému
+## "3 stejné kopie stejné rarity se automaticky sloučí do 1 vyšší rarity"
+## (inspirováno hrou The Bazaar), viz _try_merge_shop_item() níže.
 ##
 ## "desc" pole tu záměrně NENÍ - popis se generuje dynamicky přes
 ## get_shop_item_desc(item_id, tier), protože jinak by statický text ukazoval
-## Bronz čísla i pro vylepšený Diamantový item. "stats" jsou vždy BRONZ
-## (tier 0) hodnoty, get_stat_bonus()/get_shop_item_desc() je násobí přes
-## SHOP_RARITY_MULTIPLIERS podle aktuální rarity itemu.
+## Bronz čísla i pro vyšší raritu. "stats" jsou vždy BRONZE (tier 0)
+## hodnoty, get_stat_bonus()/get_shop_item_desc() je násobí přes
+## SHOP_RARITY_MULTIPLIERS podle rarity konkrétní vlastněné kopie.
 const SHOP_ITEMS := {
 	"overcharged_core": {
 		"name": "Přebíječ jader",
@@ -189,13 +189,20 @@ const STAT_DISPLAY_NAMES := {
 	"hp_regen": "regenerace HP/s",
 	"armor": "brnění",
 }
-## Pořadí itemů v obchodě - 7 itemů na jen 6 slotů (viz MAX_SHOP_SLOTS), takže
-## hráč nutně jeden vynechá - záměrný trade-off, ne chyba v počtu.
+## Pořadí itemů v obchodě - 7 itemů na jen SHOP_ACTIVE_SLOTS aktivních slotů,
+## takže hráč nutně jeden vynechá (nebo ho odloží do skladu) - záměrný
+## trade-off, ne chyba v počtu.
 const SHOP_ITEM_ORDER: Array[String] = [
 	"overcharged_core", "field_plating", "targeting_module", "nanite_regenerator",
 	"overloaded_coils", "gravity_stabilizer", "destruction_core"
 ]
-const MAX_SHOP_SLOTS: int = 6
+## Kolik itemů může být najednou AKTIVNÍCH (přispívají do get_stat_bonus()).
+const SHOP_ACTIVE_SLOTS: int = 6
+## Kolik itemů může čekat ve SKLADU (nepřispívají do statů, jen čekají na
+## sloučení do vyšší rarity nebo na uvolnění místa v aktivních slotech) -
+## víc než SHOP_ACTIVE_SLOTS, aby šlo sbírat duplicity bez nutnosti hned
+## obětovat aktivní výbavu.
+const SHOP_STASH_SLOTS: int = 9
 ## Kolik % z ceny itemu se vrátí při prodeji - nižší než 100 %, aby obchod
 ## nešlo použít jako bezplatný "respec" (nakoupit, hned prodat, zkusit jiné).
 const SHOP_SELL_REFUND_RATIO: float = 0.5
@@ -203,9 +210,9 @@ const SHOP_SELL_REFUND_RATIO: float = 0.5
 ## Kolik itemů se najednou nabídne v obchodě - záměrně míň než celý
 ## SHOP_ITEM_ORDER (7), aby obchod nebyl jen "kup si všechno, co chceš", ale
 ## reálná náhodná nabídka jako draft, s možností si za zlato přehodit
-## (viz reroll_shop() níže). Nabídka může obsahovat i už vlastněné itemy -
-## jinak by nikdy nešlo narazit na příležitost zvýšit jejich raritu, až ta
-## bude existovat.
+## (viz reroll_shop() níže). Nabídka může obsahovat i itemy, které už hráč
+## vlastní (v libovolné raritě) - jinak by nikdy nešlo sehnat 2./3. kopii
+## pro sloučení (viz _try_merge_shop_item()).
 const SHOP_OFFER_SIZE: int = 4
 ## Cena prvního rerollu v jedné návštěvě obchodu; každý další přidá
 ## SHOP_REROLL_COST_STEP navrch (20, 35, 50, ...) - resetuje se při každé
@@ -215,20 +222,25 @@ const SHOP_REROLL_BASE_COST: int = 20
 const SHOP_REROLL_COST_STEP: int = 15
 
 ## --- Rarita obchodních itemů --------------------------------------------
-## Opakovaná koupě/vylepšení stejného itemu zvedá jeho raritu o stupeň -
-## nahrazuje dřívější tier-2 combine strom jedním sjednoceným systémem (viz
-## poznámka u SHOP_ITEMS výše). BRONZE je stupeň, na kterém se item koupí
-## poprvé (index 0 do SHOP_RARITY_MULTIPLIERS/SHOP_RARITY_COST_RATIOS).
+## Item v nabídce má rovnou náhodně vylosovanou raritu (viz SHOP_RARITY_WEIGHTS
+## a _roll_shop_rarity()) - koupě tak nemusí být vždy na BRONZE. Vlastnictví
+## 3 kopií STEJNÉHO itemu NA STEJNÉ raritě je automaticky sloučí do 1 kopie
+## o stupeň vyšší (_try_merge_shop_item()) - to je JEDINÝ způsob, jak item
+## posílit, žádné placené vylepšení už neexistuje.
 enum ShopRarity { BRONZE, SILVER, GOLD, DIAMOND }
 const SHOP_RARITY_NAMES: Array[String] = ["Bronz", "Stříbro", "Zlato", "Diamant"]
+## Pravděpodobnost, že nabídka vylosuje item na daném stupni (index =
+## ShopRarity) - musí dát dohromady 1.0. Nízké rarity padají mnohem častěji,
+## aby Diamant byl vzácný, ne běžný nález.
+const SHOP_RARITY_WEIGHTS: Array[float] = [0.70, 0.20, 0.08, 0.02]
 ## Násobitel BRONZE (základních) hodnot ve SHOP_ITEMS[item_id]["stats"] -
-## ~1.6x na stupeň, aby vylepšení bylo vždy citelné, ne kosmetické.
+## ~1.6x na stupeň, aby sloučení bylo vždy citelné, ne kosmetické.
 const SHOP_RARITY_MULTIPLIERS: Array[float] = [1.0, 1.6, 2.6, 4.2]
-## Cena za DOSAŽENÍ daného stupně (index = ShopRarity), jako násobek vlastní
-## ceny itemu (SHOP_ITEMS[item_id]["cost"]) - ne absolutní číslo, aby dražší
-## itemy měly úměrně dražší i vylepšení. Roste rychleji než síla
-## (SHOP_RARITY_MULTIPLIERS), takže Diamant je záměrně luxusní pozdní
-## investice, ne rutinní cíl - viz "exponenciální cena, téměř lineární
+## Cena KOUPĚ itemu na daném stupni rarity, jako násobek vlastní ceny itemu
+## (SHOP_ITEMS[item_id]["cost"]) - ne absolutní číslo, aby dražší itemy měly
+## úměrně dražší i vyšší rarity. Roste rychleji než síla
+## (SHOP_RARITY_MULTIPLIERS), takže vysoko-raritní nabídka je záměrně
+## luxusní nákup, ne rutinní - viz "exponenciální cena, téměř lineární
 ## bonus" z balance brainstormu, který k tomuhle systému vedl.
 const SHOP_RARITY_COST_RATIOS: Array[float] = [1.0, 1.4, 2.25, 3.75]
 
@@ -252,21 +264,21 @@ var pending_drafts: int = 0
 ## Itemy nabídnuté v AKTUÁLNĚ čekající draft nabídce - resolve_draft() proti
 ## nim ověřuje, že hráč vybírá opravdu z toho, co bylo nabídnuto.
 var _current_offer: Array = []
-## Vlastněné obchodní itemy: item_id -> aktuální rarita (ShopRarity, viz
-## níže). Item v dictionary = vlastněný; klíč "hodnota" je jeho rank/tier
-## (na rozdíl od draftu, kde item_ranks čísluje 0 = nevlastněný, tady
-## nevlastněný item v dictionary vůbec není - přítomnost = vlastnictví,
-## stejně jako to bylo dřív u Array[String]). Počet klíčů je omezený na
-## MAX_SHOP_SLOTS.
-var owned_shop_items: Dictionary = {}
-## item_id -> celkem zlata investováno (nákup + všechna vylepšení) - použije
-## se pro refund při prodeji (viz sell_shop_item()), aby prodej Diamantového
-## itemu vrátil poměrnou část ze VŠECH peněz do něj vložených, ne jen z
-## poslední koupě/vylepšení.
-var shop_item_investment: Dictionary = {}
-## Aktuálně nabídnuté itemy v obchodě (SHOP_OFFER_SIZE kusů) - viz
-## _generate_shop_offer(). Prázdné, dokud hráč poprvé nedohraje 10. vlnu.
-var shop_offer: Array[String] = []
+## Aktivní obchodní itemy - přispívají do get_stat_bonus(). Každý prvek je
+## Dictionary {"item_id": String, "rarity": ShopRarity, "cost_paid": int} -
+## "cost_paid" je zlato vložené do TÉHLE konkrétní kopie (u sloučeného itemu
+## součet všech 3 kopií, co ho vytvořily), použije se pro refund při prodeji.
+## Max SHOP_ACTIVE_SLOTS prvků.
+var active_shop_items: Array[Dictionary] = []
+## Skladované obchodní itemy - stejný tvar prvku jako active_shop_items, ale
+## NEpřispívají do get_stat_bonus(). Sem se automaticky přesune nákup, když
+## jsou aktivní sloty plné - hráč je musí ručně aktivovat (move_shop_item_to_
+## active()), aby začaly něco dělat. Max SHOP_STASH_SLOTS prvků.
+var stash_shop_items: Array[Dictionary] = []
+## Aktuálně nabídnuté itemy v obchodě (SHOP_OFFER_SIZE kusů) - každý prvek
+## {"item_id": String, "rarity": ShopRarity}, viz _generate_shop_offer().
+## Prázdné, dokud hráč poprvé nedohraje 10. vlnu.
+var shop_offer: Array[Dictionary] = []
 ## Kolikrát byla aktuální nabídka přehozená - roste s reroll_shop(), resetuje
 ## se na 0 při každé nové nabídce. Určuje cenu dalšího rerollu.
 var shop_reroll_count: int = 0
@@ -299,8 +311,8 @@ func reset_game() -> void:
 	item_ranks.clear()
 	for item_id in ITEM_ORDER:
 		item_ranks[item_id] = 0
-	owned_shop_items.clear()
-	shop_item_investment.clear()
+	active_shop_items.clear()
+	stash_shop_items.clear()
 	shop_offer.clear()
 	shop_reroll_count = 0
 	shop_available = false
@@ -361,15 +373,33 @@ func _open_periodic_shop() -> void:
 	shop_auto_open_requested.emit()
 
 
-## Vybere SHOP_OFFER_SIZE náhodných itemů (bez opakování v rámci JEDNÉ
-## nabídky) ze SHOP_ITEM_ORDER. Nesahá na shop_reroll_count - o to se stará
-## volající (_open_periodic_shop() ho vynuluje, reroll_shop() ho zvyšuje),
-## protože "nová nabídka" znamená něco jiného v obou případech.
+## Vybere SHOP_OFFER_SIZE náhodných itemů (bez opakování stejného ID v rámci
+## JEDNÉ nabídky) ze SHOP_ITEM_ORDER a KAŽDÉMU nezávisle vylosuje raritu podle
+## SHOP_RARITY_WEIGHTS - na rozdíl od dřívějška, kdy byla nabídka vždy na
+## BRONZE, teď hráč může narazit rovnou na vzácnější kus (za odpovídající
+## cenu, viz get_shop_item_cost()). Nesahá na shop_reroll_count - o to se
+## stará volající (_open_periodic_shop() ho vynuluje, reroll_shop() ho
+## zvyšuje), protože "nová nabídka" znamená něco jiného v obou případech.
 func _generate_shop_offer() -> void:
 	var pool: Array[String] = SHOP_ITEM_ORDER.duplicate()
 	pool.shuffle()
-	shop_offer = pool.slice(0, SHOP_OFFER_SIZE)
+	var picked_ids: Array = pool.slice(0, SHOP_OFFER_SIZE)
+
+	shop_offer = []
+	for item_id in picked_ids:
+		shop_offer.append({"item_id": item_id, "rarity": _roll_shop_rarity()})
 	shop_offer_changed.emit(shop_offer)
+
+
+## Vylosuje raritu podle SHOP_RARITY_WEIGHTS (kumulativní pravděpodobnost).
+func _roll_shop_rarity() -> ShopRarity:
+	var roll: float = randf()
+	var cumulative: float = 0.0
+	for tier in SHOP_RARITY_WEIGHTS.size():
+		cumulative += SHOP_RARITY_WEIGHTS[tier]
+		if roll < cumulative:
+			return tier
+	return SHOP_RARITY_WEIGHTS.size() - 1 as ShopRarity # pojistka pro zaokrouhlovací chyby
 
 
 ## Cena dalšího rerollu - roste s každým rerollem v AKTUÁLNÍ nabídce (viz
@@ -490,17 +520,16 @@ func get_stat_bonus(stat_id: String) -> float:
 		if definition["stat"] == stat_id:
 			bonus += float(definition["per_rank"]) * float(item_ranks[item_id])
 
-	for item_id in owned_shop_items:
-		var stats: Dictionary = SHOP_ITEMS[item_id]["stats"]
+	for entry in active_shop_items:
+		var stats: Dictionary = SHOP_ITEMS[entry["item_id"]]["stats"]
 		if stats.has(stat_id):
-			var tier: int = owned_shop_items[item_id]
-			bonus += float(stats[stat_id]) * SHOP_RARITY_MULTIPLIERS[tier]
+			bonus += float(stats[stat_id]) * SHOP_RARITY_MULTIPLIERS[entry["rarity"]]
 
 	return bonus
 
 
-## Cena za DOSAŽENÍ daného stupně rarity (koupě na BRONZE, nebo vylepšení
-## na SILVER/GOLD/DIAMOND) - poměr ceny itemu podle SHOP_RARITY_COST_RATIOS.
+## Cena KOUPĚ itemu na daném stupni rarity - poměr ceny itemu podle
+## SHOP_RARITY_COST_RATIOS.
 func get_shop_item_cost(item_id: String, tier: ShopRarity) -> int:
 	var base_cost: float = float(SHOP_ITEMS[item_id]["cost"])
 	return int(round(base_cost * SHOP_RARITY_COST_RATIOS[tier]))
@@ -526,71 +555,133 @@ func _format_shop_stat_number(value: float) -> String:
 	return "%.1f" % value
 
 
-## true, pokud je pro item volný slot, hráč ho ještě nevlastní a má dost
-## zlata na koupi na BRONZE - _refresh_shop_panel() v hud.gd tímhle rozhoduje,
-## jestli má tlačítko "Koupit" být aktivní.
-func can_buy_shop_item(item_id: String) -> bool:
-	if owned_shop_items.has(item_id):
+## true, pokud nabídka na daném indexu existuje, hráč má dost zlata na její
+## cenu (podle rarity, kterou nabídka vylosovala) a je volný aspoň jeden
+## slot (aktivní NEBO sklad) - _refresh_shop_panel() v hud.gd tímhle
+## rozhoduje, jestli má tlačítko "Koupit" být aktivní.
+func can_buy_shop_item(offer_index: int) -> bool:
+	if offer_index < 0 or offer_index >= shop_offer.size():
 		return false
-	if owned_shop_items.size() >= MAX_SHOP_SLOTS:
+	var offer_entry: Dictionary = shop_offer[offer_index]
+	if currency < get_shop_item_cost(offer_entry["item_id"], offer_entry["rarity"]):
 		return false
-	return currency >= get_shop_item_cost(item_id, ShopRarity.BRONZE)
+	return active_shop_items.size() < SHOP_ACTIVE_SLOTS or stash_shop_items.size() < SHOP_STASH_SLOTS
 
 
-func buy_shop_item(item_id: String) -> bool:
-	if not can_buy_shop_item(item_id):
+## Koupí item z nabídky na indexu offer_index, v RARITĚ, kterou nabídka
+## vylosovala (ne vždy BRONZE, viz _generate_shop_offer()). Nová kopie jde
+## přednostně do aktivních slotů, do skladu jen když jsou aktivní plné -
+## koupě tak hráče nikdy zbytečně neblokuje, jen mu časem zaplní sklad.
+## Po přidání se zkusí sloučení (viz _try_merge_shop_item()).
+func buy_shop_item(offer_index: int) -> bool:
+	if not can_buy_shop_item(offer_index):
 		return false
 
-	var cost: int = get_shop_item_cost(item_id, ShopRarity.BRONZE)
+	var offer_entry: Dictionary = shop_offer[offer_index]
+	var item_id: String = offer_entry["item_id"]
+	var rarity: int = offer_entry["rarity"]
+	var cost: int = get_shop_item_cost(item_id, rarity)
+
 	currency -= cost
 	currency_changed.emit(currency)
-	owned_shop_items[item_id] = ShopRarity.BRONZE
-	shop_item_investment[item_id] = cost
+
+	var instance: Dictionary = {"item_id": item_id, "rarity": rarity, "cost_paid": cost}
+	if active_shop_items.size() < SHOP_ACTIVE_SLOTS:
+		active_shop_items.append(instance)
+	else:
+		stash_shop_items.append(instance)
+
+	shop_inventory_changed.emit()
+	_try_merge_shop_item(item_id, rarity)
+	return true
+
+
+## Když má hráč (napříč aktivními sloty I skladem dohromady) aspoň 3 kopie
+## stejného itemu na stejné raritě, automaticky je sloučí do 1 kopie o
+## stupeň vyšší - jediný způsob, jak item ve hře posílit (žádné placené
+## vylepšení). "cost_paid" sloučené kopie je součet všech 3 spotřebovaných,
+## aby prodej pořád vracel poměrnou část ze VŠÍ investice (viz
+## sell_shop_item()). Rekurzivní pro řídký případ, kdy sloučení náhodou
+## vytvoří hned třetí kopii vyšší rarity (např. hromadný debug nákup).
+func _try_merge_shop_item(item_id: String, rarity: int) -> void:
+	if rarity >= ShopRarity.DIAMOND:
+		return
+
+	var matches: Array = []
+	for i in active_shop_items.size():
+		if active_shop_items[i]["item_id"] == item_id and active_shop_items[i]["rarity"] == rarity:
+			matches.append({"collection": "active", "index": i})
+	for i in stash_shop_items.size():
+		if stash_shop_items[i]["item_id"] == item_id and stash_shop_items[i]["rarity"] == rarity:
+			matches.append({"collection": "stash", "index": i})
+
+	if matches.size() < 3:
+		return
+
+	var to_consume: Array = matches.slice(0, 3)
+	# Mazat od nejvyššího indexu v každé kolekci, jinak by se nižší indexy
+	# posunuly a další remove_at() by smazal špatný prvek.
+	to_consume.sort_custom(func(a, b): return a["index"] > b["index"])
+
+	var total_cost: int = 0
+	for m in to_consume:
+		var collection: Array = active_shop_items if m["collection"] == "active" else stash_shop_items
+		total_cost += int(collection[m["index"]]["cost_paid"])
+		collection.remove_at(m["index"])
+
+	var merged_instance: Dictionary = {
+		"item_id": item_id, "rarity": rarity + 1, "cost_paid": total_cost
+	}
+	if active_shop_items.size() < SHOP_ACTIVE_SLOTS:
+		active_shop_items.append(merged_instance)
+	else:
+		stash_shop_items.append(merged_instance)
+
+	shop_inventory_changed.emit()
+	_try_merge_shop_item(item_id, rarity + 1)
+
+
+## Přesune kopii z aktivních slotů do skladu (přestane přispívat do statů).
+func move_shop_item_to_stash(index: int) -> bool:
+	if index < 0 or index >= active_shop_items.size():
+		return false
+	if stash_shop_items.size() >= SHOP_STASH_SLOTS:
+		return false
+
+	var instance: Dictionary = active_shop_items[index]
+	active_shop_items.remove_at(index)
+	stash_shop_items.append(instance)
 	shop_inventory_changed.emit()
 	return true
 
 
-## true, pokud hráč item vlastní, ještě není na DIAMOND a má dost zlata na
-## další stupeň.
-func can_upgrade_shop_item(item_id: String) -> bool:
-	if not owned_shop_items.has(item_id):
+## Přesune kopii ze skladu do aktivních slotů (začne přispívat do statů).
+func move_shop_item_to_active(index: int) -> bool:
+	if index < 0 or index >= stash_shop_items.size():
 		return false
-	var current_tier: int = owned_shop_items[item_id]
-	if current_tier >= ShopRarity.DIAMOND:
-		return false
-	return currency >= get_shop_item_cost(item_id, current_tier + 1)
-
-
-## Zvýší raritu vlastněného itemu o jeden stupeň - "vidět item podruhé v
-## nabídce" je jediný způsob, jak k tomu dojde (viz _generate_shop_offer(),
-## nabídka NEfiltruje už vlastněné itemy pryč přesně kvůli tomuhle).
-func upgrade_shop_item(item_id: String) -> bool:
-	if not can_upgrade_shop_item(item_id):
+	if active_shop_items.size() >= SHOP_ACTIVE_SLOTS:
 		return false
 
-	var next_tier: int = owned_shop_items[item_id] + 1
-	var cost: int = get_shop_item_cost(item_id, next_tier)
-	currency -= cost
-	currency_changed.emit(currency)
-	owned_shop_items[item_id] = next_tier
-	shop_item_investment[item_id] = int(shop_item_investment.get(item_id, 0)) + cost
+	var instance: Dictionary = stash_shop_items[index]
+	stash_shop_items.remove_at(index)
+	active_shop_items.append(instance)
 	shop_inventory_changed.emit()
 	return true
 
 
-## Vrátí SHOP_SELL_REFUND_RATIO z CELKOVÉ investice do itemu (nákup + všechna
-## vylepšení, viz shop_item_investment) a item zmizí ze slotů úplně na
-## jakémkoliv stupni - obchod neumožňuje prodat "jen jeden stupeň zpátky".
-func sell_shop_item(item_id: String) -> bool:
-	if not owned_shop_items.has(item_id):
+## Vrátí SHOP_SELL_REFUND_RATIO ze "cost_paid" prodávané kopie (u sloučeného
+## itemu je to součet všech kopií, co ho vytvořily, viz _try_merge_shop_item())
+## a kopie zmizí úplně z dané kolekce ("active" nebo "stash").
+func sell_shop_item(collection_name: String, index: int) -> bool:
+	var collection: Array = active_shop_items if collection_name == "active" else stash_shop_items
+	if index < 0 or index >= collection.size():
 		return false
 
-	var invested: int = int(shop_item_investment.get(item_id, 0))
-	var refund: int = int(round(float(invested) * SHOP_SELL_REFUND_RATIO))
+	var instance: Dictionary = collection[index]
+	var refund: int = int(round(float(instance["cost_paid"]) * SHOP_SELL_REFUND_RATIO))
+	collection.remove_at(index)
 	currency += refund
 	currency_changed.emit(currency)
-	owned_shop_items.erase(item_id)
-	shop_item_investment.erase(item_id)
 	shop_inventory_changed.emit()
 	return true
 

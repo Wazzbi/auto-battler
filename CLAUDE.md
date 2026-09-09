@@ -438,78 +438,87 @@ restarts, not game state).
 **`ShopPanel` must stay well under the game's 720px window height** — it once grew to exactly
 720px tall (edge-to-edge with the default window, zero margin) after adding a now-removed combine-
 items section, which pushed the "Zavřít obchod" button off-screen with no way to close the panel.
-Currently 310px tall (one row of 4 cards + a reroll button + close button) with comfortable margin.
-Any future addition to the shop panel needs to keep an eye on this budget rather than just growing
-the panel to fit new content.
+Currently 520px tall (offer row + reroll button + active row + stash row + close button) — still
+under budget, but with much less spare margin than before now that the active/stash sections exist;
+any future addition needs to actively check this rather than assume there's room.
 
 **Shop items are a separate system from the item draft** (`GameManager.SHOP_ITEMS`/
-`SHOP_ITEM_ORDER`, `owned_shop_items`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is
-free, randomly offered, single-stat, and unlimited-rank, a shop item is: bought with gold from a
-rotating offer (see above), grants **multiple stats at once** (e.g. "Přebíječ jader" = +6 damage
-AND +0.2 attack speed at Bronz — see rarity below), and can be owned at up to 4 **rarity** tiers
-rather than the draft's open-ended ranks. This was a deliberate design pivot mid-brainstorm,
-modeled after League of Legends' item system (discrete items, not draft-style stacking ranks)
-instead of extending the draft's rank-based pattern to gold purchases — the two systems are meant
-to feel different, not like two currencies buying the same thing. Ownership is capped at
-`MAX_SHOP_SLOTS` (6) even though only 7 items total exist and only 4 show at once — the cap matters
-less now that the offer itself is already scarce, but stays in place for when the item pool grows
-past 7. `get_stat_bonus(stat_id)` sums both the draft's `item_ranks` contribution and shop items'
-`stats` (× rarity multiplier, see below) contribution for a given stat — a player can own both
-"Jádro síly" (draft) *and* "Přebíječ jader" (shop, which also grants damage) at the same time;
-their damage bonuses just add together, no conflict.
+`SHOP_ITEM_ORDER`, `Control/ShopPanel` in `hud.tscn`). Where a draft item is free, randomly offered,
+single-stat, and unlimited-rank, a shop item is: bought with gold from a rotating offer that already
+carries a rolled **rarity** (see below), grants **multiple stats at once** (e.g. "Přebíječ jader" =
++6 damage AND +0.2 attack speed at Bronze), and merges with duplicates instead of being upgraded
+with gold. This was a deliberate design pivot mid-brainstorm, modeled after League of Legends' item
+system (discrete multi-stat items) then further reshaped after The Bazaar (Steam card/auto-battler)
+for the rarity/merge/stash mechanics below — the draft and shop are meant to feel like different
+systems, not two currencies buying the same thing. `get_stat_bonus(stat_id)` sums both the draft's
+`item_ranks` contribution and **active** shop items' `stats` (× rarity multiplier) contribution for
+a given stat — a player can own both "Jádro síly" (draft) *and* "Přebíječ jader" (shop, which also
+grants damage) at the same time; their damage bonuses just add together, no conflict. **Only active
+items count — stashed ones don't** (see below).
 
-**Rarity system** (`GameManager.ShopRarity` enum, `SHOP_RARITY_NAMES`/`SHOP_RARITY_MULTIPLIERS`/
-`SHOP_RARITY_COST_RATIOS`, `owned_shop_items: Dictionary` item_id → tier, `shop_item_investment`):
-implemented 2026-09-08, replacing the earlier tier-2 "combine" system (2 items fused into 1 — see
-below) with a single unified mechanic. `owned_shop_items` changed from `Array[String]` to
-`Dictionary` (item_id → `ShopRarity` int) specifically to hold this — **anywhere iterating it by
-index (`owned_shop_items[i]`) is now wrong**; use `.keys()[i]` for positional access (see
-`_refresh_shop_slots()` in `hud.gd`) or `for item_id in owned_shop_items` for unordered iteration.
-Four tiers — BRONZE (0, the initial purchase) → SILVER → GOLD → DIAMOND — each multiplying the
-item's base (`stats` dict, always written as Bronze-tier values) by `SHOP_RARITY_MULTIPLIERS`
-(1.0×/1.6×/2.6×/4.2×, ~1.6× compounding per tier). Buying/upgrading costs
-`SHOP_ITEMS[item_id]["cost"] * SHOP_RARITY_COST_RATIOS[tier]` (ratios 1.0/1.4/2.25/3.75) — cost
-grows faster than power per tier (8.4× the gold for 4.2× the power at Diamond), a deliberate luxury
-tax on the top tier rather than a routine goal, per the "exponential cost vs. near-linear bonus"
-balancing principle this design came from. **Seeing an already-owned item reappear in the rotating
-offer is the only way to upgrade it** — `_generate_shop_offer()` never filters owned items out of
-the pool specifically so this can happen; the card's `ActionButton` reads "Vylepšit" instead of
-"Koupit" once owned, and locks to disabled "Max" once at DIAMOND. `get_shop_item_desc(item_id,
-tier)` formats the *actual* scaled numbers for the given tier (there's no static `desc` string in
-`SHOP_ITEMS` anymore — it would go stale the instant an item ranks up) via `STAT_DISPLAY_NAMES`,
-a stat-id → Czech unit mapping shared with nothing else. **Special "build-enabler" unique effects
-unlocking at Gold are still just a design note, not built** — no `SHOP_ITEMS` entry has one yet;
-see `project_future_active_abilities` memory for the candidate idea (orbital bombardment) that's
-meant to become one eventually.
+**Rarity + merge system** (`GameManager.ShopRarity` enum, `SHOP_RARITY_NAMES`/
+`SHOP_RARITY_WEIGHTS`/`SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS`): built 2026-09-08,
+replacing an earlier same-day "pay gold to upgrade an owned item" version after the user clarified
+they wanted The Bazaar's actual mechanic instead. Four tiers — BRONZE → SILVER → GOLD → DIAMOND —
+each multiplying an item's base (`stats` dict, always written as Bronze-tier values) by
+`SHOP_RARITY_MULTIPLIERS` (1.0×/1.6×/2.6×/4.2×, ~1.6× compounding per tier). **The shop offer rolls
+a random rarity per slot** (`_roll_shop_rarity()`, weights `SHOP_RARITY_WEIGHTS` = 70%/20%/8%/2% —
+low rarities common, Diamond rare) — buying an offered item costs
+`SHOP_ITEMS[item_id]["cost"] * SHOP_RARITY_COST_RATIOS[tier]` (ratios 1.0/1.4/2.25/3.75) for
+*whatever* rarity got rolled, not always Bronze. **Owning 3 copies of the same item at the same
+rarity auto-merges them into 1 copy one rarity higher** (`_try_merge_shop_item()`, called after
+every purchase) — this is the *only* way an item gets stronger; there is no paid upgrade path
+anymore. The offer intentionally never filters out items the player already owns, since seeing a
+duplicate is the entire point. `get_shop_item_desc(item_id, tier)` formats the *actual* scaled
+numbers for a given tier (no static `desc` string in `SHOP_ITEMS` — it would go stale the instant
+an item merges up) via `STAT_DISPLAY_NAMES`. **Special "build-enabler" unique effects unlocking at
+Gold are still just a design note, not built** — see `project_future_active_abilities` memory.
 
-**Each shop card has two buttons: `ActionButton` (Koupit/Vylepšit/Max) and `SellButton` (always
-"Prodat")** — a single toggle button (buy vs. sell) stopped being enough once an owned item has two
-separate meaningful actions (upgrade *or* sell) instead of one. `SellButton` is enabled at any
-owned tier, including DIAMOND, so maxing an item never removes the ability to cash it back out.
-`hud.gd`'s `_on_shop_card_action_pressed(slot_index)` / `_on_shop_card_sell_pressed(slot_index)`
-both resolve `GameManager.shop_offer[slot_index]` at *click time* (not a value bound at setup),
-same reasoning as before: what's shown in a given slot changes with every reroll.
+**Active items vs. stash** (`active_shop_items`/`stash_shop_items: Array[Dictionary]`,
+`SHOP_ACTIVE_SLOTS` 6 / `SHOP_STASH_SLOTS` 9): each owned copy is one instance
+`{"item_id", "rarity", "cost_paid"}` living in exactly one of these two arrays — there's no
+"owned_shop_items" dictionary anymore, ownership *is* being present in one of these lists.
+**Only `active_shop_items` feeds `get_stat_bonus()`** — stash is inert storage, purely there so a
+player can hold spare/duplicate copies (hunting a 3rd for a merge, or benching something they might
+want later) without being forced to make a keep-or-sell decision the instant a purchase doesn't fit
+their 6 active slots. `buy_shop_item()` places a new copy into the first active slot with room, and
+only overflows to stash once active is full — purchases are never blocked by a full active loadout,
+only by *both* collections being completely full. Moving between the two
+(`move_shop_item_to_stash(index)` / `move_shop_item_to_active(index)`) and selling
+(`sell_shop_item(collection_name, index)`, `"active"` or `"stash"`) all address items by **array
+index within that specific collection** — there's no global item-instance ID, so an index is only
+meaningful alongside which collection it's in.
 
-**Selling refunds `SHOP_SELL_REFUND_RATIO` (50%) of *total gold ever invested* in the item, not
-just its current tier's cost** — `shop_item_investment[item_id]` accumulates every gold amount
-spent buying and upgrading that item, and `sell_shop_item()` refunds half of that running total,
-then clears both `owned_shop_items[item_id]` and `shop_item_investment[item_id]`. Selling a
-Diamond item bought for 200 and upgraded through 280/450/750 (1680 total) refunds 840, not just
-50% of the 750-gold Diamond upgrade fee — matches the reasoning already applied to the draft's
-Debug "Reset itemy" (no refund at all there) in spirit: the player's *total* investment is what
-selling should be measured against, not the most recent transaction alone.
+**Selling refunds `SHOP_SELL_REFUND_RATIO` (50%) of that specific instance's `cost_paid`** — for a
+merged item, `cost_paid` is the *sum* of all 3 consumed copies' `cost_paid` (set once at merge time
+in `_try_merge_shop_item()`), so selling a merged Silver item still refunds half of everything spent
+building it, not just a fraction of one imaginary "upgrade fee." This preserves the "refund total
+investment, not last transaction" principle from the (now-removed) gold-upgrade version, just
+computed differently since there's no per-item running total to maintain — it falls out naturally
+from summing at merge time.
 
-**There used to be a tier-2 "combine" system here (removed 2026-09-08, same day rarity was
-built)** — pairs of basic items could be fused into a stronger third item
-(`combine_shop_item()`/`SHOP_COMBINE_ORDER`/`recipe` fields). It solved the same design goal as
-rarity (reward for repeated investment in one item) and was retired in favor of it as a single
-unified mechanic. If you see references to those removed names anywhere, they're stale.
+**There used to be two other approaches to "making a shop item stronger" here, both removed the
+same day (2026-09-08) this system was built**: a tier-2 "combine 2 different items into 1" system,
+and (later that same day) a "pay gold to upgrade one owned item through 4 tiers" system. Both were
+replaced once the user clarified the actual intended mechanic (Bazaar-style: rarity is rolled in
+the offer, and 3 matching duplicates auto-merge). If you see references to `combine_shop_item()`,
+`SHOP_COMBINE_ORDER`, `recipe`, `owned_shop_items`, `shop_item_investment`, `upgrade_shop_item()`,
+or `MAX_SHOP_SLOTS` (renamed `SHOP_ACTIVE_SLOTS`) anywhere, they're all stale.
 
-**`Control/BottomBar/ItemSlot1..6` now display owned shop items (name + rarity tier)** (`hud.gd`'s
-`_refresh_shop_slots()`), filled in `owned_shop_items.keys()` order so empty slots always trail at
-the end regardless of *which* item was sold — unlike the draft's `PickedItemSlot0..6` (fixed per-item
-position from `ITEM_ORDER`, grayed at rank 0), there's no fixed "this item always lives in slot 3"
-mapping for shop items, since ownership is a dynamic subset of 6 out of 7 possible items.
+**The 6 active + 9 stash mini-slots in the shop panel are built procedurally in `hud.gd`, not
+hand-authored in `hud.tscn`** (`_build_shop_stash_ui()`/`_create_shop_mini_slot()`) — 15 nearly
+identical small widgets (a `Label` + 1-2 `Button`s each) were judged not worth writing by hand in
+the scene file; `hud.tscn` only has two empty `Control` containers
+(`ActiveItemsContainer`/`StashContainer`) that the code populates once in `_ready()` and then
+refreshes in place. Each widget is tracked as a plain `Dictionary` (`{"panel", "label", "buttons"}`)
+in `_active_slot_widgets`/`_stash_slot_widgets` rather than typed nodes, since they were never
+declared in the scene tree to have `@onready`-style paths in the first place.
+
+**`Control/BottomBar/ItemSlot1..6` display *active* shop items only (name + rarity), positionally**
+(`hud.gd`'s `_refresh_shop_slots()`) — stashed items never show here, matching "only active items
+matter for gameplay"; this is read-only, unlike the interactive mini-slots inside the open shop
+panel. Empty slots trail at the end regardless of which specific slot index was vacated, same
+reasoning as before.
 
 **Debug panel** (`hud.gd`, `scenes/ui/eye_icon.gd`): a dev-only panel toggled by the `DebugButton`
 in the top-right corner, which shows "Debug" plus a procedurally-drawn eye icon (open/closed,
@@ -568,5 +577,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`), `MAX_SHOP_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (rarity tier power/cost curves) — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (rarity tier power/cost curves) — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)
