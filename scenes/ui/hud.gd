@@ -59,10 +59,9 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var shop_stash_container: Control = $Control/ShopPanel/StashContainer
 ## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (jen zobrazení, žádná
 ## interakce - prodej/přesun do skladu se řeší jen uvnitř otevřeného
-## obchodu, viz _active_slot_widgets). Na rozdíl od schopností (procedurální
-## sloty, pevné pořadí podle ABILITY_ORDER, viz _build_abilities_ui()) se
-## tyhle plní pozičně podle GameManager.active_shop_items, viz
-## _refresh_shop_slots().
+## obchodu, viz _active_slot_widgets). Plní se pozičně podle
+## GameManager.active_shop_items, viz _refresh_shop_slots() - stejný
+## princip teď platí i pro schopnosti, viz _refresh_abilities().
 @onready var shop_slot_nodes: Array = [
 	$Control/BottomBar/ItemSlot1,
 	$Control/BottomBar/ItemSlot2,
@@ -80,16 +79,17 @@ const SHOP_MINI_SLOT_GAP: float = 6.0
 var _active_slot_widgets: Array = []
 var _stash_slot_widgets: Array = []
 
-## Stejný princip pro schopnosti (viz _build_abilities_ui()) - užší než
-## obchodní sloty, protože nemají tlačítka, jen text. Sloty se od 2026-09-09
-## řadí do ABILITY_SLOT_ROWS řádků (dřív jeden dlouhý řádek) - vešly se tak
-## na místo, které předtím zabíraly ItemSlot1..6 (viz "Prohozeny sloty" v
-## CLAUDE.md), místo aby se do jednoho řádku muselo vejít všech 9 schopností.
+## Stejný princip jako obchodní mini-sloty, jen bez tlačítek. Od 2026-09-09
+## je hromádka schopností MIMO BottomBar (vlevo, nad zemí) a POZIČNÍ - jeden
+## slot na KAŽDOU vlastněnou instanci (ne dedikovaný slot podle typu jako
+## dřív, viz _refresh_abilities()), sloupce rostou svisle a při
+## ABILITY_STACK_MAX_ROWS se zalomí do dalšího sloupce vpravo, aby hromádka
+## nikdy nezasáhla do BottomBaru - viz "Hromádka schopností" v CLAUDE.md.
 const ABILITY_MINI_SLOT_WIDTH: float = 60.0
 const ABILITY_MINI_SLOT_HEIGHT: float = 48.0
 const ABILITY_MINI_SLOT_GAP: float = 4.0
-const ABILITY_SLOT_ROWS: int = 2
-@onready var abilities_container: Control = $Control/BottomBar/AbilitiesContainer
+const ABILITY_STACK_MAX_ROWS: int = 6
+@onready var abilities_container: Control = $Control/AbilitiesContainer
 
 ## Jediný panel volby schopnosti (viz "Schopnosti" v CLAUDE.md) - 3 karty,
 ## GameManager.ABILITY_CHOICE_COUNT. Nahradil dřívější oddělené DraftPanel
@@ -156,13 +156,6 @@ var _end_screen_countdown_active: bool = false
 var _active_countdown_label: Label = null
 var _countdown_label_prefix: String = ""
 
-## Procedurální mini-sloty pro vlastněné schopnosti v BottomBaru, indexované
-## stejně jako GameManager.ABILITY_ORDER - vytváří se v _build_abilities_ui()
-## (stejný princip jako obchodní _active_slot_widgets/_stash_slot_widgets),
-## ne ručně v hud.tscn, protože 9+ skoro identických bloků (a jejich údržba
-## při každé nové schopnosti) by bylo zbytečně křehké psát ručně.
-var _ability_slot_widgets: Array = []
-
 ## Dokud je zapnuté, nabídky schopností se vyřizují samy (náhodný pick) bez
 ## zobrazení AbilityDraftPanelu - vypnuto defaultně, protože smysl nabídky
 ## je, že hráč vidí a dělá skutečnou volbu. Ovládá se přes "Auto vylepšení"
@@ -196,7 +189,6 @@ func _ready() -> void:
 	ability_draft_panel.hide()
 	wave_cleared_label.hide()
 
-	_build_abilities_ui()
 	_setup_shop_cards()
 	_build_shop_stash_ui()
 
@@ -226,41 +218,6 @@ func _process(delta: float) -> void:
 		_restart_game()
 	else:
 		_update_end_screen_countdown_label()
-
-
-## Vytvoří jeden mini-slot na schopnost PROCEDURÁLNĚ pro každou položku
-## ABILITY_ORDER (stejný princip jako obchodní _create_shop_mini_slot(), jen
-## bez tlačítek - schopnosti se neprodávají ani nepřesouvají, jen zobrazují).
-## Rozloží sloty do ABILITY_SLOT_ROWS řádků (počet sloupců se dopočítá z
-## celkového počtu schopností), ne do jednoho dlouhého řádku - viz konstanty
-## výše. Volá se jednou v _ready(); mřížka roste automaticky s ABILITY_ORDER,
-## žádná ruční úprava hud.tscn není potřeba, když přibude další schopnost.
-func _build_abilities_ui() -> void:
-	var total: int = GameManager.ABILITY_ORDER.size()
-	var columns: int = ceili(float(total) / float(ABILITY_SLOT_ROWS))
-
-	for i in total:
-		var row: int = i / columns
-		var col: int = i % columns
-
-		var panel := Panel.new()
-		panel.position = Vector2(
-			col * (ABILITY_MINI_SLOT_WIDTH + ABILITY_MINI_SLOT_GAP),
-			row * (ABILITY_MINI_SLOT_HEIGHT + ABILITY_MINI_SLOT_GAP)
-		)
-		panel.size = Vector2(ABILITY_MINI_SLOT_WIDTH, ABILITY_MINI_SLOT_HEIGHT)
-		abilities_container.add_child(panel)
-
-		var label := Label.new()
-		label.position = Vector2(2.0, 2.0)
-		label.size = Vector2(ABILITY_MINI_SLOT_WIDTH - 4.0, ABILITY_MINI_SLOT_HEIGHT - 4.0)
-		label.add_theme_font_size_override("font_size", 8)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		panel.add_child(label)
-
-		_ability_slot_widgets.append({"panel": panel, "label": label})
 
 
 ## Zavolá Main po vytvoření hráče, aby se HUD napojil na jeho signály a staty.
@@ -401,32 +358,52 @@ func _on_ability_pick_pressed(offer_index: int) -> void:
 			get_tree().paused = false
 
 
-## Sloty vlastněných schopností v BottomBaru - ukazuje počet vlastněných
-## kopií a nejvyšší vlastněnou raritu (na rozdíl od jediného čísla "rank",
-## protože jeden ability_id může mít víc současně vlastněných instancí na
-## RŮZNÝCH raritách, viz GameManager.owned_abilities).
+## Hromádka vlastněných schopností VLEVO nad zemí (mimo BottomBar, viz
+## AbilitiesContainer v hud.tscn) - POZIČNÍ, jeden slot na KAŽDOU vlastněnou
+## instanci z GameManager.owned_abilities (stejný princip jako obchodní
+## _refresh_shop_slots()), ne dedikovaný slot podle ABILITY_ORDER jako dřív -
+## první vybraná schopnost je v prvním slotu, druhá ve druhém atd. a prázdné
+## sloty se vůbec nezobrazují. Sloupec roste svisle a po ABILITY_STACK_MAX_ROWS
+## se zalomí do dalšího sloupce vpravo, aby hromádka nikdy nezasáhla dolů do
+## BottomBaru bez ohledu na to, kolik instancí hráč nasbírá.
+## Přestavuje se celá od nuly při každé změně (odpojí a smaže staré
+## widgety) - vlastněných instancí přibývá/ubývá nepravidelně (nový pick,
+## sloučení o 2 míň), takže je jednodušší celou hromádku postavit znovu než
+## udržovat mapování indexů na existující uzly napříč sloučeními.
 func _refresh_abilities() -> void:
-	for i in GameManager.ABILITY_ORDER.size():
-		var ability_id: String = GameManager.ABILITY_ORDER[i]
+	for child in abilities_container.get_children():
+		child.queue_free()
+
+	for i in GameManager.owned_abilities.size():
+		var entry: Dictionary = GameManager.owned_abilities[i]
+		var ability_id: String = entry["ability_id"]
+		var rarity: int = entry["rarity"]
 		var definition: Dictionary = GameManager.ABILITIES[ability_id]
-		var widget: Dictionary = _ability_slot_widgets[i]
-		var label: Label = widget["label"]
 
-		var count: int = 0
-		var highest_rarity: int = -1
-		for entry in GameManager.owned_abilities:
-			if entry["ability_id"] == ability_id:
-				count += 1
-				highest_rarity = maxi(highest_rarity, entry["rarity"])
+		var col: int = i / ABILITY_STACK_MAX_ROWS
+		var row: int = i % ABILITY_STACK_MAX_ROWS
 
-		if count > 0:
-			label.text = "%s\n%dx %s" % [definition["short_name"], count, GameManager.SHOP_RARITY_NAMES[highest_rarity]]
-			widget["panel"].modulate = Color.WHITE
-			label.tooltip_text = "%s\n%s" % [definition["name"], GameManager.get_ability_desc(ability_id, highest_rarity)]
-		else:
-			label.text = "%s\n-" % definition["short_name"]
-			widget["panel"].modulate = LOCKED_ITEM_MODULATE
-			label.tooltip_text = definition["name"]
+		var panel := Panel.new()
+		panel.position = Vector2(
+			col * (ABILITY_MINI_SLOT_WIDTH + ABILITY_MINI_SLOT_GAP),
+			row * (ABILITY_MINI_SLOT_HEIGHT + ABILITY_MINI_SLOT_GAP)
+		)
+		panel.size = Vector2(ABILITY_MINI_SLOT_WIDTH, ABILITY_MINI_SLOT_HEIGHT)
+		abilities_container.add_child(panel)
+
+		var label := Label.new()
+		label.position = Vector2(2.0, 2.0)
+		label.size = Vector2(ABILITY_MINI_SLOT_WIDTH - 4.0, ABILITY_MINI_SLOT_HEIGHT - 4.0)
+		label.add_theme_font_size_override("font_size", 8)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.text = "%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[rarity]]
+		label.tooltip_text = "%s (%s)\n%s" % [
+			definition["name"], GameManager.SHOP_RARITY_NAMES[rarity],
+			GameManager.get_ability_desc(ability_id, rarity)
+		]
+		panel.add_child(label)
 
 
 ## Přenačte všechno, co se odvíjí od progrese. Volá se v _ready(), protože
@@ -635,12 +612,11 @@ func _clear_shop_mini_slot(widget: Dictionary) -> void:
 	widget["panel"].modulate = LOCKED_ITEM_MODULATE
 
 
-## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (mimo obchod samotný) - na
-## rozdíl od _refresh_abilities() (pevné pořadí podle ABILITY_ORDER) se sloty
-## plní POZIČNĚ podle GameManager.active_shop_items (Array), takže prázdné sloty
-## jsou vždy na konci bez ohledu na to, který konkrétní item byl prodán/
-## uskladněn. Sklad se tu nezobrazuje vůbec - ten je vidět jen uvnitř
-## otevřeného obchodu (viz _refresh_shop_stash_ui()).
+## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (mimo obchod samotný) - stejný
+## poziční princip jako _refresh_abilities() (podle GameManager.active_shop_items
+## Array), takže prázdné sloty jsou vždy na konci bez ohledu na to, který
+## konkrétní item byl prodán/uskladněn. Sklad se tu nezobrazuje vůbec - ten je
+## vidět jen uvnitř otevřeného obchodu (viz _refresh_shop_stash_ui()).
 func _refresh_shop_slots() -> void:
 	for i in shop_slot_nodes.size():
 		var slot: ColorRect = shop_slot_nodes[i]
