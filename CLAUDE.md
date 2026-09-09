@@ -496,15 +496,17 @@ description you find elsewhere as stale):
   `AbilitiesContainer` shifted down to follow both times.
 - **Top-right**: `LoopLabel` ("Kolo N") and `WaveLabel` ("Vlna N"), right-anchored, side by side
   (`WaveLabel` closest to the corner). Moved here from a fixed absolute position near screen-center
-  2026-09-09, same change as the top-left move above. **`WaveLabel` is right-aligned
-  (`horizontal_alignment = 2`), not centered** like every other label in this HUD — its box's right
-  edge sits at `offset_right = -20` (a 20px margin, deliberately matching `Portrait`'s 20px left
-  margin on the opposite corner), but centered text inside a fixed-width box leaves extra blank
-  space past the text itself, so centering made the rendered text's margin look bigger than 20px
-  and inconsistent with `Portrait`'s exact 20px. Right-aligning makes the *text* touch the 20px
-  boundary directly, matching regardless of how many digits "Vlna N" grows to. `LoopLabel` sits
-  20px to `WaveLabel`'s left (`offset_right = -180`, vs. `WaveLabel`'s `offset_left = -160`) and
-  stays centered as before — only the outer, screen-edge-facing label needed the alignment fix.
+  2026-09-09, same change as the top-left move above. **Both labels are right-aligned
+  (`horizontal_alignment = 2`), not centered** like every other label in this HUD — `WaveLabel`'s
+  box right edge sits at `offset_right = -20` (a 20px margin, deliberately matching `Portrait`'s
+  20px left margin on the opposite corner), but centered text inside a fixed-width box leaves extra
+  blank space past the text itself, so centering made the rendered text's margin look bigger than
+  20px and inconsistent with `Portrait`'s exact 20px. Right-aligning makes the *text* touch the
+  20px boundary directly, matching regardless of how many digits "Vlna N" grows to. `LoopLabel`
+  sits 20px to `WaveLabel`'s left (`offset_right = -180`, vs. `WaveLabel`'s `offset_left = -160`)
+  and was made right-aligned too (explicit user follow-up) so both labels' text hugs their own
+  box's right edge consistently, keeping the visible 20px gap between "Kolo N" and "Vlna N" exact
+  regardless of either number's digit count.
 - **Bottom-right, TEMPORARY** (user's own wording): `DebugButton`. Moved out of its long-standing
   top-right spot 2026-09-09 to make room for `LoopLabel`/`WaveLabel` — expect this to move again
   once the HUD's visual pass settles. Because `BottomBar` is an opaque `ColorRect`, `DebugButton`'s
