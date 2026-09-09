@@ -292,29 +292,35 @@ than partway through wave 2 — with the base enemy's `xp_reward` of 12 and `mai
 of 4, that's exactly 48 XP from clearing wave 1 alone. This was a deliberate pacing choice (verified
 with a throwaway headless simulation of waves 1-3, not just eyeballed): a new run should show the
 player *something* — a draft card — almost immediately, rather than several minutes of pure combat
-before the first meaningful choice appears. Each level queues one "item draft" (see below) — there
-is no per-stat purchasing, no ability tree, and (as of this note) **no automatic stat growth from
-levelling either**: `LEVEL_STAT_GROWTH` was deliberately removed, so a bare level-up (before the
-resulting draft is resolved) changes nothing about the player's stats. This was a conscious
-simplification, not an oversight — with both an automatic per-level bump *and* item picks
-contributing to the same numbers, a stat like "Poškození: 28" was a sum of an invisible part (level
-growth) and a visible, chosen part (item rank), so the player's choices didn't fully explain their
-own power. Now every point of every stat traces back to a specific picked item, which also matters
-more once real active/passive abilities join the item pool (see below) — there's one unified
-"level-up = one upgrade slot" model instead of two parallel growth tracks to keep straight.
+before the first meaningful choice appears. Each level queues one "item draft" (see below) *and*
+grants a small automatic stat bump via `GameManager.LEVEL_STAT_GROWTH` (a flat per-stat amount ×
+`player_level - 1`, added in `get_stat_bonus()`) — there is still no per-stat purchasing or ability
+tree, so the draft remains the only *choice*-driven growth, but a bare level-up is no longer a
+complete no-op for stats.
+
+**`LEVEL_STAT_GROWTH` was re-added 2026-09-09 after being deliberately removed earlier** (see git
+history) — the original removal was about making every stat point trace back to a visible, chosen
+item so nothing was an invisible sum; the re-addition solves a different problem, flagged as the
+"Balance caveat" below: a run's power depended *entirely* on draft luck, so a string of bad draft
+offers could leave a level-15 character barely stronger than a level-1 one. `LEVEL_STAT_GROWTH`'s
+values are deliberately small relative to items (e.g. one Silver-rarity "Přebíječ jader" grants +9.6
+damage; a level of automatic growth grants +0.5) — it's a floor under a run's power, not a
+replacement for the draft/shop as the main source of it, so player choices still define *most* of a
+build's identity.
 
 **Stats flow**: base stats live as `@export` vars on `player.gd` (`base_damage`,
 `base_attack_speed`, `base_attack_range`, `base_max_hp`, `base_armor`). Effective stats come from
 getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`,
 `get_hp_regen()`, `get_armor()`) that add `GameManager.get_stat_bonus(stat_id)` — **the single place
-where progression turns into numbers**, and now purely a sum of picked-item ranks (no level term at
-all). The player recomputes on the `level_changed` and `item_rank_changed` signals — `level_changed`
-alone is a no-op for stats now, kept only so UI (the level badge, etc.) stays in sync; the HUD never
-touches player stats directly. **Balance caveat**: removing the automatic floor means a run's power
-now depends entirely on what the (currently small, 7-item) draft pool happens to offer — going
-several levels without seeing a given stat's item is possible (~57% chance per level to miss any one
-specific item with `DRAFT_CHOICE_COUNT` 3 of 7), so a fragile-feeling run from bad luck is a known,
-accepted trade-off for now, not yet tuned away.
+where progression turns into numbers**, summing three sources: `LEVEL_STAT_GROWTH` (automatic, keyed
+by `player_level`), the draft's `item_ranks`, and the shop's `active_shop_items`. The player
+recomputes on the `level_changed` and `item_rank_changed` signals — `level_changed` now actually
+changes stats again (via the level-growth term), not just a UI sync no-op. **Balance caveat
+(partially addressed)**: a run's power still depends heavily on what the (currently small, 7-item)
+draft pool happens to offer — going several levels without seeing a given stat's item is possible
+(~57% chance per level to miss any one specific item with `DRAFT_CHOICE_COUNT` 3 of 7) — but
+`LEVEL_STAT_GROWTH` now guarantees a non-zero floor regardless of draft luck, so a bad-luck run is
+weaker, not stat-flat. Not claimed to fully solve fragility, just to soften the worst case.
 
 **Armor (`base_armor`, `get_armor()`, `kinetic_dampers` item)**: a flat, per-hit damage reduction —
 `take_damage()` in `player.gd` computes `reduced_amount = max(amount - get_armor(), amount *
@@ -580,5 +586,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (rarity tier power/cost curves) — there is no per-level stat growth table anymore, all stat growth comes from `ITEMS` and `SHOP_ITEMS`
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), item definitions (`ITEMS`) and `MAX_ITEM_RANK`, `DRAFT_CHOICE_COUNT`, `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (rarity tier power/cost curves), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to items/shop)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)
