@@ -290,23 +290,6 @@ const ABILITY_ORDER: Array[String] = [
 ## dřívější DRAFT_CHOICE_COUNT) teď, když je pool dost velký na skutečnou
 ## volbu; dokud existovala jen 1 aktivní schopnost, bylo to dočasně 1.
 const ABILITY_CHOICE_COUNT: int = 3
-## Nabídka schopnosti se objeví jednou za tolik ÚROVNÍ (na rozdíl od
-## dřívějšího draftu, co nabízel každou úroveň) - schopnosti mají být
-## vzácnější a výraznější moment, ne rutinní pick po každém levelu. Platí až
-## PO `ABILITY_RAMP_UNTIL_LEVEL` (viz níže) - do té doby se nabízí každou
-## úroveň. První-pass hodnota, viz project_balance_deferred v paměti pro
-## obecný přístup k tomuhle druhu čísel.
-const ABILITY_LEVEL_INTERVAL: int = 5
-## Do TÉHLE úrovně včetně se schopnost nabízí KAŽDOU úroveň (ne jen jednou za
-## ABILITY_LEVEL_INTERVAL) - stejný "postupný náběh" princip jako
-## `variant_ramp_start_wave`/`variant_ramp_full_wave` v main.gd. Přidáno
-## 2026-09-09 poté, co si uživatel všiml, že schopnosti jsou jediný skutečně
-## interaktivní prvek celé hry (postava se hýbe a střílí sama, žádný jiný
-## vstup od hráče neexistuje) - nabízet je jen jednou za 5 úrovní tak prvních
-## pár minut hry zbytečně vyprázdnilo. Náběh dá hráči rychlý sled voleb hned
-## na startu (stejný pocit jako starý item draft), a teprve po
-## `ABILITY_RAMP_UNTIL_LEVEL` se sníží na vzácnější, výraznější moment.
-const ABILITY_RAMP_UNTIL_LEVEL: int = 5
 ## Kolik stejných kopií stejné rarity stačí na sloučení do vyšší rarity - míň
 ## než obchodních 3 (viz SHOP_RARITY_* sekce), protože schopnosti se nabízí
 ## jen náhodně bez placeného rerollu.
@@ -346,8 +329,8 @@ var player_xp: int = 0
 var owned_abilities: Array[Dictionary] = []
 ## Kolik nabídek schopností čeká na vyřízení - víc než 1 může nastat, když
 ## hráč dostane hodně XP naráz a povýší o víc úrovní v jednom volání add_xp()
-## a přeskočí tak víc než jeden ABILITY_LEVEL_INTERVAL násobek najednou. HUD
-## nabídky vyřizuje jednu po druhé (viz resolve_ability_draft()).
+## (každá úroveň = 1 nabídka). HUD nabídky vyřizuje jednu po druhé (viz
+## resolve_ability_draft()).
 var pending_ability_drafts: int = 0
 ## Schopnosti nabídnuté v AKTUÁLNĚ čekající nabídce (ABILITY_CHOICE_COUNT
 ## prvků, každý {"ability_id": String, "rarity": int}) - resolve_ability_draft()
@@ -539,10 +522,10 @@ func add_xp(amount: int) -> void:
 
 func _level_up() -> void:
 	player_level += 1
-	# Do ABILITY_RAMP_UNTIL_LEVEL nabídka přijde KAŽDOU úroveň, pak jen
-	# jednou za ABILITY_LEVEL_INTERVAL - viz "Schopnosti" výše.
-	if player_level <= ABILITY_RAMP_UNTIL_LEVEL or player_level % ABILITY_LEVEL_INTERVAL == 0:
-		pending_ability_drafts += 1
+	# Nabídka schopnosti přijde na KAŽDÉ úrovni - žádný interval/ramp (viz
+	# "Schopnosti" výše, zjednodušeno 2026-09-09 poté, co simulace ukázala,
+	# že XP křivka sama o sobě dá první schopnosti dost rychle za sebou).
+	pending_ability_drafts += 1
 	# level_changed teď skutečně mění staty (LEVEL_STAT_GROWTH, viz
 	# get_stat_bonus()), ne jen UI sync - ale schopnosti pořád zůstávají
 	# hlavním zdrojem růstu, level growth je jen malá podlaha navrch.
@@ -886,8 +869,7 @@ func debug_add_currency(amount: int) -> void:
 	currency_changed.emit(currency)
 
 
-## DEBUG: rovnou vynutí jednu nabídku schopnosti bez čekání na
-## ABILITY_LEVEL_INTERVAL úrovní
+## DEBUG: rovnou vynutí jednu nabídku schopnosti bez čekání na level-up
 func debug_force_ability_draft() -> void:
 	pending_ability_drafts += 1
 	_try_offer_next_ability_draft()

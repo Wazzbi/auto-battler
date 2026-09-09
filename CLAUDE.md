@@ -293,7 +293,7 @@ from clearing wave 1 alone. This was a deliberate pacing choice (verified with a
 simulation of waves 1-3, not just eyeballed). Every level grants a small automatic stat bump via
 `GameManager.LEVEL_STAT_GROWTH` (a flat per-stat amount × `player_level - 1`, added in
 `get_stat_bonus()`); the real *choice*-driven growth comes from "Schopnosti" (see below), offered
-once every `ABILITY_LEVEL_INTERVAL` levels rather than every single one.
+on **every** level-up.
 
 **`LEVEL_STAT_GROWTH` was re-added 2026-09-09 after being deliberately removed earlier** (see git
 history) — the original removal was about making every stat point trace back to a visible, chosen
@@ -361,10 +361,8 @@ mechanic no longer made sense once both used rarity+merge. Every `ABILITIES` ent
 
 **Offer/merge mechanics**: `ABILITY_CHOICE_COUNT` (**3**, restored to the old draft's "pick one of
 three" feel now that the unified pool is big enough for a real choice — was briefly 1 while
-`double_tap` was the only ability that existed). `ABILITY_LEVEL_INTERVAL` (**5**) — once past the
-ramp (see next paragraph), an offer queues once every 5 player levels, not every level like the old
-item draft; schopnosti are meant to be a rarer, more deliberate moment later in a run now that a
-single pick can be a build-defining active ability, not just a numeric bump. `ABILITY_MERGE_THRESHOLD`
+`double_tap` was the only ability that existed). An offer queues on **every single level-up** — see
+"Offer cadence" below for why this replaced an earlier every-5-levels design. `ABILITY_MERGE_THRESHOLD`
 (**2**, not the shop's 3) — schopnosti are free/
 random with no reroll, so a lower merge threshold compensates for the player's lower control over
 which duplicate they get next. Offers roll a rarity per slot (`ABILITY_RARITY_WEIGHTS`, same
@@ -388,27 +386,33 @@ simpler to reason about than mixing which axis scales per-ability. **Multiple ow
 the same active schopnost trigger fully independently** — two Diamond `double_tap` copies both proc
 on the same 3rd shot, multiplying together (4× that hit), not adding.
 
-**Offer cadence ramps in over the first few levels** (`ABILITY_RAMP_UNTIL_LEVEL`, **5**) — up to and
-including this level, an offer queues every single level-up, not just once every
-`ABILITY_LEVEL_INTERVAL`. Added 2026-09-09, same day as the level-interval itself, after the user
-pointed out that schopnost picks are the ONLY interactive moment in the entire game — `player.gd`
-has no input handling at all (no movement/aim/dodge control; the character walks and shoots fully
-automatically), so a level-up card being the sole thing the player *does* means spacing those cards
-5x further apart than before made the opening minutes feel empty. Same graduated-easing shape as
-`variant_ramp_start_wave`/`variant_ramp_full_wave` in `main.gd` (ranged/sniper spawn chance), just a
-level threshold instead of a wave range: `_level_up()`'s guard is `player_level <=
-ABILITY_RAMP_UNTIL_LEVEL or player_level % ABILITY_LEVEL_INTERVAL == 0`, so levels 2-5 each queue an
-offer (matching the old every-level item draft's pacing for the run's opening stretch), then levels
-6-9 queue nothing, level 10 queues again (multiple of `ABILITY_LEVEL_INTERVAL`), and so on. First-pass
-value, not yet balance-tuned — see `project_balance_deferred` in memory.
+**Offer cadence — every level-up, no interval** (2026-09-09, went through two designs the same day).
+The unified system originally launched with `ABILITY_LEVEL_INTERVAL` (5) — an offer only once every
+5 player levels, mirroring the old separate active-ability pool's cadence. The user then pointed out
+`player.gd` has NO input handling at all (no movement/aim/dodge control; the character walks and
+shoots fully automatically), so a schopnost pick is the ONLY interactive moment in the entire game —
+spacing those 5x apart made the opening minutes feel empty. A same-day fix added
+`ABILITY_RAMP_UNTIL_LEVEL` (every level through 5, then the interval afterward, mirroring
+`main.gd`'s `variant_ramp_start_wave`/`variant_ramp_full_wave` ranged/sniper ramp), but the user
+flagged that dual-speed cadence itself as a problem — there was no UI cue explaining why, say, level
+6 gave nothing, so the slowdown read as confusing rather than intentional. The final fix (still
+2026-09-09) removed BOTH `ABILITY_LEVEL_INTERVAL` and `ABILITY_RAMP_UNTIL_LEVEL` entirely: `_level_up()`
+now unconditionally queues an offer every time, letting the game's own growing XP cost
+(`XP_PER_LEVEL_GROWTH`) be the *only* thing that paces how often picks arrive, rather than stacking a
+second, separate pacing mechanism on top of it — one lever instead of two, and no more cliff to
+explain in the UI. **Verified empirically, not assumed**: a headless simulation (real `main.tscn`,
+player made invincible to isolate pure XP pacing from survivability, "Auto vylepšení" force-enabled)
+showed the *existing* XP curve already reaches level 5 in ~1.6 minutes of game time and level 6 in
+~2.1 — comfortably inside the "first 3-5 minutes" target the user was aiming for, so `XP_BASE`/
+`XP_PER_LEVEL_GROWTH` needed no change at all once the offer-cadence problem itself was fixed.
 
 **The single unified offer/queue replaced two separate ones** — `pending_ability_drafts`/
 `_current_ability_offer`/`resolve_ability_draft(offer_index)` are now the only such state
 (`pending_drafts`/`_current_offer`/`resolve_draft()`/`ITEMS`/`ITEM_ORDER`/`draft_items`/
-`item_draft_ready`/`draft_inventory_changed`/`DraftPanel` are all gone — if you see any of these
-referenced, they're stale). `_level_up()` increments `pending_ability_drafts` when `player_level <=
-ABILITY_RAMP_UNTIL_LEVEL` or `player_level % ABILITY_LEVEL_INTERVAL == 0` (see ramp paragraph above),
-then calls `_try_offer_next_ability_draft()`, which
+`item_draft_ready`/`draft_inventory_changed`/`DraftPanel`/`ABILITY_LEVEL_INTERVAL`/
+`ABILITY_RAMP_UNTIL_LEVEL` are all gone — if you see any of these referenced, they're stale).
+`_level_up()` increments `pending_ability_drafts` unconditionally, then calls
+`_try_offer_next_ability_draft()`, which
 only actually rolls and emits `ability_draft_ready` if `_current_ability_offer` is empty — **this
 guard is load-bearing**, not decorative: a single big XP grant (e.g. the Debug panel's "+500 XP")
 can call `_level_up()` several times synchronously inside `add_xp()`'s loop, and without the guard
@@ -643,8 +647,9 @@ reuse the *real* code paths rather than shortcutting past them:
   else on this panel) is **not** reset by a scene reload; the button re-syncs its own label from
   the actual `Engine.time_scale` in `_setup_debug_panel()` so it doesn't lie after a restart.
 - **Vynutit schopnost** (node `ForceAbilityDraftButton`) calls `GameManager.debug_force_ability_draft()`
-  to queue an `AbilityDraftPanel` offer immediately, bypassing `ABILITY_LEVEL_INTERVAL` — the
-  fastest way to test the schopnost UI/flow without grinding XP.
+  to queue an `AbilityDraftPanel` offer immediately without a level-up — the fastest way to test the
+  schopnost UI/flow without grinding XP (offers already queue on every level-up normally, so this is
+  mostly useful for re-testing the panel without gaining another level).
 - **Max/Reset schopnosti** (node names `MaxItemsButton`/`ResetItemsButton`, kept from before the
   2026-09-09 draft/ability merge — only the Button `text` and `hud.gd` variable names changed) are a
   blunt build-testing tool — max gives every `ABILITIES` entry exactly 1 Diamond-rarity instance via
@@ -677,5 +682,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size), `ABILITY_LEVEL_INTERVAL` (5, levels between offers past the ramp), `ABILITY_RAMP_UNTIL_LEVEL` (5, offers every level up to here), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle)
