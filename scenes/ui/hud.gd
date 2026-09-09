@@ -2,9 +2,9 @@ extends CanvasLayer
 ## HUD - spodní lišta ve stylu MOBA her: staty, portrét s úrovní, HP a XP bar,
 ## sloty vlastněných schopností, sloty na předměty (budoucí loot), zlato a
 ## tlačítko obchodu. Progrese schopností funguje jako nabídka (viz
-## AbilityDraftPanel) - jednou za GameManager.ABILITY_LEVEL_INTERVAL úrovní
-## se nabídnou 3 náhodné schopnosti (pasivní i aktivní, viz "Schopnosti" v
-## CLAUDE.md) a hráč jednu vybere; hráč sám do nich nic neinvestuje ručně
+## AbilityDraftPanel) - při KAŽDÉM level-upu se nabídnou 3 náhodné schopnosti
+## (pasivní i aktivní, viz "Schopnosti" v CLAUDE.md) a hráč jednu vybere;
+## hráč sám do nich nic neinvestuje ručně
 ## mimo tuhle volbu.
 ##
 ## Uzel má process_mode = ALWAYS (nastaveno ve scéně), aby lišta i
@@ -325,8 +325,8 @@ func _on_ability_inventory_changed() -> void:
 	_refresh_abilities()
 
 
-## Přijde vždy, když je k dispozici nová nabídka schopnosti (jednou za
-## ABILITY_LEVEL_INTERVAL úrovní, viz game_manager.gd). S vypnutým Auto
+## Přijde vždy, když je k dispozici nová nabídka schopnosti (při KAŽDÉM
+## level-upu, viz game_manager.gd). S vypnutým Auto
 ## výběrem zobrazí AbilityDraftPanel a hru pozastaví (stejně jako Obchod) -
 ## hráč musí vybrat, než se hra pustí dál. Se zapnutým Auto výběrem nabídku
 ## rovnou vyřídí náhodným pickem bez zastavení hry (viz
