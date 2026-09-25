@@ -109,11 +109,16 @@ func _play_drop_in_animation() -> void:
 	tween.tween_callback(_on_landed)
 
 
+## Po dopadu se hra NEROZBĚHNE rovnou - GameManager.begin_intro_ability_draft()
+## vyžádá první nabídku schopnosti (stejný panel/pauza jako běžný level-up) a
+## teprve její vyřízení přepne hru do State.PLAYING (viz
+## GameManager.resolve_ability_draft()/finish_intro()), takže hráč dostane
+## svou první volbu dřív, než se rozeběhne pohyb/spawnování nepřátel.
 func _on_landed() -> void:
 	_spawn_impact_effect()
 	landed.emit()
 	_play_squash_effect()
-	GameManager.finish_intro()
+	GameManager.begin_intro_ability_draft()
 
 
 func _spawn_impact_effect() -> void:
