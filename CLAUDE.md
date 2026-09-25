@@ -540,11 +540,30 @@ node, `scenes/ui/rarity_icon.gd`, added 2026-09-25 explicit user request) — a 
 GameManager.SHOP_RARITY_COLORS[rarity]`, which triggers the icon's own `set()` to `queue_redraw()`.
 `SHOP_RARITY_COLORS` is deliberately a general-purpose constant next to `SHOP_RARITY_NAMES`, not
 scoped to the ability panel, so the shop's `ShopCard0..3` (which currently only show the rarity as
-text) could reuse the same icon/colors later without new color data. Adding the icon required
-shrinking `NameLabel`/`DescLabel` slightly on all 3 `Card0..2` nodes in `hud.tscn` (name dropped
-from a 40px-tall box to 34px, desc from 115px to 104px) to fit within the card's existing fixed
-240px height — `RarityLabel`/`PickButton` were untouched since there was still enough slack below
-them.
+text) could reuse the same icon/colors later without new color data.
+
+**`Card0..2` themselves are `Button` nodes, not `Panel`** (changed same day, explicit follow-up
+request: "aby byly celé karty klikatelné... nahradili bychom tím současné tlačítko") — the whole
+card is now the clickable pick target, replacing a separate small `PickButton` child that used to
+sit at the bottom. `_show_ability_draft_panel()` connects `card.pressed` directly (same
+disconnect-then-reconnect pattern the old `pick_button.pressed` used, so re-showing the panel for a
+new offer doesn't stack duplicate connections) instead of reaching into a `PickButton` child —
+`PickButton` no longer exists anywhere in `hud.tscn`. This gets the requested hover feedback "for
+free": a `Button`'s default normal/hover/pressed `StyleBox`es from Godot's built-in theme apply to
+the whole card automatically, no custom hover code needed, exactly matching what the old
+`PickButton` looked like when hovered — just scaled to the full card now. **Every non-icon child
+(`NameLabel`/`DescLabel`/`RarityLabel`) has `mouse_filter = 2` (IGNORE)** so clicks anywhere over
+them still reach the parent `Button` instead of being swallowed — `RarityIcon` needs this too since
+a plain `Control` defaults to `mouse_filter = STOP` (unlike `Label`, which already defaults to
+IGNORE), and without it the ~20x20 icon area would silently eat clicks. Cards also grew from a
+fixed 240px to 260px tall (`Card0..2`'s `offset_bottom` 300→320 within the unchanged 340px-tall
+`AbilityDraftPanel`) per the same request ("ať karty zaberou celou zbylou dostupnou výšku... nech
+zespoda nějaký rozumný padding") — the extra freed-up space (from dropping the separate button) went
+to `DescLabel` (104px → 154px) so longer descriptions have more breathing room, leaving a 12px
+internal bottom margin under `RarityLabel` and a 20px external margin between the card and the
+panel's own bottom edge. `NameLabel` also grew back from 34px to 42px in the same pass (`30`→`72`
+offset_bottom) after visually confirming a two-line-wrapped name like "Orbitální bombardování"
+clipped into `DescLabel` at the tighter height.
 
 **Trigger/effect resolution lives in `player.gd`, not `game_manager.gd`** — GameManager only owns the
 *data* (what schopnosti exist, which ones the player owns, at what rarity). `player.gd` has TWO

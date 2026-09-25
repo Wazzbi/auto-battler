@@ -97,7 +97,7 @@ const ABILITY_STACK_MAX_ROWS: int = 6
 ## (itemy, každou úroveň) a 1-kartové AbilityDraftPanel (aktivní schopnosti,
 ## jen 1 za 5 úrovní) po sloučení obou systémů do jednoho 2026-09-09.
 @onready var ability_draft_panel: Panel = $Control/AbilityDraftPanel
-@onready var ability_cards: Array = [
+@onready var ability_cards: Array[Button] = [
 	$Control/AbilityDraftPanel/Card0,
 	$Control/AbilityDraftPanel/Card1,
 	$Control/AbilityDraftPanel/Card2,
@@ -319,7 +319,7 @@ func _on_ability_draft_ready(offered: Array) -> void:
 
 func _show_ability_draft_panel(offered: Array) -> void:
 	for i in ability_cards.size():
-		var card: Panel = ability_cards[i]
+		var card: Button = ability_cards[i]
 		if i >= offered.size():
 			card.hide()
 			continue
@@ -335,10 +335,9 @@ func _show_ability_draft_panel(offered: Array) -> void:
 		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
 		card.get_node("RarityIcon").rarity_color = GameManager.SHOP_RARITY_COLORS[rarity]
 
-		var pick_button: Button = card.get_node("PickButton")
-		for connection in pick_button.pressed.get_connections():
-			pick_button.pressed.disconnect(connection["callable"])
-		pick_button.pressed.connect(_on_ability_pick_pressed.bind(i))
+		for connection in card.pressed.get_connections():
+			card.pressed.disconnect(connection["callable"])
+		card.pressed.connect(_on_ability_pick_pressed.bind(i))
 
 	ability_draft_panel.show()
 	get_tree().paused = true

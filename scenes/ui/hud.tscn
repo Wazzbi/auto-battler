@@ -935,15 +935,16 @@ theme_override_font_sizes/font_size = 22
 text = "Vyber schopnost!"
 horizontal_alignment = 1
 
-[node name="Card0" type="Panel" parent="Control/AbilityDraftPanel"]
+[node name="Card0" type="Button" parent="Control/AbilityDraftPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 60.0
 offset_right = 200.0
-offset_bottom = 300.0
+offset_bottom = 320.0
 
 [node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 80.0
 offset_top = 6.0
 offset_right = 100.0
@@ -952,10 +953,11 @@ script = ExtResource("3_rarity_icon_script")
 
 [node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
 offset_top = 30.0
 offset_right = 170.0
-offset_bottom = 64.0
+offset_bottom = 72.0
 theme_override_font_sizes/font_size = 15
 text = "Název"
 horizontal_alignment = 1
@@ -963,10 +965,11 @@ autowrap_mode = 2
 
 [node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
-offset_top = 68.0
+offset_top = 76.0
 offset_right = 170.0
-offset_bottom = 172.0
+offset_bottom = 222.0
 theme_override_font_sizes/font_size = 12
 text = "Popis"
 horizontal_alignment = 1
@@ -974,31 +977,25 @@ autowrap_mode = 2
 
 [node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
-offset_top = 174.0
+offset_top = 228.0
 offset_right = 170.0
-offset_bottom = 194.0
+offset_bottom = 248.0
 theme_override_font_sizes/font_size = 12
 text = "Bronz"
 horizontal_alignment = 1
 
-[node name="PickButton" type="Button" parent="Control/AbilityDraftPanel/Card0"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 200.0
-offset_right = 170.0
-offset_bottom = 232.0
-text = "Přijmout"
-
-[node name="Card1" type="Panel" parent="Control/AbilityDraftPanel"]
+[node name="Card1" type="Button" parent="Control/AbilityDraftPanel"]
 layout_mode = 0
 offset_left = 210.0
 offset_top = 60.0
 offset_right = 390.0
-offset_bottom = 300.0
+offset_bottom = 320.0
 
 [node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 80.0
 offset_top = 6.0
 offset_right = 100.0
@@ -1007,10 +1004,11 @@ script = ExtResource("3_rarity_icon_script")
 
 [node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
 offset_top = 30.0
 offset_right = 170.0
-offset_bottom = 64.0
+offset_bottom = 72.0
 theme_override_font_sizes/font_size = 15
 text = "Název"
 horizontal_alignment = 1
@@ -1018,10 +1016,11 @@ autowrap_mode = 2
 
 [node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
-offset_top = 68.0
+offset_top = 76.0
 offset_right = 170.0
-offset_bottom = 172.0
+offset_bottom = 222.0
 theme_override_font_sizes/font_size = 12
 text = "Popis"
 horizontal_alignment = 1
@@ -1029,31 +1028,25 @@ autowrap_mode = 2
 
 [node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
-offset_top = 174.0
+offset_top = 228.0
 offset_right = 170.0
-offset_bottom = 194.0
+offset_bottom = 248.0
 theme_override_font_sizes/font_size = 12
 text = "Bronz"
 horizontal_alignment = 1
 
-[node name="PickButton" type="Button" parent="Control/AbilityDraftPanel/Card1"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 200.0
-offset_right = 170.0
-offset_bottom = 232.0
-text = "Přijmout"
-
-[node name="Card2" type="Panel" parent="Control/AbilityDraftPanel"]
+[node name="Card2" type="Button" parent="Control/AbilityDraftPanel"]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 60.0
 offset_right = 580.0
-offset_bottom = 300.0
+offset_bottom = 320.0
 
 [node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 80.0
 offset_top = 6.0
 offset_right = 100.0
@@ -1062,10 +1055,11 @@ script = ExtResource("3_rarity_icon_script")
 
 [node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
 offset_top = 30.0
 offset_right = 170.0
-offset_bottom = 64.0
+offset_bottom = 72.0
 theme_override_font_sizes/font_size = 15
 text = "Název"
 horizontal_alignment = 1
@@ -1073,10 +1067,11 @@ autowrap_mode = 2
 
 [node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
-offset_top = 68.0
+offset_top = 76.0
 offset_right = 170.0
-offset_bottom = 172.0
+offset_bottom = 222.0
 theme_override_font_sizes/font_size = 12
 text = "Popis"
 horizontal_alignment = 1
@@ -1084,18 +1079,11 @@ autowrap_mode = 2
 
 [node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 10.0
-offset_top = 174.0
+offset_top = 228.0
 offset_right = 170.0
-offset_bottom = 194.0
+offset_bottom = 248.0
 theme_override_font_sizes/font_size = 12
 text = "Bronz"
 horizontal_alignment = 1
-
-[node name="PickButton" type="Button" parent="Control/AbilityDraftPanel/Card2"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 200.0
-offset_right = 170.0
-offset_bottom = 232.0
-text = "Přijmout"
