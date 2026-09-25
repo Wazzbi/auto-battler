@@ -98,42 +98,63 @@ const SHOP_ITEMS := {
 		"short_name": "Přebíječ",
 		"stats": {"damage": 6.0, "attack_speed": 0.2},
 		"cost": 200,
+		"tags": ["kinetic"],
 	},
 	"field_plating": {
 		"name": "Terénní pancéřování",
 		"short_name": "Pancéřování",
 		"stats": {"max_hp": 30.0, "armor": 3.0},
 		"cost": 200,
+		"tags": ["support"],
 	},
 	"targeting_module": {
 		"name": "Zaměřovací modul",
 		"short_name": "Zaměřovač",
 		"stats": {"attack_range": 50.0, "multishot": 1.0},
 		"cost": 220,
+		"tags": ["precision"],
 	},
 	"nanite_regenerator": {
 		"name": "Nanitový regenerátor",
 		"short_name": "Regenerátor",
 		"stats": {"hp_regen": 1.0, "armor": 3.0},
 		"cost": 180,
+		"tags": ["support"],
 	},
 	"overloaded_coils": {
 		"name": "Přetížené cívky",
 		"short_name": "Cívky",
 		"stats": {"attack_speed": 0.2, "multishot": 1.0},
 		"cost": 220,
+		"tags": ["precision"],
 	},
 	"gravity_stabilizer": {
 		"name": "Gravitační stabilizátor",
 		"short_name": "Stabilizátor",
 		"stats": {"max_hp": 30.0, "attack_range": 50.0},
 		"cost": 200,
+		"tags": ["support"],
 	},
 	"destruction_core": {
 		"name": "Jádro destrukce",
 		"short_name": "Destrukce",
 		"stats": {"damage": 6.0, "max_hp": 30.0},
 		"cost": 220,
+		"tags": ["kinetic"],
+	},
+	## Synergický item (přidáno 2026-09-25, viz "Tag synergie" v CLAUDE.md) -
+	## na rozdíl od ostatních nemá "stats" (pevný bonus), ale "synergy":
+	## bonus roste s POČTEM vlastněných věcí (schopností i aktivních itemů
+	## dohromady) se stejným tagem, včetně sebe sama. Umožňuje hráči budovat
+	## strategii kolem jednoho tagu ("beru všechno Přesné") oběma směry -
+	## koupit tohle první a pak lovit Přesné schopnosti, nebo nasbírat Přesné
+	## schopnosti a pak tohle koupit jako vyvrcholení buildu.
+	"resonance_array": {
+		"name": "Rezonanční pole",
+		"short_name": "Rezonance",
+		"synergy": {"stat": "attack_speed", "tag": "precision", "value": 0.06},
+		"cost": 220,
+		"tags": ["precision"],
 	},
 }
 ## Zobrazované jednotky pro get_shop_item_desc()/get_ability_desc() - klíče
@@ -148,12 +169,26 @@ const STAT_DISPLAY_NAMES := {
 	"hp_regen": "regenerace HP/s",
 	"armor": "brnění",
 }
+## --- Tag synergie ---------------------------------------------------------
+## Přidáno 2026-09-25 na žádost uživatele - umožňuje si vybírat schopnosti
+## podle itemů, které chce hráč později najít v obchodě, a naopak (viz
+## "Tag synergie" v CLAUDE.md pro celý mechanismus). Každá ABILITIES/SHOP_ITEMS
+## položka nese "tags" (zatím vždy přesně 1 tag) čistě informativně - ať hráč
+## vidí kategorii i u položek, které samy synergický bonus nedávají. Skutečný
+## synergický efekt mají jen položky s klíčem "synergy" (viz
+## _count_owned_with_tag()/get_stat_bonus() níže).
+const TAG_DISPLAY_NAMES := {
+	"kinetic": "Kinetická",
+	"precision": "Přesná",
+	"explosive": "Explozivní",
+	"support": "Podpůrná",
+}
 ## Pořadí itemů v obchodě - 7 itemů na jen SHOP_ACTIVE_SLOTS aktivních slotů,
 ## takže hráč nutně jeden vynechá (nebo ho odloží do skladu) - záměrný
 ## trade-off, ne chyba v počtu.
 const SHOP_ITEM_ORDER: Array[String] = [
 	"overcharged_core", "field_plating", "targeting_module", "nanite_regenerator",
-	"overloaded_coils", "gravity_stabilizer", "destruction_core"
+	"overloaded_coils", "gravity_stabilizer", "destruction_core", "resonance_array",
 ]
 ## Kolik itemů může být najednou AKTIVNÍCH (přispívají do get_stat_bonus()).
 const SHOP_ACTIVE_SLOTS: int = 6
@@ -236,31 +271,42 @@ const SHOP_RARITY_COST_RATIOS: Array[float] = [1.0, 1.4, 2.25, 3.75]
 const ABILITIES := {
 	"power_core": {
 		"name": "Jádro síly", "short_name": "Jádro", "type": "passive",
-		"stat": "damage", "value": 4.0,
+		"stat": "damage", "value": 4.0, "tags": ["kinetic"],
 	},
 	"rapid_coils": {
 		"name": "Rychlopalné cívky", "short_name": "Palba", "type": "passive",
-		"stat": "attack_speed", "value": 0.15,
+		"stat": "attack_speed", "value": 0.15, "tags": ["precision"],
 	},
 	"long_barrel": {
 		"name": "Prodloužená hlaveň", "short_name": "Dostřel", "type": "passive",
-		"stat": "attack_range", "value": 40.0,
+		"stat": "attack_range", "value": 40.0, "tags": ["precision"],
 	},
 	"split_rounds": {
 		"name": "Dělené střely", "short_name": "Rozptyl", "type": "passive",
-		"stat": "multishot", "value": 1.0,
+		"stat": "multishot", "value": 1.0, "tags": ["kinetic"],
 	},
 	"reinforced_plating": {
 		"name": "Zesílený pancíř", "short_name": "Pancíř", "type": "passive",
-		"stat": "max_hp", "value": 20.0,
+		"stat": "max_hp", "value": 20.0, "tags": ["support"],
 	},
 	"nanite_repair": {
 		"name": "Nanitová oprava", "short_name": "Regen", "type": "passive",
-		"stat": "hp_regen", "value": 0.5,
+		"stat": "hp_regen", "value": 0.5, "tags": ["support"],
 	},
 	"kinetic_dampers": {
 		"name": "Kinetické tlumiče", "short_name": "Tlumiče", "type": "passive",
-		"stat": "armor", "value": 2.0,
+		"stat": "armor", "value": 2.0, "tags": ["support"],
+	},
+	## Synergická schopnost (přidáno 2026-09-25, viz "Tag synergie" v
+	## CLAUDE.md) - na rozdíl od ostatních pasivních schopností nemá pevné
+	## "stat"/"value", ale "synergy": bonus roste s POČTEM vlastněných věcí
+	## (schopností i aktivních itemů dohromady) se stejným tagem, včetně sebe
+	## sama. Zrcadlí shop_items' "resonance_array" - stejný tag (precision),
+	## opačný směr (hráč si tohle může vybrat jako schopnost první a pak
+	## lovit Přesné itemy v obchodě, nebo naopak).
+	"overclock_matrix": {
+		"name": "Přetěžovací matice", "short_name": "Matice", "type": "passive",
+		"synergy": {"stat": "damage", "tag": "kinetic", "value": 1.5}, "tags": ["kinetic"],
 	},
 	"double_tap": {
 		"name": "Dvojitý zásah", "short_name": "D. zásah", "type": "active",
@@ -268,6 +314,7 @@ const ABILITIES := {
 		"trigger_values": [6, 5, 4, 3],
 		"effect": "damage_multiplier",
 		"effect_params": {"multiplier": 2.0},
+		"tags": ["explosive"],
 	},
 	"orbital_bombardment": {
 		"name": "Orbitální bombardování", "short_name": "Orbitál", "type": "active",
@@ -281,12 +328,13 @@ const ABILITIES := {
 		## project_future_active_abilities v paměti), ne lokalizovaná exploze.
 		## První odhad, nedoladěno playtestingem.
 		"effect_params": {"damage": 30.0},
+		"tags": ["explosive"],
 	},
 }
 ## Pořadí schopností v HUD - stejný účel jako SHOP_ITEM_ORDER.
 const ABILITY_ORDER: Array[String] = [
 	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating",
-	"nanite_repair", "kinetic_dampers", "double_tap", "orbital_bombardment",
+	"nanite_repair", "kinetic_dampers", "overclock_matrix", "double_tap", "orbital_bombardment",
 ]
 ## Kolik schopností se nabídne v jedné nabídce - vráceno na 3 (stejně jako
 ## dřívější DRAFT_CHOICE_COUNT) teď, když je pool dost velký na skutečnou
@@ -690,38 +738,72 @@ func _try_merge_ability(ability_id: String, rarity: int) -> void:
 	_try_merge_ability(ability_id, rarity + 1)
 
 
+## Kolik OWNED INSTANCÍ (schopností i aktivních obchodních itemů dohromady,
+## ne unikátních ID) nese daný tag - viz "Tag synergie" v CLAUDE.md. Stash
+## itemy se NEpočítají (stejné pravidlo jako get_stat_bonus() - jen aktivní
+## itemy přispívají do statů). Používá se jak pro výpočet synergických
+## bonusů (get_stat_bonus()), tak pro jejich popis (get_ability_desc()/
+## get_shop_item_desc()).
+func _count_owned_with_tag(tag: String) -> int:
+	var count: int = 0
+	for entry in owned_abilities:
+		var tags: Array = ABILITIES[entry["ability_id"]].get("tags", [])
+		if tags.has(tag):
+			count += 1
+	for entry in active_shop_items:
+		var tags: Array = SHOP_ITEMS[entry["item_id"]].get("tags", [])
+		if tags.has(tag):
+			count += 1
+	return count
+
+
 ## Popis schopnosti na dané raritě. Pasivní schopnosti mají obecný cyklus
 ## (jako get_shop_item_desc()), aktivní jsou zatím natvrdo podle dvou
 ## existujících trigger/effect párů - až přibude třetí, přejde i tahle větev
-## na obecnější dispatch podle definition["trigger"]/["effect"].
+## na obecnější dispatch podle definition["trigger"]/["effect"]. Každá větev
+## připojí na konec vlastní tag(y) (viz "Tag synergie" v CLAUDE.md) - i
+## nesynergické schopnosti tag ukazují, ať si hráč může předem plánovat, co
+## by k nim v budoucnu pasovalo.
 func get_ability_desc(ability_id: String, rarity: int) -> String:
 	var definition: Dictionary = ABILITIES[ability_id]
+	var tag_suffix: String = _format_tag_suffix(definition.get("tags", []))
 
 	if definition["type"] == "passive":
+		if definition.has("synergy"):
+			var synergy: Dictionary = definition["synergy"]
+			var per_count: float = float(synergy["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
+			var synergy_stat_name: String = STAT_DISPLAY_NAMES.get(synergy["stat"], synergy["stat"])
+			var synergy_tag_name: String = TAG_DISPLAY_NAMES.get(synergy["tag"], synergy["tag"])
+			return "+%s %s za každou vlastněnou věc s tagem „%s“%s" % [
+				_format_stat_number(per_count), synergy_stat_name, synergy_tag_name, tag_suffix
+			]
 		var value: float = float(definition["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
 		var stat_name: String = STAT_DISPLAY_NAMES.get(definition["stat"], definition["stat"])
-		return "+%s %s" % [_format_stat_number(value), stat_name]
+		return "+%s %s%s" % [_format_stat_number(value), stat_name, tag_suffix]
 
 	var params: Dictionary = definition["effect_params"]
 	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
 		var interval: int = definition["trigger_values"][rarity]
 		var mult: float = float(params["multiplier"])
-		return "Každý %d. výstřel: %sx poškození" % [interval, _format_stat_number(mult)]
+		return "Každý %d. výstřel: %sx poškození%s" % [interval, _format_stat_number(mult), tag_suffix]
 
 	if definition["trigger"] == "time_elapsed" and definition["effect"] == "aoe_strike":
 		var charge: float = float(definition["trigger_values"][rarity])
 		var damage: float = float(params["damage"])
-		return "Nabíjí %s s, pak %s poškození všem nepřátelům" % [_format_stat_number(charge), _format_stat_number(damage)]
+		return "Nabíjí %s s, pak %s poškození všem nepřátelům%s" % [
+			_format_stat_number(charge), _format_stat_number(damage), tag_suffix
+		]
 
 	return definition["name"]
 
 
 ## Celkový bonus ke statu - jediné místo, kde se progrese promítá do statů,
-## player.gd si ho jen přičítá ke svým base hodnotám. Sčítá tři zdroje:
-## automatický LEVEL_STAT_GROWTH (malá podlaha), pasivní schopnosti a aktivní
-## obchodní itemy. AKTIVNÍ schopnosti (type "active") sem záměrně NEpatří -
-## nedávají pasivní bonus ke statu, mají vlastní trigger/effect logiku (viz
-## player.gd's _consume_ability_triggers()/_process_time_based_abilities()).
+## player.gd si ho jen přičítá ke svým base hodnotám. Sčítá ČTYŘI zdroje:
+## automatický LEVEL_STAT_GROWTH (malá podlaha), pasivní schopnosti (pevné i
+## tag-synergické), aktivní obchodní itemy (pevné i tag-synergické). AKTIVNÍ
+## schopnosti (type "active") sem záměrně NEpatří - nedávají pasivní bonus ke
+## statu, mají vlastní trigger/effect logiku (viz player.gd's
+## _consume_ability_triggers()/_process_time_based_abilities()).
 func get_stat_bonus(stat_id: String) -> float:
 	var bonus: float = 0.0
 
@@ -730,13 +812,25 @@ func get_stat_bonus(stat_id: String) -> float:
 
 	for entry in owned_abilities:
 		var definition: Dictionary = ABILITIES[entry["ability_id"]]
-		if definition["type"] == "passive" and definition["stat"] == stat_id:
-			bonus += float(definition["value"]) * PASSIVE_EFFECT_MULTIPLIERS[entry["rarity"]]
+		if definition["type"] != "passive":
+			continue
+		var multiplier: float = PASSIVE_EFFECT_MULTIPLIERS[entry["rarity"]]
+		if definition.has("synergy"):
+			var synergy: Dictionary = definition["synergy"]
+			if synergy["stat"] == stat_id:
+				bonus += float(synergy["value"]) * multiplier * float(_count_owned_with_tag(synergy["tag"]))
+		elif definition["stat"] == stat_id:
+			bonus += float(definition["value"]) * multiplier
 
 	for entry in active_shop_items:
-		var stats: Dictionary = SHOP_ITEMS[entry["item_id"]]["stats"]
+		var definition: Dictionary = SHOP_ITEMS[entry["item_id"]]
+		var multiplier: float = SHOP_RARITY_MULTIPLIERS[entry["rarity"]]
+		var stats: Dictionary = definition.get("stats", {})
 		if stats.has(stat_id):
-			bonus += float(stats[stat_id]) * SHOP_RARITY_MULTIPLIERS[entry["rarity"]]
+			bonus += float(stats[stat_id]) * multiplier
+		var synergy: Dictionary = definition.get("synergy", {})
+		if not synergy.is_empty() and synergy["stat"] == stat_id:
+			bonus += float(synergy["value"]) * multiplier * float(_count_owned_with_tag(synergy["tag"]))
 
 	return bonus
 
@@ -750,16 +844,41 @@ func get_shop_item_cost(item_id: String, tier: ShopRarity) -> int:
 
 ## Popis itemu se staty přepočítanými na danou raritu - na rozdíl od
 ## statického textu (co SHOP_ITEMS už nemá, viz komentář výše) tohle vždy
-## odpovídá tomu, co item na daném stupni skutečně dává.
+## odpovídá tomu, co item na daném stupni skutečně dává. `.get("stats", {})`
+## místo přímého `["stats"]`, protože synergické itemy (viz "resonance_array")
+## tenhle klíč vůbec nemají - mají "synergy" místo toho.
 func get_shop_item_desc(item_id: String, tier: ShopRarity) -> String:
+	var definition: Dictionary = SHOP_ITEMS[item_id]
 	var multiplier: float = SHOP_RARITY_MULTIPLIERS[tier]
-	var stats: Dictionary = SHOP_ITEMS[item_id]["stats"]
 	var lines: Array[String] = []
+
+	var stats: Dictionary = definition.get("stats", {})
 	for stat_id in stats:
 		var value: float = float(stats[stat_id]) * multiplier
 		var stat_name: String = STAT_DISPLAY_NAMES.get(stat_id, stat_id)
 		lines.append("+%s %s" % [_format_stat_number(value), stat_name])
-	return "\n".join(lines)
+
+	if definition.has("synergy"):
+		var synergy: Dictionary = definition["synergy"]
+		var per_count: float = float(synergy["value"]) * multiplier
+		var synergy_stat_name: String = STAT_DISPLAY_NAMES.get(synergy["stat"], synergy["stat"])
+		var synergy_tag_name: String = TAG_DISPLAY_NAMES.get(synergy["tag"], synergy["tag"])
+		lines.append("+%s %s za každou vlastněnou věc s tagem „%s“" % [
+			_format_stat_number(per_count), synergy_stat_name, synergy_tag_name
+		])
+
+	return "\n".join(lines) + _format_tag_suffix(definition.get("tags", []))
+
+
+## Sdílené formátování tagu na konec popisu (get_ability_desc()/
+## get_shop_item_desc()) - prázdný řetězec, když položka žádný tag nemá.
+func _format_tag_suffix(tags: Array) -> String:
+	if tags.is_empty():
+		return ""
+	var names: Array = []
+	for tag in tags:
+		names.append(TAG_DISPLAY_NAMES.get(tag, tag))
+	return "\n[%s]" % ", ".join(names)
 
 
 func _format_stat_number(value: float) -> String:
