@@ -333,6 +333,7 @@ func _show_ability_draft_panel(offered: Array) -> void:
 		card.get_node("NameLabel").text = definition["name"]
 		card.get_node("DescLabel").text = GameManager.get_ability_desc(ability_id, rarity)
 		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
+		card.get_node("RarityIcon").rarity_color = GameManager.SHOP_RARITY_COLORS[rarity]
 
 		var pick_button: Button = card.get_node("PickButton")
 		for connection in pick_button.pressed.get_connections():

@@ -256,6 +256,14 @@ const SHOP_RARITY_MULTIPLIERS: Array[float] = [1.0, 1.6, 2.6, 4.2]
 ## luxusní nákup, ne rutinní - viz "exponenciální cena, téměř lineární
 ## bonus" z balance brainstormu, který k tomuhle systému vedl.
 const SHOP_RARITY_COST_RATIOS: Array[float] = [1.0, 1.4, 2.25, 3.75]
+## Barva rarity pro vizuální odlišení (index = ShopRarity) - použito např.
+## kosočtvercovou ikonkou nad názvem v AbilityDraftPanel (viz rarity_icon.gd).
+const SHOP_RARITY_COLORS: Array[Color] = [
+	Color(0.80, 0.50, 0.20), # Bronz
+	Color(0.75, 0.75, 0.78), # Stříbro
+	Color(1.00, 0.84, 0.0),  # Zlato
+	Color(0.25, 0.85, 1.0),  # Diamant
+]
 
 ## --- Schopnosti -------------------------------------------------------
 ## JEDINÝ zdroj volitelné progrese vedle automatického LEVEL_STAT_GROWTH a

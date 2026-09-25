@@ -531,6 +531,21 @@ schopnost card — if that turns out to be a real desired playstyle, auto-resolv
 non-debug home again (e.g. build-aware weighting instead of a uniform random pick). Not worth
 building now.
 
+**Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon above its name** (`RarityIcon`
+node, `scenes/ui/rarity_icon.gd`, added 2026-09-25 explicit user request) — a small procedurally
+`_draw()`-drawn rhombus (`draw_colored_polygon()` + a thin dark outline for contrast), same
+"no image assets" convention as `eye_icon.gd`. Color comes from the new
+`GameManager.SHOP_RARITY_COLORS` (index = `ShopRarity`, shared enum with `SHOP_RARITY_NAMES`) —
+`_show_ability_draft_panel()` sets `card.get_node("RarityIcon").rarity_color =
+GameManager.SHOP_RARITY_COLORS[rarity]`, which triggers the icon's own `set()` to `queue_redraw()`.
+`SHOP_RARITY_COLORS` is deliberately a general-purpose constant next to `SHOP_RARITY_NAMES`, not
+scoped to the ability panel, so the shop's `ShopCard0..3` (which currently only show the rarity as
+text) could reuse the same icon/colors later without new color data. Adding the icon required
+shrinking `NameLabel`/`DescLabel` slightly on all 3 `Card0..2` nodes in `hud.tscn` (name dropped
+from a 40px-tall box to 34px, desc from 115px to 104px) to fit within the card's existing fixed
+240px height — `RarityLabel`/`PickButton` were untouched since there was still enough slack below
+them.
+
 **Trigger/effect resolution lives in `player.gd`, not `game_manager.gd`** — GameManager only owns the
 *data* (what schopnosti exist, which ones the player owns, at what rarity). `player.gd` has TWO
 separate consumer functions, one per trigger type, both reading/writing a shared per-owned-instance
@@ -905,5 +920,6 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above), `SHOP_RARITY_COLORS` (rarity diamond icon colors, see "Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon" above)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above)
+- `scenes/ui/rarity_icon.gd` — the diamond-shape polygon points/outline color drawn in `_draw()`, reused by `AbilityDraftPanel`'s `RarityIcon` nodes
