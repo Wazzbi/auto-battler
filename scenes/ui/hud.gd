@@ -31,6 +31,7 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var stat_range: Label = $Control/BottomBar/StatRange
 @onready var stat_hp: Label = $Control/BottomBar/StatHP
 @onready var stat_armor: Label = $Control/BottomBar/StatArmor
+@onready var stat_crit: Label = $Control/BottomBar/StatCrit
 @onready var level_label: Label = $Control/LevelBadge/LevelLabel
 @onready var hp_bar: ProgressBar = $Control/HPBar
 @onready var hp_label: Label = $Control/HPBar/HPLabel
@@ -427,6 +428,7 @@ func _refresh_stat_labels() -> void:
 	stat_range.text = "Dostřel: %.0f" % player_ref.get_attack_range()
 	stat_hp.text = "Max HP: %.0f" % player_ref.max_hp
 	stat_armor.text = "Brnění: %.0f" % player_ref.get_armor()
+	stat_crit.text = "Kritický zásah: %.0f %%" % (player_ref.get_crit_chance() * 100.0)
 
 
 ## Napojí každou kartu na její SLOT INDEX (0-3) v GameManager.shop_offer -

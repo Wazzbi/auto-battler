@@ -156,6 +156,17 @@ const SHOP_ITEMS := {
 		"cost": 220,
 		"tags": ["precision"],
 	},
+	## Přidáno 2026-09-25 s novým statem crit_chance (viz player.gd's
+	## get_crit_chance()) - kombinuje ho s attack_speed, aby item zapadl mezi
+	## ostatní "precision" itemy (rychlejší, přesnější palba), ne jen jako
+	## izolovaný crit-stat stick.
+	"precision_scope": {
+		"name": "Přesná optika",
+		"short_name": "Optika",
+		"stats": {"crit_chance": 0.05, "attack_speed": 0.15},
+		"cost": 210,
+		"tags": ["precision"],
+	},
 }
 ## Zobrazované jednotky pro get_shop_item_desc()/get_ability_desc() - klíče
 ## musí sedět se "stat" v pasivních ABILITIES a klíči "stats" dictionary v
@@ -168,7 +179,11 @@ const STAT_DISPLAY_NAMES := {
 	"max_hp": "max. HP",
 	"hp_regen": "regenerace HP/s",
 	"armor": "brnění",
+	"crit_chance": "šance na kritický zásah",
 }
+## "crit_chance" je JEDINÝ stat uložený jako podíl (0.08 = 8 %), všechny
+## ostatní jsou absolutní čísla - proto dostává v _format_stat_line() vlastní
+## % formátování místo obecného STAT_DISPLAY_NAMES/_format_stat_number páru.
 ## --- Tag synergie ---------------------------------------------------------
 ## Přidáno 2026-09-25 na žádost uživatele - umožňuje si vybírat schopnosti
 ## podle itemů, které chce hráč později najít v obchodě, a naopak (viz
@@ -189,6 +204,7 @@ const TAG_DISPLAY_NAMES := {
 const SHOP_ITEM_ORDER: Array[String] = [
 	"overcharged_core", "field_plating", "targeting_module", "nanite_regenerator",
 	"overloaded_coils", "gravity_stabilizer", "destruction_core", "resonance_array",
+	"precision_scope",
 ]
 ## Kolik itemů může být najednou AKTIVNÍCH (přispívají do get_stat_bonus()).
 const SHOP_ACTIVE_SLOTS: int = 6
@@ -308,6 +324,13 @@ const ABILITIES := {
 		"name": "Přetěžovací matice", "short_name": "Matice", "type": "passive",
 		"synergy": {"stat": "damage", "tag": "kinetic", "value": 1.5}, "tags": ["kinetic"],
 	},
+	## Přidáno 2026-09-25 s novým statem crit_chance (viz player.gd's
+	## get_crit_chance()/_shoot()) - tag "precision" stejně jako ostatní
+	## schopnosti kolem přesnosti/frekvence útoku (rapid_coils, long_barrel).
+	"precision_targeting": {
+		"name": "Přesné zaměřování", "short_name": "Zaměření", "type": "passive",
+		"stat": "crit_chance", "value": 0.06, "tags": ["precision"],
+	},
 	"double_tap": {
 		"name": "Dvojitý zásah", "short_name": "D. zásah", "type": "active",
 		"trigger": "shot_count",
@@ -334,7 +357,8 @@ const ABILITIES := {
 ## Pořadí schopností v HUD - stejný účel jako SHOP_ITEM_ORDER.
 const ABILITY_ORDER: Array[String] = [
 	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating",
-	"nanite_repair", "kinetic_dampers", "overclock_matrix", "double_tap", "orbital_bombardment",
+	"nanite_repair", "kinetic_dampers", "overclock_matrix", "precision_targeting",
+	"double_tap", "orbital_bombardment",
 ]
 ## Kolik schopností se nabídne v jedné nabídce - vráceno na 3 (stejně jako
 ## dřívější DRAFT_CHOICE_COUNT) teď, když je pool dost velký na skutečnou
@@ -772,14 +796,12 @@ func get_ability_desc(ability_id: String, rarity: int) -> String:
 		if definition.has("synergy"):
 			var synergy: Dictionary = definition["synergy"]
 			var per_count: float = float(synergy["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
-			var synergy_stat_name: String = STAT_DISPLAY_NAMES.get(synergy["stat"], synergy["stat"])
 			var synergy_tag_name: String = TAG_DISPLAY_NAMES.get(synergy["tag"], synergy["tag"])
-			return "+%s %s za každou vlastněnou věc s tagem „%s“%s" % [
-				_format_stat_number(per_count), synergy_stat_name, synergy_tag_name, tag_suffix
+			return "%s za každou vlastněnou věc s tagem „%s“%s" % [
+				_format_stat_line(synergy["stat"], per_count), synergy_tag_name, tag_suffix
 			]
 		var value: float = float(definition["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
-		var stat_name: String = STAT_DISPLAY_NAMES.get(definition["stat"], definition["stat"])
-		return "+%s %s%s" % [_format_stat_number(value), stat_name, tag_suffix]
+		return "%s%s" % [_format_stat_line(definition["stat"], value), tag_suffix]
 
 	var params: Dictionary = definition["effect_params"]
 	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
@@ -855,16 +877,14 @@ func get_shop_item_desc(item_id: String, tier: ShopRarity) -> String:
 	var stats: Dictionary = definition.get("stats", {})
 	for stat_id in stats:
 		var value: float = float(stats[stat_id]) * multiplier
-		var stat_name: String = STAT_DISPLAY_NAMES.get(stat_id, stat_id)
-		lines.append("+%s %s" % [_format_stat_number(value), stat_name])
+		lines.append(_format_stat_line(stat_id, value))
 
 	if definition.has("synergy"):
 		var synergy: Dictionary = definition["synergy"]
 		var per_count: float = float(synergy["value"]) * multiplier
-		var synergy_stat_name: String = STAT_DISPLAY_NAMES.get(synergy["stat"], synergy["stat"])
 		var synergy_tag_name: String = TAG_DISPLAY_NAMES.get(synergy["tag"], synergy["tag"])
-		lines.append("+%s %s za každou vlastněnou věc s tagem „%s“" % [
-			_format_stat_number(per_count), synergy_stat_name, synergy_tag_name
+		lines.append("%s za každou vlastněnou věc s tagem „%s“" % [
+			_format_stat_line(synergy["stat"], per_count), synergy_tag_name
 		])
 
 	return "\n".join(lines) + _format_tag_suffix(definition.get("tags", []))
@@ -879,6 +899,18 @@ func _format_tag_suffix(tags: Array) -> String:
 	for tag in tags:
 		names.append(TAG_DISPLAY_NAMES.get(tag, tag))
 	return "\n[%s]" % ", ".join(names)
+
+
+## Sdílené formátování jedné statové řádky v popisu (get_ability_desc()/
+## get_shop_item_desc()) - "crit_chance" je JEDINÝ stat uložený jako podíl
+## (0.08 = 8 %), takže dostává vlastní % formátování místo obecného
+## STAT_DISPLAY_NAMES/_format_stat_number páru (viz komentář u
+## STAT_DISPLAY_NAMES výše).
+func _format_stat_line(stat_id: String, value: float) -> String:
+	if stat_id == "crit_chance":
+		return "+%s %% šance na kritický zásah" % _format_stat_number(value * 100.0)
+	var stat_name: String = STAT_DISPLAY_NAMES.get(stat_id, stat_id)
+	return "+%s %s" % [_format_stat_number(value), stat_name]
 
 
 func _format_stat_number(value: float) -> String:

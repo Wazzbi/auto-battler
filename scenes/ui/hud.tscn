@@ -171,47 +171,56 @@ color = Color(0.07, 0.08, 0.11, 0.94)
 [node name="StatDamage" type="Label" parent="Control/BottomBar" unique_id=1729872004]
 layout_mode = 0
 offset_left = 14.0
-offset_top = 10.0
+offset_top = 8.0
 offset_right = 200.0
-offset_bottom = 34.0
+offset_bottom = 28.0
 theme_override_font_sizes/font_size = 14
 text = "Poškození: 10"
 
 [node name="StatSpeed" type="Label" parent="Control/BottomBar" unique_id=853616865]
 layout_mode = 0
 offset_left = 14.0
-offset_top = 38.0
+offset_top = 30.0
 offset_right = 200.0
-offset_bottom = 62.0
+offset_bottom = 50.0
 theme_override_font_sizes/font_size = 14
 text = "Rychlost: 1.0/s"
 
 [node name="StatRange" type="Label" parent="Control/BottomBar" unique_id=1513748572]
 layout_mode = 0
 offset_left = 14.0
-offset_top = 66.0
+offset_top = 52.0
 offset_right = 200.0
-offset_bottom = 90.0
+offset_bottom = 72.0
 theme_override_font_sizes/font_size = 14
 text = "Dostřel: 400"
 
 [node name="StatHP" type="Label" parent="Control/BottomBar" unique_id=1334704326]
 layout_mode = 0
 offset_left = 14.0
-offset_top = 94.0
+offset_top = 74.0
 offset_right = 200.0
-offset_bottom = 118.0
+offset_bottom = 94.0
 theme_override_font_sizes/font_size = 14
 text = "Max HP: 100"
 
 [node name="StatArmor" type="Label" parent="Control/BottomBar" unique_id=1334704327]
 layout_mode = 0
 offset_left = 14.0
-offset_top = 122.0
+offset_top = 96.0
 offset_right = 200.0
-offset_bottom = 146.0
+offset_bottom = 116.0
 theme_override_font_sizes/font_size = 14
 text = "Brnění: 2"
+
+[node name="StatCrit" type="Label" parent="Control/BottomBar"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 118.0
+offset_right = 200.0
+offset_bottom = 138.0
+theme_override_font_sizes/font_size = 14
+text = "Kritický zásah: 5 %"
 
 [node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
 layout_mode = 0
