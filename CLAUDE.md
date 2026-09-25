@@ -565,10 +565,12 @@ panel's own bottom edge. `NameLabel` also grew back from 34px to 42px in the sam
 offset_bottom) after visually confirming a two-line-wrapped name like "Orbitální bombardování"
 clipped into `DescLabel` at the tighter height.
 
-**A green triangle left of the rarity icon flags "this offer upgrades a schopnost you already
+**A green arrow left of the rarity icon flags "this offer upgrades a schopnost you already
 own"** (`UpgradeIndicator` node, `scenes/ui/upgrade_icon.gd`, same day, explicit follow-up request)
-— a small procedurally `_draw()`-drawn upward triangle, same convention as `rarity_icon.gd`/
-`eye_icon.gd`. `GameManager.is_ability_owned(ability_id)` (thin public wrapper around the existing
+— a small procedurally `_draw()`-drawn upward arrow (7-point head+stem polygon, not just a plain
+triangle - a same-day follow-up after the user tried the simpler triangle first and preferred an
+actual arrow shape at the same size), same convention as `rarity_icon.gd`/`eye_icon.gd`.
+`GameManager.is_ability_owned(ability_id)` (thin public wrapper around the existing
 `_lowest_owned_ability_rarity(ability_id) >= 0` check, added so `hud.gd` doesn't reach into a
 `_`-prefixed "private" method) drives `card.get_node("UpgradeIndicator").visible` in
 `_show_ability_draft_panel()`. Deliberately keyed on ownership alone, not on whether picking it
