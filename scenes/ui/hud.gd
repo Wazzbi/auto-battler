@@ -334,7 +334,19 @@ func _show_ability_draft_panel(offered: Array) -> void:
 		card.get_node("DescLabel").text = GameManager.get_ability_desc(ability_id, rarity)
 		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
 		card.get_node("RarityIcon").rarity_color = GameManager.SHOP_RARITY_COLORS[rarity]
-		card.get_node("UpgradeIndicator").visible = GameManager.is_ability_owned(ability_id)
+
+		var already_owned: bool = GameManager.is_ability_owned(ability_id)
+		card.get_node("UpgradeIndicator").visible = already_owned
+
+		var result_label: Label = card.get_node("ResultValueLabel")
+		if already_owned and rarity < GameManager.ShopRarity.DIAMOND:
+			var next_rarity: int = rarity + 1
+			result_label.text = "→ %s (%s)" % [
+				GameManager.get_ability_value_text(ability_id, next_rarity),
+				GameManager.SHOP_RARITY_NAMES[next_rarity],
+			]
+		else:
+			result_label.text = ""
 
 		for connection in card.pressed.get_connections():
 			card.pressed.disconnect(connection["callable"])

@@ -796,6 +796,42 @@ func _count_owned_with_tag(tag: String) -> int:
 	return count
 
 
+## Samotný text HODNOTY schopnosti na dané raritě, BEZ tag suffixu -
+## vytažené z get_ability_desc() (2026-09-25) tak, aby ho mohl HUD
+## znovupoužít i samostatně pro zobrazení "výsledné" hodnoty po sloučení
+## (viz "Zelené 'výsledné' hodnoty..." v CLAUDE.md, AbilityDraftPanel's
+## ResultValueLabel) bez zdvojení tagu, který se pro danou schopnost
+## nemění podle rarity.
+func get_ability_value_text(ability_id: String, rarity: int) -> String:
+	var definition: Dictionary = ABILITIES[ability_id]
+
+	if definition["type"] == "passive":
+		if definition.has("synergy"):
+			var synergy: Dictionary = definition["synergy"]
+			var per_count: float = float(synergy["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
+			var synergy_tag_name: String = TAG_DISPLAY_NAMES.get(synergy["tag"], synergy["tag"])
+			return "%s za každou vlastněnou věc s tagem „%s“" % [
+				_format_stat_line(synergy["stat"], per_count), synergy_tag_name
+			]
+		var value: float = float(definition["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
+		return _format_stat_line(definition["stat"], value)
+
+	var params: Dictionary = definition["effect_params"]
+	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
+		var interval: int = definition["trigger_values"][rarity]
+		var mult: float = float(params["multiplier"])
+		return "Každý %d. výstřel: %sx poškození" % [interval, _format_stat_number(mult)]
+
+	if definition["trigger"] == "time_elapsed" and definition["effect"] == "aoe_strike":
+		var charge: float = float(definition["trigger_values"][rarity])
+		var damage: float = float(params["damage"])
+		return "Nabíjí %s s, pak %s poškození všem nepřátelům" % [
+			_format_stat_number(charge), _format_stat_number(damage)
+		]
+
+	return definition["name"]
+
+
 ## Popis schopnosti na dané raritě. Pasivní schopnosti mají obecný cyklus
 ## (jako get_shop_item_desc()), aktivní jsou zatím natvrdo podle dvou
 ## existujících trigger/effect párů - až přibude třetí, přejde i tahle větev
@@ -806,32 +842,7 @@ func _count_owned_with_tag(tag: String) -> int:
 func get_ability_desc(ability_id: String, rarity: int) -> String:
 	var definition: Dictionary = ABILITIES[ability_id]
 	var tag_suffix: String = _format_tag_suffix(definition.get("tags", []))
-
-	if definition["type"] == "passive":
-		if definition.has("synergy"):
-			var synergy: Dictionary = definition["synergy"]
-			var per_count: float = float(synergy["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
-			var synergy_tag_name: String = TAG_DISPLAY_NAMES.get(synergy["tag"], synergy["tag"])
-			return "%s za každou vlastněnou věc s tagem „%s“%s" % [
-				_format_stat_line(synergy["stat"], per_count), synergy_tag_name, tag_suffix
-			]
-		var value: float = float(definition["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
-		return "%s%s" % [_format_stat_line(definition["stat"], value), tag_suffix]
-
-	var params: Dictionary = definition["effect_params"]
-	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
-		var interval: int = definition["trigger_values"][rarity]
-		var mult: float = float(params["multiplier"])
-		return "Každý %d. výstřel: %sx poškození%s" % [interval, _format_stat_number(mult), tag_suffix]
-
-	if definition["trigger"] == "time_elapsed" and definition["effect"] == "aoe_strike":
-		var charge: float = float(definition["trigger_values"][rarity])
-		var damage: float = float(params["damage"])
-		return "Nabíjí %s s, pak %s poškození všem nepřátelům%s" % [
-			_format_stat_number(charge), _format_stat_number(damage), tag_suffix
-		]
-
-	return definition["name"]
+	return "%s%s" % [get_ability_value_text(ability_id, rarity), tag_suffix]
 
 
 ## Celkový bonus ke statu - jediné místo, kde se progrese promítá do statů,

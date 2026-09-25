@@ -589,6 +589,28 @@ showing the triangle) alongside 1 not-yet-owned ability ("Přetěžovací matice
 confirms it lights up exactly for owned entries and stays off otherwise, not just "always on" or
 "always off" by coincidence.
 
+**An upgrade card also previews its post-merge value, in green** (`ResultValueLabel`, same day,
+explicit follow-up: "u karet, které vylepšují... ukazovali rovnou hodnoty výsledné schopnosti").
+Only shown when `already_owned` is true AND `rarity < ShopRarity.DIAMOND` — above Diamond there's
+no higher tier to merge into (multiple Diamond copies just keep stacking independently, see "A
+repeat offer of an already-owned schopnost..." above), so there's no well-defined "resulting value"
+to preview, and the label is left empty rather than showing something misleading. Text is `"→ %s
+(%s)" % [value_at_next_rarity, next_rarity_name]`, colored via a plain
+`theme_override_colors/font_color` on the `Label` (no BBCode/RichTextLabel needed — kept as a
+second sibling `Label`, not a colored span inside `DescLabel`, specifically so `DescLabel`'s
+existing literal `[TagName]` suffix text never has to pass through a BBCode parser that would
+misread square brackets as tags). **`get_ability_desc()` was refactored to extract
+`get_ability_value_text(ability_id, rarity)`** — the same stat-line/synergy/trigger formatting
+logic, minus the tag suffix — so this preview can call `get_ability_value_text(ability_id, rarity +
+1)` directly instead of duplicating any formatting rules; `get_ability_desc()` itself is now just
+`get_ability_value_text(...) + tag_suffix`. Because the offered rarity for an owned ability is
+always forced to match the player's lowest owned copy (see above), `rarity + 1` is always exactly
+the tier that specific merge would land on — never a guess. **Needed a card layout rebalance**:
+`DescLabel` shrank (168 vs. the previous PR's 222) and `ResultValueLabel` sits in the freed space
+(172-228, 56px) — sized for the longest real case (a 3-tag synergy sentence plus a `" (Rarita)"`
+suffix wraps to 3 lines at the card's 160px text width); `RarityLabel` shifted down to 232-252
+accordingly, still leaving an 8px margin above the card's own bottom edge (260).
+
 **Trigger/effect resolution lives in `player.gd`, not `game_manager.gd`** — GameManager only owns the
 *data* (what schopnosti exist, which ones the player owns, at what rarity). `player.gd` has TWO
 separate consumer functions, one per trigger type, both reading/writing a shared per-owned-instance
@@ -963,7 +985,7 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above), `SHOP_RARITY_COLORS` (rarity diamond icon colors, see "Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon" above), `is_ability_owned()` (drives the green upgrade-indicator triangle, see "A green triangle left of the rarity icon" above)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above), `SHOP_RARITY_COLORS` (rarity diamond icon colors, see "Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon" above), `is_ability_owned()`/`get_ability_value_text()` (drive the green upgrade-indicator arrow and its post-merge value preview, see "A green arrow left of the rarity icon"/"An upgrade card also previews its post-merge value" above)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above)
 - `scenes/ui/rarity_icon.gd` — the diamond-shape polygon points/outline color drawn in `_draw()`, reused by `AbilityDraftPanel`'s `RarityIcon` nodes
 - `scenes/ui/upgrade_icon.gd` — the green triangle's polygon points/color, reused by `AbilityDraftPanel`'s `UpgradeIndicator` nodes
