@@ -574,10 +574,18 @@ func _level_up() -> void:
 
 ## Vylosuje ABILITY_CHOICE_COUNT náhodných ABILITY_ORDER schopností (bez
 ## opakování stejného ID v rámci JEDNÉ nabídky, stejně jako
-## _generate_shop_offer()) a KAŽDÉ nezávisle vylosuje raritu podle
-## ABILITY_RARITY_WEIGHTS - nabídka se NEfiltruje podle toho, co už hráč
-## vlastní (stejná schopnost na stejné raritě, kterou už má, je žádoucí -
-## je to potenciální 2. kopie pro sloučení, viz _try_merge_ability()).
+## _generate_shop_offer()) - nabídka se NEfiltruje podle toho, co už hráč
+## vlastní (stejná schopnost, kterou už má, je žádoucí - je to potenciální
+## 2. kopie pro sloučení, viz _try_merge_ability()). Rarita se losuje
+## NEZÁVISLE (ABILITY_RARITY_WEIGHTS) jen pro schopnost, kterou hráč ještě
+## vůbec nevlastní - pokud už vlastní aspoň jednu instanci daného ID, nabídne
+## se na STEJNÉ raritě jako ta nejnižší vlastněná (_lowest_owned_ability_rarity())
+## místo nového nezávislého hodu. Bez tohohle by dvě nezávisle vylosované
+## kopie stejné schopnosti mohly skončit na RŮZNÝCH raritách a nikdy by se
+## nesloučily (nahlášeno 2026-09-25 - hráč měl "Jádro Bronz" i "Jádro Stříbro"
+## současně). Vlastnictví se hledá na nejnižší raritě záměrně: sloučení se tak
+## "propadne" postupně vzhůru přes všechny už vlastněné vyšší rarity téhož ID
+## (viz rekurze v _try_merge_ability()), ne jen mezi dvěma konkrétními kopiemi.
 func _roll_ability_options() -> Array[Dictionary]:
 	var pool: Array[String] = ABILITY_ORDER.duplicate()
 	pool.shuffle()
@@ -585,8 +593,20 @@ func _roll_ability_options() -> Array[Dictionary]:
 
 	var offered: Array[Dictionary] = []
 	for ability_id in picked_ids:
-		offered.append({"ability_id": ability_id, "rarity": _roll_rarity(ABILITY_RARITY_WEIGHTS)})
+		var owned_rarity: int = _lowest_owned_ability_rarity(ability_id)
+		var rarity: int = owned_rarity if owned_rarity >= 0 else _roll_rarity(ABILITY_RARITY_WEIGHTS)
+		offered.append({"ability_id": ability_id, "rarity": rarity})
 	return offered
+
+
+## Nejnižší rarita, na které hráč AKTUÁLNĚ vlastní danou schopnost, nebo -1,
+## pokud ji nevlastní vůbec - viz _roll_ability_options().
+func _lowest_owned_ability_rarity(ability_id: String) -> int:
+	var lowest: int = -1
+	for entry in owned_abilities:
+		if entry["ability_id"] == ability_id and (lowest < 0 or entry["rarity"] < lowest):
+			lowest = entry["rarity"]
+	return lowest
 
 
 ## Pokud čeká aspoň jedna nabídka A zrovna žádná není rozehraná, vylosuje
