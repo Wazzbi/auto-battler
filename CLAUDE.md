@@ -258,8 +258,45 @@ node's `global_position` and were never affected by this bug.
 **Intro/drop-in sequence**: on start, the player falls from above into position
 (`_play_drop_in_animation` in `player.gd`) while `GameManager.state == State.INTRO`, which blocks
 all gameplay `_process` logic automatically. `_on_landed()` triggers a screen shake, a squash
-tween, a procedural impact ring (`scenes/effects/impact_effect.gd`), and finally
-`GameManager.finish_intro()` to switch state to `PLAYING`.
+tween, a procedural impact ring (`scenes/effects/impact_effect.gd`), waits for all three to finish
+playing, and only then calls `GameManager.begin_intro_ability_draft()`.
+
+**That wait is deliberate, added same-day as a fix**: `begin_intro_ability_draft()` used to fire
+immediately, which pauses the tree the instant the panel shows — cutting the screen shake, squash
+tween, and impact ring off mid-animation, since none of those cosmetic effects run at
+`process_mode = ALWAYS` (unlike the HUD, which does). Fixed by awaiting
+`get_tree().create_timer(impact_effect.duration).timeout` before calling
+`begin_intro_ability_draft()` — `_spawn_impact_effect()` now returns the instantiated effect node
+so `_on_landed()` can read its actual `duration` (0.4s by default) rather than hardcoding a
+duplicate number. The impact ring is deliberately the one to wait on: it's the longest of the
+three (camera shake's default `duration` in `camera_follow.gd`'s `shake()` is 0.22s, the squash
+tween is `0.08 + 0.15 = 0.23s`), so waiting for it covers the other two automatically. **Verified
+with a headless test sampling `ability_draft_panel.visible` at several timestamps** — confirmed
+`false` at 0.6s and 0.8s post-scene-start (still mid-effects) and `true` by 0.98s (0.55s fall +
+0.4s impact ring + a hair of frame slack), not immediately after the 0.55s landing.
+
+**The player's very first schopnost pick happens BEFORE the game starts, not after landing**
+(added 2026-09-25, explicit user request): `begin_intro_ability_draft()` queues an offer through
+the exact same `pending_ability_drafts`/`_try_offer_next_ability_draft()` machinery a normal
+level-up uses (just without incrementing `player_level`/XP — the player is already level 1 from
+`reset_game()`) so `AbilityDraftPanel` shows and pauses the game (`hud.gd`'s
+`_show_ability_draft_panel()`) exactly like any other schopnost offer, with zero new UI code. Since
+this happens while `state` is still `State.INTRO`, movement/enemy-spawning/everything already
+gated behind `state == State.PLAYING` naturally stays frozen through the pick — no separate
+gating was needed. **`finish_intro()` moved out of `player.gd` and into the tail of
+`resolve_ability_draft()`** in `game_manager.gd`: once an offer resolves and
+`pending_ability_drafts` drops back to 0, `resolve_ability_draft()` checks `state == State.INTRO`
+and calls `finish_intro()` itself, so the INTRO→PLAYING transition happens the instant the queue
+actually empties — correctly covering both a manual pick and "Auto vylepšení" (which calls
+`resolve_ability_draft()` directly, bypassing the panel). `player.gd`'s `_on_landed()` no longer
+calls `finish_intro()` at all. **Verified with two headless tests** (not just eyeballed): one
+asserting `GameManager` state directly (state stays `INTRO` with `pending_ability_drafts == 1`
+right after landing, becomes `PLAYING` with exactly 1 owned ability after
+`resolve_ability_draft(0)`), and a second, scene-level one instantiating real `main.tscn` +
+`hud.tscn` asserting `hud.ability_draft_panel.visible`, `get_tree().paused`, and
+`GameManager.enemies_alive == 0` are all true while the offer is pending — the scene-level check
+matters because a GameManager-only test can't catch a HUD-layer bug (see the wave-10 shop/ability
+panel-collision fix earlier in this file for precedent).
 
 **Game Over / Victory auto-restart flow**: `hud.gd` drives both `GameOverPanel` and `VictoryPanel`
 with the *same* countdown mechanism — `_end_screen_countdown` ticks down via a manually decremented

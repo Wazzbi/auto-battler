@@ -546,6 +546,19 @@ func add_xp(amount: int) -> void:
 	xp_changed.emit(player_xp, xp_for_next_level())
 
 
+## Zavolá hráč po dopadu úvodní "drop-in" animace (viz player.gd's
+## _on_landed()) - vyžádá první nabídku schopnosti stejným mechanismem jako
+## běžný level-up (pending_ability_drafts/_try_offer_next_ability_draft()),
+## jen bez přírůstku úrovně/XP (hráč už je na úrovni 1 z reset_game()). Hra
+## zůstává ve State.INTRO (takže pohyb hráče, spawn nepřátel atd. pořád nic
+## nedělají, viz jejich `state != State.PLAYING` guardy), dokud se tahle
+## úvodní nabídka nevyřeší - přechod do PLAYING zajišťuje finish_intro()
+## volané z konce resolve_ability_draft(), ne tahle funkce.
+func begin_intro_ability_draft() -> void:
+	pending_ability_drafts += 1
+	_try_offer_next_ability_draft()
+
+
 func _level_up() -> void:
 	player_level += 1
 	# Nabídka schopnosti přijde na KAŽDÉ úrovni - žádný interval/ramp (viz
@@ -612,6 +625,11 @@ func resolve_ability_draft(offer_index: int) -> bool:
 	# fronta schopností doopravdy doběhla do prázdna.
 	if _shop_open_deferred:
 		_try_open_pending_shop()
+	# Úvodní nabídka schopnosti (viz begin_intro_ability_draft()) drží hru ve
+	# State.INTRO, dokud ji hráč nevyřídí - jakmile fronta doběhne do prázdna,
+	# přepneme na PLAYING tady, ne v player.gd (viz finish_intro()).
+	if state == State.INTRO and pending_ability_drafts <= 0:
+		finish_intro()
 	return true
 
 
@@ -867,7 +885,11 @@ func sell_shop_item(collection_name: String, index: int) -> bool:
 	return true
 
 
-## Zavolá hráč po dokončení úvodní "drop-in" animace dopadu na zem.
+## Přepne hru ze State.INTRO do State.PLAYING. Volá se z resolve_ability_draft(),
+## jakmile hráč vyřídí úvodní nabídku schopnosti spuštěnou
+## begin_intro_ability_draft() (viz player.gd's _on_landed()) - ne přímo po
+## dopadové animaci, aby hráč dostal svou první volbu schopnosti dřív, než se
+## rozeběhne pohyb/spawnování.
 func finish_intro() -> void:
 	if state == State.INTRO:
 		state = State.PLAYING

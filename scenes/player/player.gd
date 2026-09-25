@@ -109,19 +109,36 @@ func _play_drop_in_animation() -> void:
 	tween.tween_callback(_on_landed)
 
 
+## Po dopadu se hra NEROZBĚHNE rovnou - GameManager.begin_intro_ability_draft()
+## vyžádá první nabídku schopnosti (stejný panel/pauza jako běžný level-up) a
+## teprve její vyřízení přepne hru do State.PLAYING (viz
+## GameManager.resolve_ability_draft()/finish_intro()), takže hráč dostane
+## svou první volbu dřív, než se rozeběhne pohyb/spawnování nepřátel. Panel
+## se ale neukáže/nepozastaví HNED - nejdřív musí doběhnout dopadový prstenec,
+## otřes kamery i squash tween (viz níže), jinak by ta pauza tyhle kosmetické
+## reakce na dopad "usekla" v půlce (nahlášeno 2026-09-25).
 func _on_landed() -> void:
-	_spawn_impact_effect()
+	var impact_effect: Node2D = _spawn_impact_effect()
 	landed.emit()
 	_play_squash_effect()
-	GameManager.finish_intro()
+
+	# Dopadový prstenec (impact_effect.gd, výchozí duration 0.4s) je ze všech
+	# tří kosmetických reakcí nejdelší - otřes kamery (camera_follow.gd's
+	# shake(), výchozí 0.22s) i squash tween (0.08+0.15=0.23s, viz
+	# _play_squash_effect()) oba doběhnou dřív, takže stačí počkat na něj.
+	if impact_effect != null:
+		await get_tree().create_timer(impact_effect.duration).timeout
+
+	GameManager.begin_intro_ability_draft()
 
 
-func _spawn_impact_effect() -> void:
+func _spawn_impact_effect() -> Node2D:
 	if impact_effect_scene == null:
-		return
+		return null
 	var effect: Node2D = impact_effect_scene.instantiate()
 	get_tree().current_scene.add_child(effect)
 	effect.global_position = global_position
+	return effect
 
 
 func _play_squash_effect() -> void:
