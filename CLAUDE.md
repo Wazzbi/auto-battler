@@ -404,11 +404,27 @@ three" feel now that the unified pool is big enough for a real choice — was br
 random with no reroll, so a lower merge threshold compensates for the player's lower control over
 which duplicate they get next. Offers roll a rarity per slot (`ABILITY_RARITY_WEIGHTS`, same
 70/20/8/2% shape as the shop) and reuse the shared `ShopRarity` enum/`SHOP_RARITY_NAMES` display
-strings. `owned_abilities: Array[Dictionary]` (each `{"ability_id": String, "rarity": int}`) has no
-active/stash split (unlike the shop) — every owned instance always counts, since there's no
-purchase-slot pressure to manage; one `ability_id` can have several simultaneously-owned instances
-at different rarities (e.g. 1 merged Silver copy + 1 fresh Bronze one), which is why
-`get_stat_bonus()`/the trigger resolvers sum/check every owned instance rather than a single "rank."
+strings — but **only for an `ability_id` the player doesn't own yet**. `owned_abilities:
+Array[Dictionary]` (each `{"ability_id": String, "rarity": int}`) has no active/stash split (unlike
+the shop) — every owned instance always counts, since there's no purchase-slot pressure to manage.
+
+**A repeat offer of an already-owned schopnost is forced to match the player's lowest owned rarity
+of it, not rolled independently** (`_lowest_owned_ability_rarity()`, fixed 2026-09-25 — reported
+after the user ended up owning "Jádro" at both Bronze AND Silver simultaneously, since each pick
+used to roll its own rarity with no awareness of what was already owned). Without this, two
+independently-rolled copies of the same ability could land on different rarities and never merge —
+`_try_merge_ability()` only matches same-`ability_id`-same-`rarity` pairs, so a Bronze and a Silver
+copy of "Jádro" would just sit there permanently unmerged (still both counted by
+`get_stat_bonus()`, so not a power bug, but a confusing, untidy display). Matching the *lowest*
+owned rarity (not highest, not the most recent) is deliberate: merging that new copy with the
+existing lowest one can cascade upward through `_try_merge_ability()`'s own recursion if a
+higher-rarity copy of the same ability also already exists, converging everything toward a single
+instance over time instead of leaving scattered stragglers. At `ShopRarity.DIAMOND` (already the
+top tier) this naturally has no effect — multiple Diamond copies still coexist and stack
+independently, exactly as before this fix, since `_try_merge_ability()` never merges past Diamond
+anyway. **Verified with a headless test**: forced 200 offers while always picking "power_core"
+whenever offered, asserting after every single resolve that it never had two different owned
+rarities at once.
 
 **Rarity scales differently for passive vs. active schopnosti** — passives scale the stat *value*
 (`PASSIVE_EFFECT_MULTIPLIERS`, `[1.0, 1.5, 2.25, 3.5]`, its own gentler curve vs. the shop's
