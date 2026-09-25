@@ -677,6 +677,46 @@ Currently 520px tall (offer row + reroll button + active row + stash row + close
 under budget, but with much less spare margin than before now that the active/stash sections exist;
 any future addition needs to actively check this rather than assume there's room.
 
+**Tag synergie — schopnosti a itemy sdílejí kategorie, aby šlo plánovat build kolem obou zdrojů
+dohromady** (added 2026-09-25, explicit user request: "chci vymýšlet strategii volby itemů podle
+schopností, a naopak"). Every `ABILITIES` and `SHOP_ITEMS` entry now carries a `"tags"` array
+(currently always exactly 1 tag) from a shared 4-value set: `"kinetic"` (raw damage/multishot),
+`"precision"` (attack speed/range), `"explosive"` (the two active schopnosti), `"support"`
+(HP/regen/armor) — display names in `TAG_DISPLAY_NAMES`. The tag itself is purely informational for
+most entries (shown as a `[TagName]` suffix appended by `_format_tag_suffix()` at the end of
+`get_ability_desc()`/`get_shop_item_desc()` — no `hud.tscn`/`hud.gd` changes were needed, since
+every card/tooltip in the HUD already renders through those two functions) — it exists so a player
+can recognize "this schopnost and that shop item are both Precision" and plan a build around the
+category before either the actual synergy piece appears.
+
+**The real payoff is two NEW entries whose bonus scales with how many owned things share a tag** —
+`ABILITIES["overclock_matrix"]` ("Přetěžovací matice", Kinetic, scales `damage`) and
+`SHOP_ITEMS["resonance_array"]` ("Rezonanční pole", Precision, scales `attack_speed`) — one in each
+system, deliberately mirroring each other so the synergy works in BOTH directions the user asked
+about: pick the schopnost first and hunt for matching-tag shop items afterward, or buy the item
+first and prioritize matching-tag schopnosti at the next few level-ups. These use a `"synergy":
+{"stat": String, "tag": String, "value": float}` dict instead of the usual flat `"stat"/"value"`
+(abilities) or `"stats"` dict (shop items) — `value` is the Bronze-tier bonus **per owned instance
+carrying that tag, counting the synergy piece itself**. `_count_owned_with_tag(tag)` (in
+`game_manager.gd`) sums matches across `owned_abilities` AND `active_shop_items` together (stashed
+items don't count, same rule as everything else stat-relevant) — a player owning `power_core`
+(Kinetic) plus `overclock_matrix` (Kinetic) has `_count_owned_with_tag("kinetic") == 2`, so
+`overclock_matrix` alone contributes `1.5 * PASSIVE_EFFECT_MULTIPLIERS[rarity] * 2` damage, on top
+of `power_core`'s own flat `4.0 * multiplier`. **`get_stat_bonus()` now branches on
+`definition.has("synergy")`** for both the passive-schopnost loop and the active-shop-item loop
+(falls through to the existing flat-value path otherwise) — and `get_shop_item_desc()`/
+`get_stat_bonus()`'s shop-item loop read `SHOP_ITEMS[id].get("stats", {})` now instead of a direct
+`["stats"]` index, since `resonance_array` has no `"stats"` key at all (`.get()` with a default
+avoids the runtime error a missing-key `Dictionary` index would otherwise throw when assigned to a
+typed `Dictionary` variable). **Verified with a headless test**: constructed exact owned-ability/
+owned-item combinations and asserted `get_stat_bonus()` matches hand-calculated numbers (including
+a 3-way stack), asserted every `ABILITY_ORDER`/`SHOP_ITEM_ORDER` entry's description renders without
+error at all 4 rarities, and confirmed `debug_max_abilities()` still works with the new ability in
+the pool. **This is a first-pass tag assignment, not a balance pass** — `support` ended up with 6
+of the 16 total entries vs. `explosive`'s 2, so a Support-tag synergy piece (if one gets added
+later) would be far easier to stack than an Explosive one; revisit the tag distribution once there
+are more entries to spread across all 4, rather than rebalancing prematurely around today's count.
+
 **Shop items are a separate system from passive schopnosti** (`GameManager.SHOP_ITEMS`/
 `SHOP_ITEM_ORDER`, `Control/ShopPanel` in `hud.tscn`). Where a passive schopnost is free, randomly
 offered, and single-stat, a shop item is: bought with gold from a rotating offer that already
@@ -824,5 +864,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above)
