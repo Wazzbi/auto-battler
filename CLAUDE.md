@@ -467,6 +467,25 @@ anyway. **Verified with a headless test**: forced 200 offers while always pickin
 whenever offered, asserting after every single resolve that it never had two different owned
 rarities at once.
 
+**A schopnost already owned at Diamond is excluded from the offer pool entirely**
+(`_roll_ability_options()`, fixed 2026-09-25 — reported after the user was offered a "Dvojitý
+zásah" card at Diamond, picked it expecting an upgrade, and got a second independent Diamond copy
+instead, which read as a bug since nothing about the card said "this won't actually upgrade
+anything"). Since `_try_merge_ability()` never merges past Diamond (see above), re-offering a
+Diamond-owned ability can never produce the "upgrade" the `UpgradeIndicator` arrow and green
+`ResultValueLabel` preview imply — so it's filtered out of the pool before the `ABILITY_CHOICE_COUNT`
+slice, the same way `_generate_shop_offer()`'s pool never needed this (the shop has no such ceiling
+signal - merges there are gated by copy count, not something the offer step can see in advance).
+**Falls back to the unfiltered pool if filtering would leave it empty** (i.e. every single
+`ABILITY_ORDER` entry is already owned at Diamond) — offering "just another stacking copy" of
+something is still strictly better than `AbilityDraftPanel` showing zero cards with no way to
+resolve the pending offer, which would otherwise soft-lock the game (only reachable via the Debug
+panel's "Max schopnosti", or a very long real run). **Verified with a headless test**: 300 offer
+rolls with one ability owned at Diamond confirmed it never appears; forcing every `ABILITY_ORDER`
+entry to Diamond still returns a full `ABILITY_CHOICE_COUNT`-sized offer (the fallback); a
+Silver-owned (non-Diamond) ability is still offered normally, matched to Silver, confirming the
+existing "match lowest owned rarity" behavior above this fix is untouched.
+
 **Rarity scales differently for passive vs. active schopnosti** — passives scale the stat *value*
 (`PASSIVE_EFFECT_MULTIPLIERS`, `[1.0, 1.5, 2.25, 3.5]`, its own gentler curve vs. the shop's
 `SHOP_RARITY_MULTIPLIERS` since the 2-copy merge threshold grows power faster for the same curve).
