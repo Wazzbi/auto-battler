@@ -32,6 +32,16 @@ signal landed
 ## jich bude v budoucnu víc, protože každý jednotlivý zásah je relativně
 ## slabší, ne jen méně častý.
 @export var base_armor: float = 2.0
+## Šance (0.0-1.0) na kritický zásah při KAŽDÉM jednotlivém výstřelu (u
+## multishotu se tedy losuje zvlášť pro každý projektil, stejná granularita
+## jako _consume_ability_triggers()) - viz _shoot(). Nemá vlastní
+## LEVEL_STAT_GROWTH řádek (stejně jako multishot) - je to čistě
+## volbou-řízený stat ze schopností/obchodu, ne automatická podlaha.
+@export var base_crit_chance: float = 0.05
+## Násobič poškození při kritickém zásahu - pevná hodnota podle zadání
+## ("dvojnásobné zranění"), ne další stat k růstu; crit_chance samo o sobě
+## roste přes schopnosti/itemy (viz get_crit_chance()).
+const CRIT_DAMAGE_MULTIPLIER: float = 2.0
 @export var move_speed: float = 60.0 # px/s postupu, když nikdo není v dosahu
 @export var projectile_scene: PackedScene
 @export var impact_effect_scene: PackedScene
@@ -186,6 +196,10 @@ func get_armor() -> float:
 	return base_armor + GameManager.get_stat_bonus("armor")
 
 
+func get_crit_chance() -> float:
+	return base_crit_chance + GameManager.get_stat_bonus("crit_chance")
+
+
 func _on_level_changed(_new_level: int) -> void:
 	_apply_progression_changes()
 
@@ -259,6 +273,13 @@ func _shoot(target: Node2D) -> void:
 	if projectile_scene == null:
 		return
 	var damage: float = get_damage() * _consume_ability_triggers()
+	# Losuje se pro KAŽDÝ jednotlivý výstřel zvlášť (u multishotu tedy pro
+	# každý projektil nezávisle) - stejná granularita jako
+	# _consume_ability_triggers(). Násobí se AŽ NA konec, po schopnostech
+	# jako "Dvojitý zásah" - crit a aktivní trigger multiplikátory se tak
+	# stejně jako víc aktivních schopností navzájem násobí, ne sčítají.
+	if randf() < get_crit_chance():
+		damage *= CRIT_DAMAGE_MULTIPLIER
 	var projectile: Node2D = projectile_scene.instantiate()
 	get_tree().current_scene.add_child(projectile)
 	projectile.global_position = global_position

@@ -343,15 +343,56 @@ a replacement for schopnosti/shop as the main source of it, so player choices st
 a build's identity.
 
 **Stats flow**: base stats live as `@export` vars on `player.gd` (`base_damage`,
-`base_attack_speed`, `base_attack_range`, `base_max_hp`, `base_armor`). Effective stats come from
-getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`, `get_target_count()`,
-`get_hp_regen()`, `get_armor()`) that add `GameManager.get_stat_bonus(stat_id)` — **the single place
-where progression turns into numbers**, summing three sources: `LEVEL_STAT_GROWTH` (automatic, keyed
-by `player_level`), owned *passive* schopnosti, and the shop's `active_shop_items`. The player
-recomputes on the `level_changed` and `ability_inventory_changed` signals. **Balance caveat
-(partially addressed)**: a run's power still depends heavily on what the schopnosti pool happens to
-offer — but `LEVEL_STAT_GROWTH` guarantees a non-zero floor regardless of draft luck, so a bad-luck
-run is weaker, not stat-flat. Not claimed to fully solve fragility, just to soften the worst case.
+`base_attack_speed`, `base_attack_range`, `base_max_hp`, `base_armor`, `base_crit_chance`).
+Effective stats come from getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`,
+`get_target_count()`, `get_hp_regen()`, `get_armor()`, `get_crit_chance()`) that add
+`GameManager.get_stat_bonus(stat_id)` — **the single place where progression turns into numbers**,
+summing three sources: `LEVEL_STAT_GROWTH` (automatic, keyed by `player_level`), owned *passive*
+schopnosti, and the shop's `active_shop_items`. The player recomputes on the `level_changed` and
+`ability_inventory_changed` signals. **Balance caveat (partially addressed)**: a run's power still
+depends heavily on what the schopnosti pool happens to offer — but `LEVEL_STAT_GROWTH` guarantees a
+non-zero floor regardless of draft luck, so a bad-luck run is weaker, not stat-flat. Not claimed to
+fully solve fragility, just to soften the worst case.
+
+**Critical hits (`base_crit_chance`, `get_crit_chance()`, `CRIT_DAMAGE_MULTIPLIER`)** — added
+2026-09-25, explicit user request. `_shoot()` rolls `randf() < get_crit_chance()` **independently
+for every individual shot** (same granularity as `_consume_ability_triggers()` — with multishot,
+each projectile gets its own roll) and, on a crit, multiplies that shot's damage by
+`CRIT_DAMAGE_MULTIPLIER` (**2.0**, fixed per the user's spec — "dvojnásobné zranění" — not itself a
+growable stat; only the CHANCE to trigger it grows). The multiply happens **after**
+`_consume_ability_triggers()`'s own multiplier (e.g. "Dvojitý zásah"), so a crit on a
+double-damage-triggered shot stacks multiplicatively with it, same philosophy as multiple active
+schopnosti already stacking multiplicatively rather than additively (see "Schopnosti" above).
+`base_crit_chance` defaults to 0.05 (5%) — a small non-zero floor so crits are visible in vanilla
+play, mirroring `base_armor`/`base_hp_regen`'s "small always-on baseline" treatment. **Deliberately
+has no `LEVEL_STAT_GROWTH` entry**, same precedent as `multishot` — it's a pure choice-driven stat
+from schopnosti/shop, not an automatic per-level floor. No damage-number/visual feedback exists for
+a crit landing (no floating combat text anywhere in this project yet) — purely a math change for
+now; revisit if crits turn out to feel invisible in actual play.
+
+**`crit_chance` is the only stat stored as a fraction (0.08 = 8%), not an absolute number** — every
+formatting path that turns a stat into display text special-cases it via
+`GameManager._format_stat_line(stat_id, value)` (`+8 % šance na kritický zásah`, `value * 100`)
+instead of the generic `STAT_DISPLAY_NAMES`/`_format_stat_number()` pair every other stat uses. Both
+`get_ability_desc()` and `get_shop_item_desc()` route ALL their stat-line formatting through this one
+helper now (refactored from 4 near-duplicate inline call sites) specifically so adding `crit_chance`
+only needed one special case, not four. The `Control/BottomBar` stat column also shows it
+(`StatCrit`, `hud.gd`'s `_refresh_stat_labels()`) — the 5 existing rows there had to shrink from a
+28px step to 22px to fit a 6th row inside `BottomBar`'s fixed 140px height without overflowing (this
+also incidentally fixed a pre-existing 6px overflow `StatArmor` already had before this change).
+
+**Two new entries pay off the new stat, tagged "precision"** (fits alongside the existing
+accuracy/rate-of-fire precision entries) — `ABILITIES["precision_targeting"]` (passive, +6%
+`crit_chance` at Bronze) and `SHOP_ITEMS["precision_scope"]` (multi-stat: `crit_chance` +
+`attack_speed`, so it doesn't read as an isolated crit-only stick). Neither uses the tag-synergy
+`"synergy"` shape (see "Tag synergie" above) — both are plain flat-value entries, deliberately not
+scaling with owned-tag count, to keep this pass focused on introducing the stat itself rather than
+compounding it with the synergy mechanic. **Verified with headless tests**: hand-calculated
+`get_stat_bonus("crit_chance")` for a constructed ability+item combination, confirmed every
+ability/item description still renders without error at all 4 rarities (regression check on the
+`_format_stat_line()` refactor), and a scene-level test that force-set `base_crit_chance` to `0.0`
+then `1.0` and asserted real `_shoot()` calls against a real `enemy.tscn` target never/always
+produced exactly `get_damage() * CRIT_DAMAGE_MULTIPLIER`.
 
 **Armor (`base_armor`, `get_armor()`, `kinetic_dampers` schopnost)**: a flat, per-hit damage
 reduction — `take_damage()` in `player.gd` computes `reduced_amount = max(amount - get_armor(),
@@ -855,7 +896,7 @@ don't proactively redesign the layout for this alone.
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
 - `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_wave`/`variant_ramp_full_wave` (loop-1-only ramp for when ranged/sniper start appearing)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `is_ranged`/`projectile_scene`
@@ -864,5 +905,5 @@ don't proactively redesign the layout for this alone.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above)
