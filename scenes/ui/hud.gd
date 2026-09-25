@@ -334,6 +334,7 @@ func _show_ability_draft_panel(offered: Array) -> void:
 		card.get_node("DescLabel").text = GameManager.get_ability_desc(ability_id, rarity)
 		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
 		card.get_node("RarityIcon").rarity_color = GameManager.SHOP_RARITY_COLORS[rarity]
+		card.get_node("UpgradeIndicator").visible = GameManager.is_ability_owned(ability_id)
 
 		for connection in card.pressed.get_connections():
 			card.pressed.disconnect(connection["callable"])

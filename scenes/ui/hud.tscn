@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://bpq8pxfiyscu2" path="res://scenes/ui/hud.gd" id="1_hud_script"]
 [ext_resource type="Script" path="res://scenes/ui/eye_icon.gd" id="2_eye_icon_script"]
 [ext_resource type="Script" path="res://scenes/ui/rarity_icon.gd" id="3_rarity_icon_script"]
+[ext_resource type="Script" path="res://scenes/ui/upgrade_icon.gd" id="4_upgrade_icon_script"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bar_bg"]
 bg_color = Color(0.09, 0.1, 0.13, 0.95)
@@ -942,6 +943,16 @@ offset_top = 60.0
 offset_right = 200.0
 offset_bottom = 320.0
 
+[node name="UpgradeIndicator" type="Control" parent="Control/AbilityDraftPanel/Card0"]
+visible = false
+layout_mode = 0
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 8.0
+offset_right = 74.0
+offset_bottom = 24.0
+script = ExtResource("4_upgrade_icon_script")
+
 [node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card0"]
 layout_mode = 0
 mouse_filter = 2
@@ -993,6 +1004,16 @@ offset_top = 60.0
 offset_right = 390.0
 offset_bottom = 320.0
 
+[node name="UpgradeIndicator" type="Control" parent="Control/AbilityDraftPanel/Card1"]
+visible = false
+layout_mode = 0
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 8.0
+offset_right = 74.0
+offset_bottom = 24.0
+script = ExtResource("4_upgrade_icon_script")
+
 [node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card1"]
 layout_mode = 0
 mouse_filter = 2
@@ -1043,6 +1064,16 @@ offset_left = 400.0
 offset_top = 60.0
 offset_right = 580.0
 offset_bottom = 320.0
+
+[node name="UpgradeIndicator" type="Control" parent="Control/AbilityDraftPanel/Card2"]
+visible = false
+layout_mode = 0
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 8.0
+offset_right = 74.0
+offset_bottom = 24.0
+script = ExtResource("4_upgrade_icon_script")
 
 [node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card2"]
 layout_mode = 0

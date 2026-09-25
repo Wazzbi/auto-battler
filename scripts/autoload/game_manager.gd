@@ -689,6 +689,13 @@ func _lowest_owned_ability_rarity(ability_id: String) -> int:
 	return lowest
 
 
+## True, pokud hráč aktuálně vlastní aspoň 1 kopii dané schopnosti (na
+## libovolné raritě) - použito HUD pro zelený "vylepší vlastněnou schopnost"
+## indikátor v AbilityDraftPanel (viz "Card0..2" v CLAUDE.md).
+func is_ability_owned(ability_id: String) -> bool:
+	return _lowest_owned_ability_rarity(ability_id) >= 0
+
+
 ## Pokud čeká aspoň jedna nabídka A zrovna žádná není rozehraná, vylosuje
 ## schopnosti a emitne ability_draft_ready. Podmínka
 ## `_current_ability_offer.is_empty()` je nutná - bez ní by každý _level_up()
