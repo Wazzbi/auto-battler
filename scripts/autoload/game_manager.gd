@@ -656,9 +656,18 @@ func _level_up() -> void:
 ## opakování stejného ID v rámci JEDNÉ nabídky, stejně jako
 ## _generate_shop_offer()) - nabídka se NEfiltruje podle toho, co už hráč
 ## vlastní (stejná schopnost, kterou už má, je žádoucí - je to potenciální
-## 2. kopie pro sloučení, viz _try_merge_ability()). Rarita se losuje
-## NEZÁVISLE (ABILITY_RARITY_WEIGHTS) jen pro schopnost, kterou hráč ještě
-## vůbec nevlastní - pokud už vlastní aspoň jednu instanci daného ID, nabídne
+## 2. kopie pro sloučení, viz _try_merge_ability()), AŽ na jednu výjimku:
+## schopnost už vlastněná na ShopRarity.DIAMOND (nejvyšší stupeň) se z
+## nabídkového poolu vyřadí úplně (nahlášeno 2026-09-25 - hráč dostal
+## "vylepšení" už Diamantového "Dvojitý zásah", které ve skutečnosti jen
+## přidalo druhou nezávislou kopii, ne skutečné vylepšení - matoucí, protože
+## _try_merge_ability() nikdy neslučuje nad Diamant, takže tam žádné
+## "vylepšení" reálně neexistuje). Pokud by tohle vyřazení nechalo pool
+## prázdný (hráč má VŠECHNY schopnosti na Diamantu), padá zpátky na
+## nefiltrovaný pool - lepší nabídnout "jen další nezávislou kopii" než
+## nechat AbilityDraftPanel bez jediné karty. Rarita se losuje NEZÁVISLE
+## (ABILITY_RARITY_WEIGHTS) jen pro schopnost, kterou hráč ještě vůbec
+## nevlastní - pokud už vlastní aspoň jednu instanci daného ID, nabídne
 ## se na STEJNÉ raritě jako ta nejnižší vlastněná (_lowest_owned_ability_rarity())
 ## místo nového nezávislého hodu. Bez tohohle by dvě nezávisle vylosované
 ## kopie stejné schopnosti mohly skončit na RŮZNÝCH raritách a nikdy by se
@@ -668,6 +677,14 @@ func _level_up() -> void:
 ## (viz rekurze v _try_merge_ability()), ne jen mezi dvěma konkrétními kopiemi.
 func _roll_ability_options() -> Array[Dictionary]:
 	var pool: Array[String] = ABILITY_ORDER.duplicate()
+
+	var upgradeable_pool: Array[String] = []
+	for ability_id in pool:
+		if _lowest_owned_ability_rarity(ability_id) != ShopRarity.DIAMOND:
+			upgradeable_pool.append(ability_id)
+	if not upgradeable_pool.is_empty():
+		pool = upgradeable_pool
+
 	pool.shuffle()
 	var picked_ids: Array = pool.slice(0, mini(ABILITY_CHOICE_COUNT, pool.size()))
 
