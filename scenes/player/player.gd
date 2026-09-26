@@ -68,18 +68,21 @@ var level_end_x: float = INF
 ## panelu v HUD (viz hud.gd), na resetu hry (nová instance hráče) se sama
 ## vrátí na false.
 var debug_invincible: bool = false
-## Postup KAŽDÉ vlastněné AKTIVNÍ schopnosti (viz GameManager.owned_abilities)
-## směrem k jejímu dalšímu spuštění - stejný index/pořadí jako owned_abilities.
-## Jednotka závisí na triggeru té konkrétní instance: "shot_count" počítá
+## Postup KAŽDÉ vlastněné AKTIVNÍ schopnosti (viz GameManager.skill_ranks)
+## směrem k jejímu dalšímu spuštění - klíčovaná ability_id (ne indexem jako
+## dřív), protože od přechodu na dovednostní strom (2026-09-26) existuje
+## nanejvýš JEDNA "kopie" každé schopnosti (rostoucí rank, ne nezávislé
+## instance) - ability_id je tak stabilní identita napříč investováním
+## dalších bodů, na rozdíl od dřívějšího pole indexovaného pozicí v
+## owned_abilities, které se přerovnávalo při každém sloučení. Jednotka
+## závisí na triggeru té konkrétní schopnosti: "shot_count" počítá
 ## celočíselně výstřely (viz _consume_ability_triggers()), "time_elapsed"
 ## počítá sekundy (viz _process_time_based_abilities()) - float, aby šlo
-## přičítat `delta`. Přebuduje se od nuly při KAŽDÉ změně vlastnictví
-## (_on_ability_inventory_changed()), i jen kosmetické (sloučení, nebo přidání
-## úplně jiné schopnosti) - vědomý kompromis: sloučená schopnost tak ztratí
-## rozpracovaný postup ke svému příštímu spuštění, ale instance v poli nemají
-## stabilní identitu napříč sloučeními, takže "zachovat postup" by
-## vyžadovalo sledovat identitu navíc jen pro tenhle okrajový případ.
-var _ability_progress: Array[float] = []
+## přičítat `delta`. Na rozdíl od dřívějška se NERESETUJE při investování
+## dalšího bodu do JINÉ schopnosti - jen když se schopnost poprvé odemkne
+## (viz _on_skill_ranks_changed()), stabilní identita totiž tenhle problém
+## u sloučení už nemá.
+var _ability_progress: Dictionary = {}
 
 
 func _ready() -> void:
@@ -90,7 +93,7 @@ func _ready() -> void:
 	# nesahá přímo.
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
-	GameManager.ability_inventory_changed.connect(_on_ability_inventory_changed)
+	GameManager.skill_ranks_changed.connect(_on_skill_ranks_changed)
 
 	_recalculate_stats()
 	hp = max_hp
@@ -119,14 +122,15 @@ func _play_drop_in_animation() -> void:
 	tween.tween_callback(_on_landed)
 
 
-## Po dopadu se hra NEROZBĚHNE rovnou - GameManager.begin_intro_ability_draft()
-## vyžádá první nabídku schopnosti (stejný panel/pauza jako běžný level-up) a
-## teprve její vyřízení přepne hru do State.PLAYING (viz
-## GameManager.resolve_ability_draft()/finish_intro()), takže hráč dostane
-## svou první volbu dřív, než se rozeběhne pohyb/spawnování nepřátel. Panel
-## se ale neukáže/nepozastaví HNED - nejdřív musí doběhnout dopadový prstenec,
-## otřes kamery i squash tween (viz níže), jinak by ta pauza tyhle kosmetické
-## reakce na dopad "usekla" v půlce (nahlášeno 2026-09-25).
+## Po dopadu se hra NEROZBĚHNE rovnou - GameManager.begin_intro_skill_tree()
+## přidá první bod schopnosti a HUD podle toho force-otevře SkillTreePanel
+## (stejná pauza jako dřívější AbilityDraftPanel); teprve jeho ZAVŘENÍ přepne
+## hru do State.PLAYING (viz GameManager.finish_intro(), volané z hud.gd),
+## takže hráč dostane svou první volbu dřív, než se rozeběhne pohyb/
+## spawnování nepřátel. Panel se ale neukáže/nepozastaví HNED - nejdřív musí
+## doběhnout dopadový prstenec, otřes kamery i squash tween (viz níže), jinak
+## by ta pauza tyhle kosmetické reakce na dopad "usekla" v půlce (nahlášeno
+## 2026-09-25).
 func _on_landed() -> void:
 	var impact_effect: Node2D = _spawn_impact_effect()
 	landed.emit()
@@ -139,7 +143,7 @@ func _on_landed() -> void:
 	if impact_effect != null:
 		await get_tree().create_timer(impact_effect.duration).timeout
 
-	GameManager.begin_intro_ability_draft()
+	GameManager.begin_intro_skill_tree()
 
 
 func _spawn_impact_effect() -> Node2D:
@@ -209,12 +213,16 @@ func _on_shop_inventory_changed() -> void:
 
 
 ## Pasivní schopnosti mění staty (přes get_stat_bonus()), aktivní ne - ale
-## obojí sdílí owned_abilities/_ability_progress, takže se přepočítává
-## a přerovnává vždy, i pro čistě aktivní přírůstek.
-func _on_ability_inventory_changed() -> void:
+## obojí sdílí skill_ranks_changed, takže se staty přepočítávají vždy, i pro
+## čistě aktivní investici. _ability_progress se čistí jen pro NOVĚ odemčené
+## schopnosti (klíč zatím chybí) - na rozdíl od dřívějška se NEresetuje
+## postup schopností, do kterých hráč jen investoval DALŠÍ bod (stabilní
+## ability_id klíč to už nevyžaduje, viz komentář u _ability_progress výše).
+func _on_skill_ranks_changed() -> void:
 	_apply_progression_changes()
-	_ability_progress.resize(GameManager.owned_abilities.size())
-	_ability_progress.fill(0.0)
+	for ability_id in GameManager.skill_ranks:
+		if not _ability_progress.has(ability_id):
+			_ability_progress[ability_id] = 0.0
 
 
 func _apply_progression_changes() -> void:
@@ -288,26 +296,28 @@ func _shoot(target: Node2D) -> void:
 
 ## Každý zavolaný _shoot() je "1 výstřel" pro účely schopností s triggerem
 ## "shot_count" - u multishotu se tak počítá KAŽDÝ jednotlivý projektil
-## zvlášť, ne jeden "kolo" útoku. Pro každou vlastněnou AKTIVNÍ schopnost s
+## zvlášť, ne jeden "kolo" útoku. Pro každou investovanou AKTIVNÍ schopnost s
 ## tímhle triggerem zvýší JEJÍ VLASTNÍ postup (viz _ability_progress) a při
-## dosažení prahu (podle rarity té konkrétní instance) ho vynuluje a
-## aplikuje efekt. Víc vlastněných instancí se vyhodnocuje NEZÁVISLE - pokud
-## by dvě spustily efekt na stejném výstřelu, jejich násobiče se navzájem
-## vynásobí (ne sečtou), proto vrací násobič přes návratovou hodnotu místo
-## přímé úpravy get_damage(). Přeskakuje pasivní schopnosti (nemají "trigger"
-## klíč vůbec) - proto se kontroluje "type" jako první.
+## dosažení prahu (podle AKTUÁLNÍHO ranku) ho vynuluje a aplikuje efekt. Na
+## rozdíl od dřívějška existuje nanejvýš JEDNA aktivní instance na ability_id
+## (žádné nezávisle stackující kopie) - vrací násobič přes návratovou
+## hodnotu spíš z konzistence s tím, jak _shoot() volání používá, než že by
+## teď muselo řešit víc současných zdrojů. Přeskakuje pasivní schopnosti
+## (nemají "trigger" klíč vůbec) - proto se kontroluje "type" jako první.
 func _consume_ability_triggers() -> float:
 	var multiplier: float = 1.0
-	for i in GameManager.owned_abilities.size():
-		var entry: Dictionary = GameManager.owned_abilities[i]
-		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
+	for ability_id in GameManager.skill_ranks:
+		var rank: int = GameManager.get_skill_rank(ability_id)
+		if rank <= 0:
+			continue
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
 		if definition["type"] != "active" or definition["trigger"] != "shot_count":
 			continue
 
-		_ability_progress[i] += 1.0
-		var interval: int = definition["trigger_values"][entry["rarity"]]
-		if _ability_progress[i] >= interval:
-			_ability_progress[i] = 0.0
+		_ability_progress[ability_id] += 1.0
+		var interval: int = definition["trigger_values"][rank - 1]
+		if _ability_progress[ability_id] >= interval:
+			_ability_progress[ability_id] = 0.0
 			if definition["effect"] == "damage_multiplier":
 				multiplier *= float(definition["effect_params"]["multiplier"])
 
@@ -317,20 +327,22 @@ func _consume_ability_triggers() -> float:
 ## Časově spouštěné schopnosti (trigger "time_elapsed", např. "Orbitální
 ## bombardování") tikají KAŽDÝ frame nezávisle na střelbě/dosahu - na rozdíl
 ## od _consume_ability_triggers() (volané jen ze _shoot()) běží pořád, i když
-## hráč zrovna nemá koho zasáhnout. Stejný nezávislý-víc-instancí princip
-## jako u shot_count (viz výše), jen efekt ("aoe_strike") nevrací násobič,
-## rovnou zasáhne nepřátele sám (viz _trigger_aoe_strike()).
+## hráč zrovna nemá koho zasáhnout. Stejný princip jako u shot_count (viz
+## výše), jen efekt ("aoe_strike") nevrací násobič, rovnou zasáhne nepřátele
+## sám (viz _trigger_aoe_strike()).
 func _process_time_based_abilities(delta: float) -> void:
-	for i in GameManager.owned_abilities.size():
-		var entry: Dictionary = GameManager.owned_abilities[i]
-		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
+	for ability_id in GameManager.skill_ranks:
+		var rank: int = GameManager.get_skill_rank(ability_id)
+		if rank <= 0:
+			continue
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
 		if definition["type"] != "active" or definition["trigger"] != "time_elapsed":
 			continue
 
-		_ability_progress[i] += delta
-		var charge_time: float = float(definition["trigger_values"][entry["rarity"]])
-		if _ability_progress[i] >= charge_time:
-			_ability_progress[i] = 0.0
+		_ability_progress[ability_id] += delta
+		var charge_time: float = float(definition["trigger_values"][rank - 1])
+		if _ability_progress[ability_id] >= charge_time:
+			_ability_progress[ability_id] = 0.0
 			if definition["effect"] == "aoe_strike":
 				_trigger_aoe_strike(definition["effect_params"])
 

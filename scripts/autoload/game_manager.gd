@@ -13,17 +13,14 @@ signal currency_changed(new_amount: int)
 signal scrap_changed(new_amount: int)
 signal xp_changed(current_xp: int, xp_needed: int)
 signal level_changed(new_level: int)
-## Emitne se, když je k dispozici nová nabídka schopností k výběru (viz
-## "Schopnosti" níže) - HUD podle toho buď zobrazí AbilityDraftPanel, nebo
-## (má-li zapnutý Auto výběr) rovnou zavolá resolve_ability_draft() sám.
-## `offered` má vždy ABILITY_CHOICE_COUNT prvků, každý
-## {"ability_id": String, "rarity": int}.
-signal ability_draft_ready(offered: Array)
-## Emitne se po přidání nebo sloučení schopnosti - HUD podle toho překreslí
-## sloty vlastněných schopností. Bez parametru (jako shop_inventory_changed),
-## protože jeden ability_id může mít víc současně vlastněných instancí na
-## různých raritách, ne jediné číslo "rank".
-signal ability_inventory_changed
+## Emitne se, když se změní počet nevyužitých bodů schopnosti (level-up,
+## nebo jejich utracení) - viz "Dovednostní strom" v CLAUDE.md. HUD podle
+## toho zbarví portrét a odznáček "+N" (žlutě, dokud je co utrácet).
+signal skill_points_changed(new_amount: int)
+## Emitne se po investování bodu do uzlu stromu - HUD podle toho překreslí
+## hromádku vlastněných schopností a otevřený SkillTreePanel, pokud je zrovna
+## vidět.
+signal skill_ranks_changed
 signal loop_changed(new_loop: int)
 ## Emitne se po nákupu nebo prodeji v obchodě - viz "Obchod" níže.
 signal shop_inventory_changed
@@ -34,8 +31,6 @@ signal shop_offer_changed(offer_ids: Array)
 ## Emitne se JEN při automatickém otevření po 10. vlně (ne při ručním
 ## otevření tlačítkem ani při rerollu) - HUD na to reaguje zobrazením a
 ## zapauzováním panelu, i když zrovna nikdo neklikl na tlačítko Obchod.
-## Pokud v tu chvíli ještě čeká nevyřízená nabídka schopnosti, emit se
-## ODLOŽÍ, dokud se nevyřídí - viz _try_open_pending_shop().
 signal shop_auto_open_requested
 
 enum State { INTRO, PLAYING, GAME_OVER, WON }
@@ -239,10 +234,11 @@ const SHOP_REROLL_COST_STEP: int = 15
 ## a _roll_rarity()) - koupě tak nemusí být vždy na BRONZE. Vlastnictví
 ## 3 kopií STEJNÉHO itemu NA STEJNÉ raritě je automaticky sloučí do 1 kopie
 ## o stupeň vyšší (_try_merge_shop_item()) - to je JEDINÝ způsob, jak item
-## posílit, žádné placené vylepšení už neexistuje. Tenhle enum (a
-## SHOP_RARITY_NAMES pro zobrazované názvy) je sdílený i se schopnostmi (viz
-## "Schopnosti" níže, ABILITY_MERGE_THRESHOLD/ABILITY_RARITY_WEIGHTS) - obě
-## soustavy mají stejné 4 stupně, jen jiné váhy/multiplikátory/práh sloučení.
+## posílit, žádné placené vylepšení už neexistuje. **Tenhle enum se od
+## 2026-09-26 týká JEN obchodu** - schopnosti (viz "Schopnosti (dovednostní
+## strom)" níže) mají od přechodu na deterministický strom vlastní, prostší
+## systém "stupňů" (plain int rank, ne ShopRarity), protože tam už není co
+## losovat.
 enum ShopRarity { BRONZE, SILVER, GOLD, DIAMOND }
 const SHOP_RARITY_NAMES: Array[String] = ["Bronz", "Stříbro", "Zlato", "Diamant"]
 ## Pravděpodobnost, že nabídka vylosuje item na daném stupni (index =
@@ -259,70 +255,71 @@ const SHOP_RARITY_MULTIPLIERS: Array[float] = [1.0, 1.6, 2.6, 4.2]
 ## luxusní nákup, ne rutinní - viz "exponenciální cena, téměř lineární
 ## bonus" z balance brainstormu, který k tomuhle systému vedl.
 const SHOP_RARITY_COST_RATIOS: Array[float] = [1.0, 1.4, 2.25, 3.75]
-## Barva rarity pro vizuální odlišení (index = ShopRarity) - použito např.
-## kosočtvercovou ikonkou nad názvem v AbilityDraftPanel (viz rarity_icon.gd).
-const SHOP_RARITY_COLORS: Array[Color] = [
-	Color(0.80, 0.50, 0.20), # Bronz
-	Color(0.75, 0.75, 0.78), # Stříbro
-	Color(1.00, 0.84, 0.0),  # Zlato
-	Color(0.25, 0.85, 1.0),  # Diamant
-]
 
-## --- Schopnosti -------------------------------------------------------
-## JEDINÝ zdroj volitelné progrese vedle automatického LEVEL_STAT_GROWTH a
-## koupí v obchodě - nahrazuje dřívější DVA oddělené systémy (2026-09-09):
-## "item draft" (3 jednostatové itemy nabízené KAŽDOU úroveň) a "aktivní
-## schopnosti" (1 aktivní schopnost nabízená jen jednou za 5 úrovní). Uživatel
-## se rozhodl obě sloučit do jedné fronty/nabídky a nechat "schopnost" jako
-## jediný název pro obojí - passivní stat-sticky (bývalé draft itemy, teď
-## `type: "passive"`) i aktivní trigger/effect efekty (`type: "active"`,
-## dřívější "aktivní schopnosti") jsou teď prostě dvě VARIANTY jedné věci,
-## ne dva systémy. Nabídka funguje na principu rarity+merge sdíleném s
-## obchodem (ShopRarity enum/SHOP_RARITY_NAMES), viz _roll_ability_options()/
-## _try_merge_ability() níže.
+## --- Schopnosti (dovednostní strom) --------------------------------------
+## Přepracováno 2026-09-26 (explicit user request) z dřívějšího náhodného
+## rarity+merge draftu na DETERMINISTICKÝ strom: hráč sbírá "body schopnosti"
+## (1 za KAŽDÝ level-up, viz _level_up()/pending_skill_points) a sám si
+## vybírá, do kterého uzlu ho investuje - žádná nabídka, žádné losování
+## rarity, žádné slučování duplicit. Nahrazuje předchozí owned_abilities
+## (Array instancí s nezávislou raritou) jediným `skill_ranks: Dictionary`
+## {ability_id: rank}, protože teď existuje nanejvýš JEDNA "kopie" každé
+## schopnosti, jen s rostoucím stupněm (rank 0 = nevlastněná).
 ##
-## Pasivní schopnost: {"type": "passive", "stat": String, "value": float}.
-## "value" je vždy BRONZE hodnota, get_stat_bonus() ji násobí přes
-## PASSIVE_EFFECT_MULTIPLIERS podle rarity konkrétní vlastněné kopie - stejný
-## princip, jaký měl dřívější draft (jen bez zvláštního jména navíc).
+## Pasivní schopnost: {"type": "passive", "stat": String, "value": float,
+## "max_rank": int}. "value" je hodnota za JEDEN stupeň - get_stat_bonus()
+## násobí "value" * aktuální rank (lineární škálování, žádná multiplikátorová
+## křivka jako dřív PASSIVE_EFFECT_MULTIPLIERS - jednodušší a snáz čitelné
+## přímo z čísla ve hře, "první průchod" stejně jako zbytek balance v tomhle
+## projektu).
 ##
 ## Aktivní schopnost: {"type": "active", "trigger": String, "trigger_values":
-## Array (jedna hodnota na ShopRarity stupeň), "effect": String,
-## "effect_params": Dictionary}. Rarita škáluje FREKVENCI triggeru (kratší
-## interval = vyšší uptime), NE sílu efektu (effect_params zůstává na všech
-## stupních stejný) - přirozenější škálování pro trigger-based schopnost než
-## násobení čísla, které už samo je násobič. Řešení konkrétních trigger/
-## effect párů je hardcoded v player.gd (_consume_ability_triggers() pro
+## Array (JEDNA hodnota na KAŽDÝ stupeň, velikost pole = "max_rank"),
+## "effect": String, "effect_params": Dictionary}. Stupeň škáluje FREKVENCI
+## triggeru (kratší interval = vyšší uptime), NE sílu efektu (effect_params
+## zůstává na všech stupních stejný) - stejná filozofie jako dřív, jen teď
+## indexovaná rank-1 místo ShopRarity. Řešení konkrétních trigger/effect
+## párů je hardcoded v player.gd (_consume_ability_triggers() pro
 ## "shot_count", _process_time_based_abilities() pro "time_elapsed") a v
-## get_ability_desc() níže - obecný dispatch teprve až bude třeba pro 3. typ.
+## get_ability_value_text() níže - obecný dispatch teprve až bude třeba pro
+## 3. typ.
+##
+## Strom má 4 VĚTVE podle tagu (SKILL_TREE_BRANCHES níže), každá pole
+## ability_id OD KOŘENE PO CAPSTONE - kořen (index 0) nemá prerekvizit,
+## každý další uzel se odemkne, jakmile má PŘEDCHOZÍ uzel v poli aspoň 1 bod
+## (viz is_skill_node_unlocked()). "Odemčený" ale neznamená "zdarma" - kořen
+## taky vyžaduje vlastní investovaný bod jako kterýkoliv jiný uzel, jen nemá
+## žádnou podmínku PŘED sebou.
 const ABILITIES := {
 	"power_core": {
 		"name": "Jádro síly", "short_name": "Jádro", "type": "passive",
-		"stat": "damage", "value": 4.0, "tags": ["kinetic"],
+		"stat": "damage", "value": 4.0, "tags": ["kinetic"], "max_rank": 3,
 	},
 	"rapid_coils": {
 		"name": "Rychlopalné cívky", "short_name": "Palba", "type": "passive",
-		"stat": "attack_speed", "value": 0.15, "tags": ["precision"],
+		"stat": "attack_speed", "value": 0.15, "tags": ["precision"], "max_rank": 3,
 	},
 	"long_barrel": {
 		"name": "Prodloužená hlaveň", "short_name": "Dostřel", "type": "passive",
-		"stat": "attack_range", "value": 40.0, "tags": ["precision"],
+		"stat": "attack_range", "value": 40.0, "tags": ["precision"], "max_rank": 3,
 	},
 	"split_rounds": {
 		"name": "Dělené střely", "short_name": "Rozptyl", "type": "passive",
-		"stat": "multishot", "value": 1.0, "tags": ["kinetic"],
+		"stat": "multishot", "value": 1.0, "tags": ["kinetic"], "max_rank": 3,
 	},
 	"reinforced_plating": {
 		"name": "Zesílený pancíř", "short_name": "Pancíř", "type": "passive",
-		"stat": "max_hp", "value": 20.0, "tags": ["support"],
+		"stat": "max_hp", "value": 20.0, "tags": ["support"], "max_rank": 3,
 	},
 	"nanite_repair": {
 		"name": "Nanitová oprava", "short_name": "Regen", "type": "passive",
-		"stat": "hp_regen", "value": 0.5, "tags": ["support"],
+		"stat": "hp_regen", "value": 0.5, "tags": ["support"], "max_rank": 3,
 	},
+	## Capstone podpůrné větve (max_rank 5, viz SKILL_TREE_BRANCHES) - jediný
+	## uzel ve větvi, který lze investovat nad 3 stupně.
 	"kinetic_dampers": {
 		"name": "Kinetické tlumiče", "short_name": "Tlumiče", "type": "passive",
-		"stat": "armor", "value": 2.0, "tags": ["support"],
+		"stat": "armor", "value": 2.0, "tags": ["support"], "max_rank": 5,
 	},
 	## Synergická schopnost (přidáno 2026-09-25, viz "Tag synergie" v
 	## CLAUDE.md) - na rozdíl od ostatních pasivních schopností nemá pevné
@@ -330,39 +327,44 @@ const ABILITIES := {
 	## (schopností i aktivních itemů dohromady) se stejným tagem, včetně sebe
 	## sama. Zrcadlí shop_items' "resonance_array" - stejný tag (precision),
 	## opačný směr (hráč si tohle může vybrat jako schopnost první a pak
-	## lovit Přesné itemy v obchodě, nebo naopak).
+	## lovit Přesné itemy v obchodě, nebo naopak). Capstone kinetické větve.
 	"overclock_matrix": {
 		"name": "Přetěžovací matice", "short_name": "Matice", "type": "passive",
 		"synergy": {"stat": "damage", "tag": "kinetic", "value": 1.5}, "tags": ["kinetic"],
+		"max_rank": 5,
 	},
 	## Přidáno 2026-09-25 s novým statem crit_chance (viz player.gd's
 	## get_crit_chance()/_shoot()) - tag "precision" stejně jako ostatní
 	## schopnosti kolem přesnosti/frekvence útoku (rapid_coils, long_barrel).
+	## Capstone přesné větve.
 	"precision_targeting": {
 		"name": "Přesné zaměřování", "short_name": "Zaměření", "type": "passive",
-		"stat": "crit_chance", "value": 0.06, "tags": ["precision"],
+		"stat": "crit_chance", "value": 0.06, "tags": ["precision"], "max_rank": 5,
 	},
 	"double_tap": {
 		"name": "Dvojitý zásah", "short_name": "D. zásah", "type": "active",
 		"trigger": "shot_count",
-		"trigger_values": [6, 5, 4, 3],
+		"trigger_values": [6, 5, 4],
 		"effect": "damage_multiplier",
 		"effect_params": {"multiplier": 2.0},
-		"tags": ["explosive"],
+		"tags": ["explosive"], "max_rank": 3,
 	},
+	## Capstone explozivní větve (max_rank 5) - explozivní má jen 2 uzly
+	## celkem (viz SKILL_TREE_BRANCHES), kratší větev než ostatní tři.
 	"orbital_bombardment": {
 		"name": "Orbitální bombardování", "short_name": "Orbitál", "type": "active",
 		"trigger": "time_elapsed",
 		## Sekundy nabíjení, první odhad (viz project_balance_deferred v
-		## paměti) - nedoladěno playtestingem.
-		"trigger_values": [20.0, 15.0, 11.0, 8.0],
+		## paměti) - nedoladěno playtestingem. 5. stupeň přidán při přechodu
+		## na strom, pokračuje stejným klesajícím tempem jako předchozí 4.
+		"trigger_values": [20.0, 15.0, 11.0, 8.0, 6.0],
 		"effect": "aoe_strike",
 		## Zasáhne VŠECHNY živé nepřátele (ne jen okruh kolem hráče) za tuhle
 		## hodnotu - "screen-wide" efekt z původního brainstormu (viz
 		## project_future_active_abilities v paměti), ne lokalizovaná exploze.
 		## První odhad, nedoladěno playtestingem.
 		"effect_params": {"damage": 30.0},
-		"tags": ["explosive"],
+		"tags": ["explosive"], "max_rank": 5,
 	},
 }
 ## Pořadí schopností v HUD - stejný účel jako SHOP_ITEM_ORDER.
@@ -371,20 +373,17 @@ const ABILITY_ORDER: Array[String] = [
 	"nanite_repair", "kinetic_dampers", "overclock_matrix", "precision_targeting",
 	"double_tap", "orbital_bombardment",
 ]
-## Kolik schopností se nabídne v jedné nabídce - vráceno na 3 (stejně jako
-## dřívější DRAFT_CHOICE_COUNT) teď, když je pool dost velký na skutečnou
-## volbu; dokud existovala jen 1 aktivní schopnost, bylo to dočasně 1.
-const ABILITY_CHOICE_COUNT: int = 3
-## Kolik stejných kopií stejné rarity stačí na sloučení do vyšší rarity - míň
-## než obchodních 3 (viz SHOP_RARITY_* sekce), protože schopnosti se nabízí
-## jen náhodně bez placeného rerollu.
-const ABILITY_MERGE_THRESHOLD: int = 2
-const ABILITY_RARITY_WEIGHTS: Array[float] = [0.70, 0.20, 0.08, 0.02]
-## Násobitel BRONZE hodnoty pasivní schopnosti (ABILITIES[id]["value"]) podle
-## rarity - vlastní křivka, ne sdílená se SHOP_RARITY_MULTIPLIERS, protože
-## nižší merge threshold (2 místo obchodních 3) znamená rychlejší růst síly,
-## což je potřeba vyvážit jemnější křivkou násobitelů.
-const PASSIVE_EFFECT_MULTIPLIERS: Array[float] = [1.0, 1.5, 2.25, 3.5]
+## 4 větve dovednostního stromu (podle tagu), každá OD KOŘENE PO CAPSTONE -
+## viz get_skill_prereq()/is_skill_node_unlocked(). Explozivní větev je
+## záměrně kratší (jen 2 uzly, oba existující aktivní schopnosti) - strom
+## nevyžaduje stejnou délku všude, jen konzistentní "kořen → ... → capstone"
+## tvar.
+const SKILL_TREE_BRANCHES: Array[Array] = [
+	["power_core", "split_rounds", "overclock_matrix"],
+	["rapid_coils", "long_barrel", "precision_targeting"],
+	["reinforced_plating", "nanite_repair", "kinetic_dampers"],
+	["double_tap", "orbital_bombardment"],
+]
 
 var current_wave: int = 0
 ## Kolikáté kolo (průchod 10 vlnami) hráč zrovna hraje. Roste, hráčova
@@ -402,30 +401,18 @@ var state: State = State.INTRO
 
 var player_level: int = 1
 var player_xp: int = 0
-## Vlastněné schopnosti - pasivní přispívají do get_stat_bonus(), aktivní mají
-## vlastní trigger/effect logiku v player.gd. Každý prvek je Dictionary
-## {"ability_id": String, "rarity": int (ShopRarity)} - stejný tvar jako
-## active_shop_items, jen bez "cost_paid" (schopnosti jsou free). Jeden
-## ability_id může mít víc současně vlastněných prvků na RŮZNÝCH raritách
-## (např. 1 Stříbrná kopie + 1 nová Bronzová po dalším pick-u, dokud
-## nevznikne 2. Bronzová a nesloučí se) - žádný strop na počet, na rozdíl od
-## obchodu (SHOP_ACTIVE_SLOTS/SHOP_STASH_SLOTS) schopnosti nemají aktivní/
-## sklad dělení, protože nabídka je vždy jen ABILITY_CHOICE_COUNT schopností
-## zdarma, ne omezený nákup - není tu stejný tlak "moc věcí, málo místa" jako
-## v obchodě. Víc vlastněných instancí STEJNÉ aktivní schopnosti spouští svůj
-## efekt NEZÁVISLE (viz player.gd) - 2 kopie tak mohou na stejném triggeru
-## spustit efekt obě najednou (násobiče se násobí, ne sčítají).
-var owned_abilities: Array[Dictionary] = []
-## Kolik nabídek schopností čeká na vyřízení - víc než 1 může nastat, když
-## hráč dostane hodně XP naráz a povýší o víc úrovní v jednom volání add_xp()
-## (každá úroveň = 1 nabídka). HUD nabídky vyřizuje jednu po druhé (viz
-## resolve_ability_draft()).
-var pending_ability_drafts: int = 0
-## Schopnosti nabídnuté v AKTUÁLNĚ čekající nabídce (ABILITY_CHOICE_COUNT
-## prvků, každý {"ability_id": String, "rarity": int}) - resolve_ability_draft()
-## proti indexu v tomhle poli ověřuje, že hráč vybírá opravdu z toho, co bylo
-## nabídnuto.
-var _current_ability_offer: Array[Dictionary] = []
+## Kolik NEVYUŽITÝCH bodů schopnosti hráč aktuálně má - 1 za KAŽDÝ level-up
+## (viz _level_up()), utrácí se přes invest_skill_point(). Na rozdíl od
+## dřívějšího pending_ability_drafts se NIC nenabízí automaticky - hráč si
+## body drží, dokud sám neotevře strom (klik na portrét v HUD) a nevybere
+## uzel. Pokud hráč ignoruje portrét přes víc levelů, číslo prostě roste.
+var pending_skill_points: int = 0
+## Aktuální stupeň KAŽDÉ investované schopnosti - {ability_id: rank}. Chybějící
+## klíč (nebo get_skill_rank() vrátí 0) znamená "nevlastní vůbec". Nahrazuje
+## dřívější owned_abilities (Array nezávislých instancí s vlastní raritou) -
+## teď existuje nanejvýš JEDNA "kopie" každé schopnosti, jen s rostoucím
+## rankem, takže stačí jedno číslo na ability_id, žádné pole instancí.
+var skill_ranks: Dictionary = {}
 ## Aktivní obchodní itemy - přispívají do get_stat_bonus(). Každý prvek je
 ## Dictionary {"item_id": String, "rarity": ShopRarity, "cost_paid": int} -
 ## "cost_paid" je zlato vložené do TÉHLE konkrétní kopie (u sloučeného itemu
@@ -449,14 +436,6 @@ var shop_reroll_count: int = 0
 ## v reset_game() jako všechno ostatní run-scoped - nový běh musí 10. vlnu
 ## dohrát znovu, stejně jako musí znovu sbírat úrovně a itemy.
 var shop_available: bool = false
-## true, když čeká na otevření AUTOMATICKY otevřená nabídka obchodu (po 10.
-## vlně), ale zrovna běží nevyřízená nabídka schopnosti - viz
-## _try_open_pending_shop(). Řeší kolizi, kdy hráč dostane level-up přesně
-## ze zabití POSLEDNÍHO nepřítele 10. vlny: level-up proběhne SYNCHRONNĚ
-## uvnitř enemy_defeated() (přes add_xp()), tedy ještě předtím, než se
-## stihne vyhodnotit konec vlny o pár řádků níž - bez tohohle odložení by
-## AbilityDraftPanel a ShopPanel mohly naskočit na sobě současně.
-var _shop_open_deferred: bool = false
 ## DEBUG: když true, reroll_shop() nic neúčtuje - pro rychlé testování bez
 ## grindění zlata. Přepíná se v Debug panelu (hud.gd), NEresetuje se v
 ## reset_game() (stejná logika jako u Engine.time_scale v Debug panelu -
@@ -477,15 +456,13 @@ func reset_game() -> void:
 	player_level = 1
 	player_xp = 0
 	scrap = 0
-	pending_ability_drafts = 0
-	_current_ability_offer = []
-	owned_abilities.clear()
+	pending_skill_points = 0
+	skill_ranks.clear()
 	active_shop_items.clear()
 	stash_shop_items.clear()
 	shop_offer.clear()
 	shop_reroll_count = 0
 	shop_available = false
-	_shop_open_deferred = false
 
 
 ## Zavolá level/spawner, aby oznámil, že spawnul nepřítele (pro sledování stavu vlny)
@@ -539,25 +516,17 @@ func _start_new_loop() -> void:
 ## zůstává true i pro zbytek běhu (hráč tlačítkem znovu otevře AKTUÁLNÍ
 ## nabídku), ale novou nabídku (a reset ceny rerollu) dostane jen na téhle
 ## hranici, ne při každém ručním otevření.
+## Body schopnosti se od 2026-09-26 už nenabízí přes žádný pozastavující
+## panel na KAŽDÉM level-upu (viz "Dovednostní strom" výše) - jediný panel,
+## co se ještě automaticky vynucuje, je SkillTreePanel na úplném začátku hry
+## (viz begin_intro_skill_tree()), a to je dávno před tím, než může nastat
+## 10. vlna. Otevření obchodu tak už nemůže kolidovat s ničím dalším a může
+## emitnout shop_auto_open_requested rovnou, bez dřívějšího odkladu
+## (_shop_open_deferred/_try_open_pending_shop(), obojí odstraněno).
 func _open_periodic_shop() -> void:
 	shop_available = true
 	shop_reroll_count = 0
 	_generate_shop_offer()
-	_try_open_pending_shop()
-
-
-## Otevře obchod (emitne shop_auto_open_requested) HNED, pokud zrovna nečeká
-## žádná nevyřízená nabídka schopnosti - jinak otevření jen ODLOŽÍ
-## (_shop_open_deferred) a schová se za resolve_ability_draft(), který tuhle
-## funkci zavolá znovu, jakmile se poslední čekající nabídka vyřídí. Volá se
-## jak z _open_periodic_shop() (nová nabídka po 10. vlně), tak z konce
-## resolve_ability_draft() (dořešení odloženého otevření).
-func _try_open_pending_shop() -> void:
-	if pending_ability_drafts > 0 or not _current_ability_offer.is_empty():
-		_shop_open_deferred = true
-		return
-
-	_shop_open_deferred = false
 	shop_auto_open_requested.emit()
 
 
@@ -579,10 +548,9 @@ func _generate_shop_offer() -> void:
 	shop_offer_changed.emit(shop_offer)
 
 
-## Vylosuje raritu podle zadaných vah (kumulativní pravděpodobnost) - sdílené
-## mezi obchodem (SHOP_RARITY_WEIGHTS) a schopnostmi (ABILITY_RARITY_WEIGHTS),
-## obě soustavy používají stejný ShopRarity enum (4 stupně), jen jiné váhy/
-## multiplikátory.
+## Vylosuje raritu podle zadaných vah (kumulativní pravděpodobnost) - dnes
+## volané jen pro obchod (SHOP_RARITY_WEIGHTS); schopnosti od přechodu na
+## deterministický strom už žádné losování rarity nemají.
 func _roll_rarity(weights: Array[float]) -> ShopRarity:
 	var roll: float = randf()
 	var cumulative: float = 0.0
@@ -638,183 +606,103 @@ func add_xp(amount: int) -> void:
 
 
 ## Zavolá hráč po dopadu úvodní "drop-in" animace (viz player.gd's
-## _on_landed()) - vyžádá první nabídku schopnosti stejným mechanismem jako
-## běžný level-up (pending_ability_drafts/_try_offer_next_ability_draft()),
-## jen bez přírůstku úrovně/XP (hráč už je na úrovni 1 z reset_game()). Hra
-## zůstává ve State.INTRO (takže pohyb hráče, spawn nepřátel atd. pořád nic
-## nedělají, viz jejich `state != State.PLAYING` guardy), dokud se tahle
-## úvodní nabídka nevyřeší - přechod do PLAYING zajišťuje finish_intro()
-## volané z konce resolve_ability_draft(), ne tahle funkce.
-func begin_intro_ability_draft() -> void:
-	pending_ability_drafts += 1
-	_try_offer_next_ability_draft()
+## _on_landed()) - přidá 1 bod schopnosti stejně jako běžný level-up, jen bez
+## přírůstku úrovně/XP (hráč už je na úrovni 1 z reset_game()). Hra zůstává
+## ve State.INTRO (takže pohyb hráče, spawn nepřátel atd. pořád nic nedělají,
+## viz jejich `state != State.PLAYING` guardy), dokud hráč PRVNÍ POPRVÉ
+## nezavře SkillTreePanel - hud.gd force-otevře panel samo, jakmile si přes
+## skill_points_changed všimne State.INTRO (viz "Dovednostní strom" v
+## CLAUDE.md), a finish_intro() zavolá až na zavření panelu, ne na
+## vyčerpání bodů (hráč nemusí bod hned utratit).
+func begin_intro_skill_tree() -> void:
+	pending_skill_points += 1
+	skill_points_changed.emit(pending_skill_points)
 
 
 func _level_up() -> void:
 	player_level += 1
-	# Nabídka schopnosti přijde na KAŽDÉ úrovni - žádný interval/ramp (viz
-	# "Schopnosti" výše, zjednodušeno 2026-09-09 poté, co simulace ukázala,
-	# že XP křivka sama o sobě dá první schopnosti dost rychle za sebou).
-	pending_ability_drafts += 1
+	# Bod schopnosti přijde na KAŽDÉ úrovni - žádný interval/ramp (viz
+	# "Schopnosti" výše). Na rozdíl od dřívějšího draftu se ale NIC
+	# nenabízí/nepozastavuje automaticky - hráč si bod jen přičte a utratí
+	# ho, až sám otevře strom (klik na portrét).
+	pending_skill_points += 1
 	# level_changed teď skutečně mění staty (LEVEL_STAT_GROWTH, viz
 	# get_stat_bonus()), ne jen UI sync - ale schopnosti pořád zůstávají
 	# hlavním zdrojem růstu, level growth je jen malá podlaha navrch.
 	level_changed.emit(player_level)
-	_try_offer_next_ability_draft()
+	skill_points_changed.emit(pending_skill_points)
 
 
-## Vylosuje ABILITY_CHOICE_COUNT náhodných ABILITY_ORDER schopností (bez
-## opakování stejného ID v rámci JEDNÉ nabídky, stejně jako
-## _generate_shop_offer()) - nabídka se NEfiltruje podle toho, co už hráč
-## vlastní (stejná schopnost, kterou už má, je žádoucí - je to potenciální
-## 2. kopie pro sloučení, viz _try_merge_ability()), AŽ na jednu výjimku:
-## schopnost už vlastněná na ShopRarity.DIAMOND (nejvyšší stupeň) se z
-## nabídkového poolu vyřadí úplně (nahlášeno 2026-09-25 - hráč dostal
-## "vylepšení" už Diamantového "Dvojitý zásah", které ve skutečnosti jen
-## přidalo druhou nezávislou kopii, ne skutečné vylepšení - matoucí, protože
-## _try_merge_ability() nikdy neslučuje nad Diamant, takže tam žádné
-## "vylepšení" reálně neexistuje). Pokud by tohle vyřazení nechalo pool
-## prázdný (hráč má VŠECHNY schopnosti na Diamantu), padá zpátky na
-## nefiltrovaný pool - lepší nabídnout "jen další nezávislou kopii" než
-## nechat AbilityDraftPanel bez jediné karty. Rarita se losuje NEZÁVISLE
-## (ABILITY_RARITY_WEIGHTS) jen pro schopnost, kterou hráč ještě vůbec
-## nevlastní - pokud už vlastní aspoň jednu instanci daného ID, nabídne
-## se na STEJNÉ raritě jako ta nejnižší vlastněná (_lowest_owned_ability_rarity())
-## místo nového nezávislého hodu. Bez tohohle by dvě nezávisle vylosované
-## kopie stejné schopnosti mohly skončit na RŮZNÝCH raritách a nikdy by se
-## nesloučily (nahlášeno 2026-09-25 - hráč měl "Jádro Bronz" i "Jádro Stříbro"
-## současně). Vlastnictví se hledá na nejnižší raritě záměrně: sloučení se tak
-## "propadne" postupně vzhůru přes všechny už vlastněné vyšší rarity téhož ID
-## (viz rekurze v _try_merge_ability()), ne jen mezi dvěma konkrétními kopiemi.
-func _roll_ability_options() -> Array[Dictionary]:
-	var pool: Array[String] = ABILITY_ORDER.duplicate()
-
-	var upgradeable_pool: Array[String] = []
-	for ability_id in pool:
-		if _lowest_owned_ability_rarity(ability_id) != ShopRarity.DIAMOND:
-			upgradeable_pool.append(ability_id)
-	if not upgradeable_pool.is_empty():
-		pool = upgradeable_pool
-
-	pool.shuffle()
-	var picked_ids: Array = pool.slice(0, mini(ABILITY_CHOICE_COUNT, pool.size()))
-
-	var offered: Array[Dictionary] = []
-	for ability_id in picked_ids:
-		var owned_rarity: int = _lowest_owned_ability_rarity(ability_id)
-		var rarity: int = owned_rarity if owned_rarity >= 0 else _roll_rarity(ABILITY_RARITY_WEIGHTS)
-		offered.append({"ability_id": ability_id, "rarity": rarity})
-	return offered
+## Prerekvizita uzlu podle jeho pozice v SKILL_TREE_BRANCHES, nebo "" pro
+## kořen větve (žádná prerekvizita). O(1) na ability_id díky malému počtu
+## větví/uzlů - není potřeba rychlejší vyhledávací struktura.
+func get_skill_prereq(ability_id: String) -> String:
+	for branch in SKILL_TREE_BRANCHES:
+		var index: int = branch.find(ability_id)
+		if index > 0:
+			return branch[index - 1]
+	return ""
 
 
-## Nejnižší rarita, na které hráč AKTUÁLNĚ vlastní danou schopnost, nebo -1,
-## pokud ji nevlastní vůbec - viz _roll_ability_options().
-func _lowest_owned_ability_rarity(ability_id: String) -> int:
-	var lowest: int = -1
-	for entry in owned_abilities:
-		if entry["ability_id"] == ability_id and (lowest < 0 or entry["rarity"] < lowest):
-			lowest = entry["rarity"]
-	return lowest
+## Uzel je odemčený, pokud je to kořen větve (žádná prerekvizita), NEBO má
+## jeho prerekvizita aspoň 1 investovaný bod - viz "Dovednostní strom" v
+## CLAUDE.md ("odemčený" neznamená "zdarma", kořen pořád vyžaduje vlastní
+## investici, jen nemá podmínku před sebou).
+func is_skill_node_unlocked(ability_id: String) -> bool:
+	var prereq: String = get_skill_prereq(ability_id)
+	return prereq == "" or get_skill_rank(prereq) >= 1
 
 
-## True, pokud hráč aktuálně vlastní aspoň 1 kopii dané schopnosti (na
-## libovolné raritě) - použito HUD pro zelený "vylepší vlastněnou schopnost"
-## indikátor v AbilityDraftPanel (viz "Card0..2" v CLAUDE.md).
-func is_ability_owned(ability_id: String) -> bool:
-	return _lowest_owned_ability_rarity(ability_id) >= 0
+## Aktuální stupeň schopnosti, nebo 0, pokud do ní hráč ještě nic
+## neinvestoval.
+func get_skill_rank(ability_id: String) -> int:
+	return int(skill_ranks.get(ability_id, 0))
 
 
-## Pokud čeká aspoň jedna nabídka A zrovna žádná není rozehraná, vylosuje
-## schopnosti a emitne ability_draft_ready. Podmínka
-## `_current_ability_offer.is_empty()` je nutná - bez ní by každý _level_up()
-## ve stejném volání add_xp() (velký přísun XP naráz povýší o víc úrovní ve
-## smyčce) mohl vygenerovat a emitnout VLASTNÍ nabídku, i když už jedna čeká
-## na vyřízení.
-func _try_offer_next_ability_draft() -> void:
-	if pending_ability_drafts <= 0 or not _current_ability_offer.is_empty():
-		return
-
-	_current_ability_offer = _roll_ability_options()
-	ability_draft_ready.emit(_current_ability_offer)
+func get_skill_max_rank(ability_id: String) -> int:
+	return int(ABILITIES[ability_id]["max_rank"])
 
 
-## Zavolá HUD, když hráč (nebo Auto výběr) vybere schopnost z aktuální
-## nabídky na daném indexu (stejný vzor jako buy_shop_item(offer_index) v
-## obchodě). Vrací false, pokud zrovna žádná nabídka nečeká nebo index je
-## mimo rozsah (ochrana proti zastaralému/duplicitnímu kliknutí).
-func resolve_ability_draft(offer_index: int) -> bool:
-	if pending_ability_drafts <= 0 or offer_index < 0 or offer_index >= _current_ability_offer.size():
+## true, pokud má hráč aspoň 1 nevyužitý bod, uzel je odemčený a ještě
+## nedosáhl svého stropu - SkillTreePanel podle tohohle povoluje/zakazuje
+## tlačítko "Investovat" u každého uzlu.
+func can_invest_skill_point(ability_id: String) -> bool:
+	if pending_skill_points <= 0:
+		return false
+	if not is_skill_node_unlocked(ability_id):
+		return false
+	return get_skill_rank(ability_id) < get_skill_max_rank(ability_id)
+
+
+## Utratí 1 nevyužitý bod schopnosti za zvýšení stupně daného uzlu o 1 -
+## jediný způsob, jak schopnost ve hře posílit (žádné losování, žádné
+## slučování duplicit, na rozdíl od dřívějšího draft systému). Volá HUD při
+## kliknutí na tlačítko uzlu v SkillTreePanelu.
+func invest_skill_point(ability_id: String) -> bool:
+	if not can_invest_skill_point(ability_id):
 		return false
 
-	var offer_entry: Dictionary = _current_ability_offer[offer_index]
-	pending_ability_drafts -= 1
-	_current_ability_offer = []
-
-	_add_ability(offer_entry["ability_id"], offer_entry["rarity"])
-
-	_try_offer_next_ability_draft()
-	# Kdyby zrovna čekalo odložené otevření obchodu (viz _shop_open_deferred) -
-	# ať už proto, že tohle byla poslední čekající nabídka, nebo proto, že
-	# _try_offer_next_ability_draft() zrovna žádnou další nevygeneroval -
-	# zkusí ho otevřít teď. _try_open_pending_shop() si samo ověří, jestli
-	# fronta schopností doopravdy doběhla do prázdna.
-	if _shop_open_deferred:
-		_try_open_pending_shop()
-	# Úvodní nabídka schopnosti (viz begin_intro_ability_draft()) drží hru ve
-	# State.INTRO, dokud ji hráč nevyřídí - jakmile fronta doběhne do prázdna,
-	# přepneme na PLAYING tady, ne v player.gd (viz finish_intro()).
-	if state == State.INTRO and pending_ability_drafts <= 0:
-		finish_intro()
+	pending_skill_points -= 1
+	skill_ranks[ability_id] = get_skill_rank(ability_id) + 1
+	skill_points_changed.emit(pending_skill_points)
+	skill_ranks_changed.emit()
 	return true
 
 
-## Přidá novou instanci schopnosti a zkusí sloučení - stejný vzor jako
-## buy_shop_item()/_try_merge_shop_item() v obchodě, jen bez gold/cost_paid.
-func _add_ability(ability_id: String, rarity: int) -> void:
-	owned_abilities.append({"ability_id": ability_id, "rarity": rarity})
-	ability_inventory_changed.emit()
-	_try_merge_ability(ability_id, rarity)
-
-
-## Když má hráč aspoň ABILITY_MERGE_THRESHOLD (2) kopií stejné schopnosti na
-## stejné raritě, automaticky je sloučí do 1 kopie o stupeň výš - stejná
-## logika jako _try_merge_shop_item(), jen s nižším prahem a bez
-## active/stash rozlišení (schopnosti nemají sklad, viz owned_abilities
-## výše). Platí pro pasivní i aktivní schopnosti stejně. Rekurzivní pro
-## řídký případ, kdy sloučení náhodou vytvoří hned další shodu (např.
-## hromadný debug přírůstek).
-func _try_merge_ability(ability_id: String, rarity: int) -> void:
-	if rarity >= ShopRarity.DIAMOND:
-		return
-
-	var matching_indices: Array = []
-	for i in owned_abilities.size():
-		if owned_abilities[i]["ability_id"] == ability_id and owned_abilities[i]["rarity"] == rarity:
-			matching_indices.append(i)
-
-	if matching_indices.size() < ABILITY_MERGE_THRESHOLD:
-		return
-
-	var to_consume: Array = matching_indices.slice(0, ABILITY_MERGE_THRESHOLD)
-	to_consume.sort_custom(func(a, b): return a > b)
-	for index in to_consume:
-		owned_abilities.remove_at(index)
-
-	owned_abilities.append({"ability_id": ability_id, "rarity": rarity + 1})
-	ability_inventory_changed.emit()
-	_try_merge_ability(ability_id, rarity + 1)
-
-
-## Kolik OWNED INSTANCÍ (schopností i aktivních obchodních itemů dohromady,
-## ne unikátních ID) nese daný tag - viz "Tag synergie" v CLAUDE.md. Stash
-## itemy se NEpočítají (stejné pravidlo jako get_stat_bonus() - jen aktivní
-## itemy přispívají do statů). Používá se jak pro výpočet synergických
-## bonusů (get_stat_bonus()), tak pro jejich popis (get_ability_desc()/
-## get_shop_item_desc()).
+## Kolik VLASTNĚNÝCH VĚCÍ (investovaných schopností i aktivních obchodních
+## itemů dohromady, ne unikátních ID) nese daný tag - viz "Tag synergie" v
+## CLAUDE.md. Schopnost se počítá jako "vlastněná", pokud má rank >= 1, BEZ
+## OHLEDU na výši ranku (synergie roste s POČTEM různých věcí stejného tagu,
+## ne s tím, jak moc je do nich hráč investoval). Stash itemy se NEpočítají
+## (stejné pravidlo jako get_stat_bonus() - jen aktivní itemy přispívají do
+## statů). Používá se jak pro výpočet synergických bonusů (get_stat_bonus()),
+## tak pro jejich popis (get_ability_value_text()/get_shop_item_desc()).
 func _count_owned_with_tag(tag: String) -> int:
 	var count: int = 0
-	for entry in owned_abilities:
-		var tags: Array = ABILITIES[entry["ability_id"]].get("tags", [])
+	for ability_id in skill_ranks:
+		if get_skill_rank(ability_id) <= 0:
+			continue
+		var tags: Array = ABILITIES[ability_id].get("tags", [])
 		if tags.has(tag):
 			count += 1
 	for entry in active_shop_items:
@@ -824,34 +712,36 @@ func _count_owned_with_tag(tag: String) -> int:
 	return count
 
 
-## Samotný text HODNOTY schopnosti na dané raritě, BEZ tag suffixu -
-## vytažené z get_ability_desc() (2026-09-25) tak, aby ho mohl HUD
-## znovupoužít i samostatně pro zobrazení "výsledné" hodnoty po sloučení
-## (viz "Zelené 'výsledné' hodnoty..." v CLAUDE.md, AbilityDraftPanel's
-## ResultValueLabel) bez zdvojení tagu, který se pro danou schopnost
-## nemění podle rarity.
-func get_ability_value_text(ability_id: String, rarity: int) -> String:
+## Samotný text HODNOTY schopnosti na daném STUPNI (1-based rank, ne rarita -
+## viz "Dovednostní strom" výše), BEZ tag suffixu - vytažené z
+## get_ability_desc() tak, aby ho mohl SkillTreePanel v HUD zobrazit i
+## samostatně (např. náhled "co dostanu na příštím stupni" v budoucnu) bez
+## zdvojení tagu, který se pro danou schopnost nemění podle ranku. Škálování
+## je LINEÁRNÍ ("value" * rank) - žádná multiplikátorová křivka jako dřív
+## PASSIVE_EFFECT_MULTIPLIERS, protože teď existuje jen JEDNA rostoucí
+## hodnota na uzel, ne nezávisle rolovatelné kopie.
+func get_ability_value_text(ability_id: String, rank: int) -> String:
 	var definition: Dictionary = ABILITIES[ability_id]
 
 	if definition["type"] == "passive":
 		if definition.has("synergy"):
 			var synergy: Dictionary = definition["synergy"]
-			var per_count: float = float(synergy["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
+			var per_count: float = float(synergy["value"]) * float(rank)
 			var synergy_tag_name: String = TAG_DISPLAY_NAMES.get(synergy["tag"], synergy["tag"])
 			return "%s za každou vlastněnou věc s tagem „%s“" % [
 				_format_stat_line(synergy["stat"], per_count), synergy_tag_name
 			]
-		var value: float = float(definition["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
+		var value: float = float(definition["value"]) * float(rank)
 		return _format_stat_line(definition["stat"], value)
 
 	var params: Dictionary = definition["effect_params"]
 	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
-		var interval: int = definition["trigger_values"][rarity]
+		var interval: int = definition["trigger_values"][rank - 1]
 		var mult: float = float(params["multiplier"])
 		return "Každý %d. výstřel: %sx poškození" % [interval, _format_stat_number(mult)]
 
 	if definition["trigger"] == "time_elapsed" and definition["effect"] == "aoe_strike":
-		var charge: float = float(definition["trigger_values"][rarity])
+		var charge: float = float(definition["trigger_values"][rank - 1])
 		var damage: float = float(params["damage"])
 		return "Nabíjí %s s, pak %s poškození všem nepřátelům" % [
 			_format_stat_number(charge), _format_stat_number(damage)
@@ -860,17 +750,17 @@ func get_ability_value_text(ability_id: String, rarity: int) -> String:
 	return definition["name"]
 
 
-## Popis schopnosti na dané raritě. Pasivní schopnosti mají obecný cyklus
+## Popis schopnosti na daném stupni. Pasivní schopnosti mají obecný cyklus
 ## (jako get_shop_item_desc()), aktivní jsou zatím natvrdo podle dvou
 ## existujících trigger/effect párů - až přibude třetí, přejde i tahle větev
 ## na obecnější dispatch podle definition["trigger"]/["effect"]. Každá větev
 ## připojí na konec vlastní tag(y) (viz "Tag synergie" v CLAUDE.md) - i
 ## nesynergické schopnosti tag ukazují, ať si hráč může předem plánovat, co
 ## by k nim v budoucnu pasovalo.
-func get_ability_desc(ability_id: String, rarity: int) -> String:
+func get_ability_desc(ability_id: String, rank: int) -> String:
 	var definition: Dictionary = ABILITIES[ability_id]
 	var tag_suffix: String = _format_tag_suffix(definition.get("tags", []))
-	return "%s%s" % [get_ability_value_text(ability_id, rarity), tag_suffix]
+	return "%s%s" % [get_ability_value_text(ability_id, rank), tag_suffix]
 
 
 ## Celkový bonus ke statu - jediné místo, kde se progrese promítá do statů,
@@ -886,17 +776,19 @@ func get_stat_bonus(stat_id: String) -> float:
 	if LEVEL_STAT_GROWTH.has(stat_id):
 		bonus += float(LEVEL_STAT_GROWTH[stat_id]) * float(player_level - 1)
 
-	for entry in owned_abilities:
-		var definition: Dictionary = ABILITIES[entry["ability_id"]]
+	for ability_id in skill_ranks:
+		var rank: int = get_skill_rank(ability_id)
+		if rank <= 0:
+			continue
+		var definition: Dictionary = ABILITIES[ability_id]
 		if definition["type"] != "passive":
 			continue
-		var multiplier: float = PASSIVE_EFFECT_MULTIPLIERS[entry["rarity"]]
 		if definition.has("synergy"):
 			var synergy: Dictionary = definition["synergy"]
 			if synergy["stat"] == stat_id:
-				bonus += float(synergy["value"]) * multiplier * float(_count_owned_with_tag(synergy["tag"]))
+				bonus += float(synergy["value"]) * float(rank) * float(_count_owned_with_tag(synergy["tag"]))
 		elif definition["stat"] == stat_id:
-			bonus += float(definition["value"]) * multiplier
+			bonus += float(definition["value"]) * float(rank)
 
 	for entry in active_shop_items:
 		var definition: Dictionary = SHOP_ITEMS[entry["item_id"]]
@@ -1110,11 +1002,14 @@ func sell_shop_item(collection_name: String, index: int) -> bool:
 	return true
 
 
-## Přepne hru ze State.INTRO do State.PLAYING. Volá se z resolve_ability_draft(),
-## jakmile hráč vyřídí úvodní nabídku schopnosti spuštěnou
-## begin_intro_ability_draft() (viz player.gd's _on_landed()) - ne přímo po
-## dopadové animaci, aby hráč dostal svou první volbu schopnosti dřív, než se
-## rozeběhne pohyb/spawnování.
+## Přepne hru ze State.INTRO do State.PLAYING. Volá HUD (hud.gd's
+## _on_skill_tree_close_pressed()), jakmile hráč POPRVÉ zavře SkillTreePanel
+## force-otevřený begin_intro_skill_tree() (viz player.gd's _on_landed()) -
+## ne přímo po dopadové animaci, aby hráč dostal svou první volbu schopnosti
+## dřív, než se rozeběhne pohyb/spawnování. Na rozdíl od dřívějšího
+## resolve_ability_draft() nezáleží na tom, jestli hráč bod skutečně utratil -
+## zavření panelu samo stačí, protože bod zůstává čekat (žádná nabídka
+## nevyprší).
 func finish_intro() -> void:
 	if state == State.INTRO:
 		state = State.PLAYING
@@ -1149,27 +1044,29 @@ func debug_add_currency(amount: int) -> void:
 	currency_changed.emit(currency)
 
 
-## DEBUG: rovnou vynutí jednu nabídku schopnosti bez čekání na level-up
-func debug_force_ability_draft() -> void:
-	pending_ability_drafts += 1
-	_try_offer_next_ability_draft()
+## DEBUG: rovnou přidá 1 bod schopnosti bez čekání na level-up
+func debug_add_skill_point() -> void:
+	pending_skill_points += 1
+	skill_points_changed.emit(pending_skill_points)
 
 
-## DEBUG: nastaví každou schopnost rovnou na 1 kopii nejvyšší rarity
-## (Diamant) - nejrychlejší cesta k "co nejsilnější build" pro testování.
-func debug_max_abilities() -> void:
-	owned_abilities.clear()
+## DEBUG: nastaví KAŽDÝ uzel stromu rovnou na jeho max_rank - nejrychlejší
+## cesta k "co nejsilnější build" pro testování. Nevrací nevyužité body
+## (žádné nezůstávají, každý uzel je na svém stropu).
+func debug_max_skill_tree() -> void:
+	skill_ranks.clear()
 	for ability_id in ABILITY_ORDER:
-		owned_abilities.append({"ability_id": ability_id, "rarity": ShopRarity.DIAMOND})
-	ability_inventory_changed.emit()
+		skill_ranks[ability_id] = int(ABILITIES[ability_id]["max_rank"])
+	skill_ranks_changed.emit()
 
 
-## DEBUG: vymaže všechny vlastněné schopnosti - pro rychlé vyzkoušení jiného
-## buildu. Stejně jako dřív nevrací žádné "body" - schopnosti se nekupují,
-## jen se draftí při level-upu.
-func debug_reset_abilities() -> void:
-	owned_abilities.clear()
-	ability_inventory_changed.emit()
+## DEBUG: vymaže celý strom VČETNĚ čekajících bodů - pro rychlé vyzkoušení
+## jiného buildu od nuly.
+func debug_reset_skill_tree() -> void:
+	skill_ranks.clear()
+	pending_skill_points = 0
+	skill_points_changed.emit(pending_skill_points)
+	skill_ranks_changed.emit()
 
 
 ## DEBUG: přeskočí rovnou na další kolo (jen zvýší multiplikátor HP
