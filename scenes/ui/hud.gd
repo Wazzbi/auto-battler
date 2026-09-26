@@ -59,6 +59,14 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var shop_active_container: Control = $Control/ShopPanel/ActiveItemsContainer
 @onready var shop_stash_label: Label = $Control/ShopPanel/StashLabel
 @onready var shop_stash_container: Control = $Control/ShopPanel/StashContainer
+## Řádek na každý craftovatelný item (viz "blueprint_cost" v
+## GameManager.SHOP_ITEMS) - na rozdíl od aktivních/sklad slotů je tenhle
+## seznam MALÝ A PEVNÝ (dnes 3 položky, ne dynamicky rostoucí podle toho, co
+## hráč vlastní), přesto procedurální ze stejného důvodu jako
+## _build_shop_stash_ui() níže - každý řádek potřebuje vlastní stavové
+## tlačítko (Blueprint/Vyrobit podle vlastnictví), což by ručně v hud.tscn
+## bylo zbytečně křehké kopírovat 3x.
+@onready var shop_blueprint_container: Control = $Control/ShopPanel/BlueprintsContainer
 ## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (jen zobrazení, žádná
 ## interakce - prodej/přesun do skladu se řeší jen uvnitř otevřeného
 ## obchodu, viz _active_slot_widgets). Plní se pozičně podle
@@ -80,6 +88,15 @@ const SHOP_MINI_SLOT_WIDTH: float = 74.0
 const SHOP_MINI_SLOT_GAP: float = 6.0
 var _active_slot_widgets: Array = []
 var _stash_slot_widgets: Array = []
+## Šířka/výška jednoho blueprint řádku - širší a plošší než mini-sloty výše,
+## protože nese jméno itemu + 1 tlačítko vedle sebe na jednom řádku, ne
+## rarita/tlačítka pod sebou ve sloupci.
+const BLUEPRINT_ROW_WIDTH: float = 700.0
+const BLUEPRINT_ROW_HEIGHT: float = 30.0
+const BLUEPRINT_ROW_GAP: float = 4.0
+## Dictionary {"item_id", "panel", "label", "button"} na každý craftovatelný
+## item, postavené jednou v _build_blueprint_ui().
+var _blueprint_row_widgets: Array[Dictionary] = []
 
 ## Stejný princip jako obchodní mini-sloty, jen bez tlačítek. Od 2026-09-09
 ## je hromádka schopností MIMO BottomBar (vlevo, nad zemí) a POZIČNÍ - jeden
@@ -194,6 +211,7 @@ func _ready() -> void:
 
 	_setup_shop_cards()
 	_build_shop_stash_ui()
+	_build_blueprint_ui()
 
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
@@ -271,6 +289,8 @@ func _on_currency_changed(new_amount: int) -> void:
 
 func _on_scrap_changed(new_amount: int) -> void:
 	scrap_label.text = "Šrot: %d" % new_amount
+	if shop_panel.visible:
+		_refresh_shop_panel()
 
 
 func _on_xp_changed(current_xp: int, xp_needed: int) -> void:
@@ -522,6 +542,7 @@ func _refresh_shop_panel() -> void:
 	shop_reroll_button.disabled = not GameManager.can_reroll_shop()
 
 	_refresh_shop_stash_ui()
+	_refresh_blueprint_ui()
 
 
 ## Vytvoří 6 aktivních + 9 sklad miniaturních slotů PROCEDURÁLNĚ (viz
@@ -632,6 +653,76 @@ func _clear_shop_mini_slot(widget: Dictionary) -> void:
 	widget["label"].text = "-"
 	widget["label"].tooltip_text = ""
 	widget["panel"].modulate = LOCKED_ITEM_MODULATE
+
+
+## Postaví jeden řádek na každý item, co má v GameManager.SHOP_ITEMS
+## "blueprint_cost" (dnes 3 - viz "Suroviny a crafting" v CLAUDE.md). Volá se
+## jednou v _ready(), stejně jako _build_shop_stash_ui() - seznam je sice
+## pevný na rozdíl od aktivních/sklad slotů, ale řádky se pořád staví
+## procedurálně, protože každý potřebuje vlastní stavové tlačítko svázané se
+## svým item_id přes .bind().
+func _build_blueprint_ui() -> void:
+	var row_index: int = 0
+	for item_id in GameManager.SHOP_ITEM_ORDER:
+		if not GameManager.SHOP_ITEMS[item_id].has("blueprint_cost"):
+			continue
+
+		var panel := Panel.new()
+		panel.name = "BlueprintRow_%s" % item_id
+		panel.position = Vector2(0.0, row_index * (BLUEPRINT_ROW_HEIGHT + BLUEPRINT_ROW_GAP))
+		panel.size = Vector2(BLUEPRINT_ROW_WIDTH, BLUEPRINT_ROW_HEIGHT)
+		shop_blueprint_container.add_child(panel)
+
+		var label := Label.new()
+		label.name = "Label"
+		label.position = Vector2(8.0, 0.0)
+		label.size = Vector2(BLUEPRINT_ROW_WIDTH - 220.0, BLUEPRINT_ROW_HEIGHT)
+		label.add_theme_font_size_override("font_size", 12)
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		panel.add_child(label)
+
+		var button := Button.new()
+		button.name = "ActionButton"
+		button.position = Vector2(BLUEPRINT_ROW_WIDTH - 210.0, 2.0)
+		button.size = Vector2(200.0, BLUEPRINT_ROW_HEIGHT - 4.0)
+		button.pressed.connect(_on_blueprint_action_pressed.bind(item_id))
+		panel.add_child(button)
+
+		_blueprint_row_widgets.append({"item_id": item_id, "panel": panel, "label": label, "button": button})
+		row_index += 1
+
+
+func _on_blueprint_action_pressed(item_id: String) -> void:
+	if GameManager.owned_blueprints.has(item_id):
+		GameManager.craft_item(item_id)
+	else:
+		GameManager.buy_blueprint(item_id)
+
+
+## Překreslí všechny blueprint řádky - text/dostupnost tlačítka závisí na
+## tom, jestli hráč blueprint už vlastní (pak nabízí Craft za šrot) nebo ne
+## (pak nabízí jednorázovou koupi za zlato). Volá se z _refresh_shop_panel().
+func _refresh_blueprint_ui() -> void:
+	for widget in _blueprint_row_widgets:
+		var item_id: String = widget["item_id"]
+		var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
+		var label: Label = widget["label"]
+		var button: Button = widget["button"]
+
+		if GameManager.owned_blueprints.has(item_id):
+			var scrap_cost: int = definition["craft_scrap_cost"]
+			var desc: String = GameManager.get_shop_item_desc(item_id, GameManager.ShopRarity.BRONZE)
+			# Řádek je jen 30px vysoký (viz BLUEPRINT_ROW_HEIGHT) - víceřádkový
+			# popis (get_shop_item_desc() dělí staty/tag přes "\n") by přetekl
+			# do dalšího řádku, proto se tu skládá do JEDNÉ řádky.
+			label.text = "%s - %s" % [definition["name"], desc.replace("\n", ", ")]
+			button.text = "Vyrobit (%d šrotu)" % scrap_cost
+			button.disabled = not GameManager.can_craft_item(item_id)
+		else:
+			var blueprint_cost: int = definition["blueprint_cost"]
+			label.text = "%s (blueprint)" % definition["name"]
+			button.text = "Koupit blueprint (%d zlata)" % blueprint_cost
+			button.disabled = not GameManager.can_buy_blueprint(item_id)
 
 
 ## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (mimo obchod samotný) - stejný

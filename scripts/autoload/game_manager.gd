@@ -96,12 +96,20 @@ const LEVEL_STAT_GROWTH := {
 ## hodnoty, get_stat_bonus()/get_shop_item_desc() je násobí přes
 ## SHOP_RARITY_MULTIPLIERS podle rarity konkrétní vlastněné kopie.
 const SHOP_ITEMS := {
+	## "blueprint_cost"/"craft_scrap_cost" (přidáno 2026-09-26, viz "Suroviny a
+	## crafting" v CLAUDE.md) - první 3 vybrané itemy pro první slice
+	## blueprint/craft mechaniky. Item BEZ "blueprint_cost" nemá blueprint
+	## vůbec (can_buy_blueprint()/can_craft_item() ho odmítnou) - zatím 6 z 9
+	## itemů craftovatelných není, dokud se neukáže, že mechanika stojí za
+	## rozšíření na celý katalog.
 	"overcharged_core": {
 		"name": "Přebíječ jader",
 		"short_name": "Přebíječ",
 		"stats": {"damage": 6.0, "attack_speed": 0.2},
 		"cost": 200,
 		"tags": ["kinetic"],
+		"blueprint_cost": 20,
+		"craft_scrap_cost": 15,
 	},
 	"field_plating": {
 		"name": "Terénní pancéřování",
@@ -116,6 +124,8 @@ const SHOP_ITEMS := {
 		"stats": {"attack_range": 50.0, "multishot": 1.0},
 		"cost": 220,
 		"tags": ["precision"],
+		"blueprint_cost": 20,
+		"craft_scrap_cost": 15,
 	},
 	"nanite_regenerator": {
 		"name": "Nanitový regenerátor",
@@ -123,6 +133,8 @@ const SHOP_ITEMS := {
 		"stats": {"hp_regen": 1.0, "armor": 3.0},
 		"cost": 180,
 		"tags": ["support"],
+		"blueprint_cost": 20,
+		"craft_scrap_cost": 15,
 	},
 	"overloaded_coils": {
 		"name": "Přetížené cívky",
@@ -437,6 +449,12 @@ var active_shop_items: Array[Dictionary] = []
 ## jsou aktivní sloty plné - hráč je musí ručně aktivovat (move_shop_item_to_
 ## active()), aby začaly něco dělat. Max SHOP_STASH_SLOTS prvků.
 var stash_shop_items: Array[Dictionary] = []
+## Vlastněné blueprinty (item_id, viz SHOP_ITEMS[id]["blueprint_cost"]) -
+## TRVALÝ odemykací nákup za zlato (buy_blueprint()), ne spotřebovatelná
+## kopie. Jakmile ho hráč vlastní, může opakovaně craftit nové Bronzové
+## kopie toho itemu za šrot (craft_item()) - viz "Suroviny a crafting" v
+## CLAUDE.md. Run-scoped jako všechno ostatní, reset v reset_game().
+var owned_blueprints: Array[String] = []
 ## Aktuálně nabídnuté itemy v obchodě (SHOP_OFFER_SIZE kusů) - každý prvek
 ## {"item_id": String, "rarity": ShopRarity}, viz _generate_shop_offer().
 ## Prázdné, dokud hráč poprvé nedohraje 10. vlnu.
@@ -482,6 +500,7 @@ func reset_game() -> void:
 	owned_abilities.clear()
 	active_shop_items.clear()
 	stash_shop_items.clear()
+	owned_blueprints.clear()
 	shop_offer.clear()
 	shop_reroll_count = 0
 	shop_available = false
@@ -1017,6 +1036,72 @@ func buy_shop_item(offer_index: int) -> bool:
 
 	shop_inventory_changed.emit()
 	_try_merge_shop_item(item_id, rarity)
+	return true
+
+
+## true, pokud item_id má blueprint vůbec (viz "blueprint_cost" v
+## SHOP_ITEMS), hráč ho ještě nevlastní a má dost zlata na jeho JEDNORÁZOVOU
+## cenu - viz "Suroviny a crafting" v CLAUDE.md.
+func can_buy_blueprint(item_id: String) -> bool:
+	if not SHOP_ITEMS.has(item_id) or not SHOP_ITEMS[item_id].has("blueprint_cost"):
+		return false
+	if owned_blueprints.has(item_id):
+		return false
+	return currency >= int(SHOP_ITEMS[item_id]["blueprint_cost"])
+
+
+## Koupí blueprint za zlato - na rozdíl od buy_shop_item() jde o TRVALÝ
+## odemykací nákup, ne spotřebovatelnou kopii itemu. Neplní aktivní/sklad
+## sloty, jen odemyká craft_item() pro tenhle konkrétní item_id do konce
+## běhu (reset v reset_game()).
+func buy_blueprint(item_id: String) -> bool:
+	if not can_buy_blueprint(item_id):
+		return false
+
+	currency -= int(SHOP_ITEMS[item_id]["blueprint_cost"])
+	currency_changed.emit(currency)
+	owned_blueprints.append(item_id)
+	shop_inventory_changed.emit()
+	return true
+
+
+## true, pokud hráč vlastní blueprint na item_id, item má recept
+## ("craft_scrap_cost"), hráč má dost šrotu a je volný aspoň jeden slot
+## (aktivní NEBO sklad) - stejná dvojpodmínka jako can_buy_shop_item().
+func can_craft_item(item_id: String) -> bool:
+	if not owned_blueprints.has(item_id):
+		return false
+	if not SHOP_ITEMS.has(item_id) or not SHOP_ITEMS[item_id].has("craft_scrap_cost"):
+		return false
+	if scrap < int(SHOP_ITEMS[item_id]["craft_scrap_cost"]):
+		return false
+	return active_shop_items.size() < SHOP_ACTIVE_SLOTS or stash_shop_items.size() < SHOP_STASH_SLOTS
+
+
+## Vyrobí novou BRONZE kopii item_id výměnou za šrot (recept
+## SHOP_ITEMS[item_id]["craft_scrap_cost"]) - opakovatelné, dokud má hráč
+## šrot a volný slot. Nová kopie jde do STEJNÉHO systému jako koupená (aktivní
+## přednostně, jinak sklad, s automatickým sloučením 3 stejných na stejné
+## raritě přes _try_merge_shop_item()) - crafting je jen další VSTUPNÍ bod do
+## existující rarity+merge mechaniky, žádný nový power systém navíc.
+## "cost_paid" je 0 (za TUHLE konkrétní kopii nebylo utraceno žádné zlato,
+## jen jednorázově za blueprint) - prodej crafted kopie tak nic nevrátí,
+## což brání smyčce "vyrob a hned prodej za zlato zdarma".
+func craft_item(item_id: String) -> bool:
+	if not can_craft_item(item_id):
+		return false
+
+	scrap -= int(SHOP_ITEMS[item_id]["craft_scrap_cost"])
+	scrap_changed.emit(scrap)
+
+	var instance: Dictionary = {"item_id": item_id, "rarity": ShopRarity.BRONZE, "cost_paid": 0}
+	if active_shop_items.size() < SHOP_ACTIVE_SLOTS:
+		active_shop_items.append(instance)
+	else:
+		stash_shop_items.append(instance)
+
+	shop_inventory_changed.emit()
+	_try_merge_shop_item(item_id, ShopRarity.BRONZE)
 	return true
 
 

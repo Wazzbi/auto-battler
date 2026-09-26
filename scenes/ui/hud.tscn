@@ -389,9 +389,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -360.0
-offset_top = -260.0
+offset_top = -315.0
 offset_right = 360.0
-offset_bottom = 260.0
+offset_bottom = 315.0
 
 [node name="Title" type="Label" parent="Control/ShopPanel" unique_id=1857439836]
 layout_mode = 0
@@ -675,12 +675,28 @@ offset_top = 370.0
 offset_right = 710.0
 offset_bottom = 444.0
 
+[node name="BlueprintsLabel" type="Label" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 452.0
+offset_right = 500.0
+offset_bottom = 468.0
+theme_override_font_sizes/font_size = 12
+text = "Blueprinty"
+
+[node name="BlueprintsContainer" type="Control" parent="Control/ShopPanel"]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 470.0
+offset_right = 710.0
+offset_bottom = 568.0
+
 [node name="CloseButton" type="Button" parent="Control/ShopPanel" unique_id=1539487263]
 layout_mode = 0
 offset_left = 300.0
-offset_top = 452.0
+offset_top = 578.0
 offset_right = 420.0
-offset_bottom = 484.0
+offset_bottom = 610.0
 text = "Zavřít obchod"
 
 [node name="GameOverPanel" type="Panel" parent="Control" unique_id=2052936013]

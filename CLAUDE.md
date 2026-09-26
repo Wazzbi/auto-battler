@@ -1010,12 +1010,73 @@ new `ScrapLabel` (`Control/ScrapLabel`, positioned directly right of `GoldLabel`
 `offset_top`, same row under `XPBar`, so it reads as a second currency alongside gold rather than a
 separate concept). **Verified with a headless test** (`enemy_defeated(10, 12, N)` accumulates and
 `reset_game()` clears it) and a live windowed run (killed a real enemy at 10x `Engine.time_scale`,
-confirmed "Šrot: 1" appeared in the HUD in sync with "Zlato: 10"). **Deliberately not yet built**:
-which shop items get a blueprint, the blueprint's gold cost vs. the material quantity a craft
-consumes, whether multiple material types eventually exist per enemy variant (discussed but
-explicitly deferred to keep this first step small), and the crafting UI/interaction itself (most
-likely folded into the existing periodic Shop, which already pauses and is already the "spend
-resource on power" moment, rather than a new separate panel — see the brainstorm this came from).
+confirmed "Šrot: 1" appeared in the HUD in sync with "Zlato: 10").
+
+**Blueprinty + craftění (second slice, 2026-09-26)** — the actual crafting path, built on top of
+the scrap material above, folded directly into the existing `ShopPanel` (per the earlier note in
+this section: the shop already pauses and is already the "spend resource on power" moment, so no
+new panel was needed). Scoped to exactly **3** of the 9 `SHOP_ITEMS` to start (`overcharged_core`,
+`targeting_module`, `nanite_regenerator` — one plain flat-stat item from each of the kinetic/
+precision/support tags, deliberately excluding the newer synergy/crit-focused items to keep the
+first pass on familiar ground) — an item gets a blueprint by adding `"blueprint_cost"`/
+`"craft_scrap_cost"` keys to its `SHOP_ITEMS` entry; an item missing those keys has no blueprint at
+all and every `can_buy_blueprint()`/`can_craft_item()` check rejects it. **Two distinct player-
+facing actions, both gated through the SAME 2 keys**:
+- **`buy_blueprint(item_id)`** — a ONE-TIME, gold-cost unlock (20 gold for all 3 today, a flat
+  shared number for this first pass rather than bespoke per-item tuning, same philosophy as
+  `LEVEL_STAT_GROWTH`/`PASSIVE_EFFECT_MULTIPLIERS` starting as one shared curve). Appends `item_id`
+  to the new `owned_blueprints: Array[String]` (run-scoped, reset in `reset_game()`) — doesn't touch
+  `active_shop_items`/`stash_shop_items` at all, since a blueprint itself isn't an item instance,
+  just a permission to craft one.
+- **`craft_item(item_id)`** — requires owning the blueprint, spends `craft_scrap_cost` (15 for all 3
+  today) worth of scrap, and produces a new **BRONZE**-rarity copy placed through the EXACT SAME
+  active-then-stash placement + `_try_merge_shop_item()` call `buy_shop_item()` already uses —
+  crafting is deliberately just a second entry point into the existing rarity+merge system, not a
+  parallel power mechanic, so 3 crafted Bronze copies auto-merge into Silver exactly like 3 bought
+  ones would. The crafted instance's `"cost_paid"` is **0** (no gold was spent on that specific
+  copy, only once on the blueprint) — selling a crafted item therefore refunds nothing, closing off
+  a "craft it, immediately sell it" free-gold loop.
+
+**The ready-made price (`"cost"`) is intentionally untouched** — the user's original "hotové
+předměty budou desetkrát dražší" framing is satisfied by the blueprint+recipe path being roughly
+9-11× *cheaper* than the existing ~180-220 gold cost, not by inflating the existing, already-tuned
+shop price; retuning `"cost"` itself was explicitly out of scope for this pass.
+
+**`ShopPanel`'s "Blueprinty" section is built procedurally in `hud.gd`** (`_build_blueprint_ui()`/
+`_refresh_blueprint_ui()`, called from `_ready()`/`_refresh_shop_panel()` respectively) — one row
+per `SHOP_ITEM_ORDER` entry that has `"blueprint_cost"`, each a `Panel` with a `Label` + single
+stateful `ActionButton` (`_on_blueprint_action_pressed()` calls `craft_item()` if the blueprint is
+already owned, `buy_blueprint()` otherwise) — same "small but needs per-row dynamic wiring, so
+still worth building in code" reasoning as `_build_shop_stash_ui()`'s mini-slots, even though this
+list (currently 3, unlike active/stash's up-to-15) doesn't grow with player state. **Every created
+node gets an explicit `.name`** (`BlueprintRow_<item_id>`/`"Label"`/`"ActionButton"`) — runtime-
+created nodes without an owner otherwise get Godot's internal `"@ClassName@id"` auto-name, which
+looks fine in-game (names are cosmetic there) but broke `get_node("Label")`-style lookups in this
+feature's own scene-level test until fixed; production code was never affected since
+`_refresh_blueprint_ui()` reads the stored `_blueprint_row_widgets` dictionary references directly
+rather than re-querying the tree by name, same pattern `_active_slot_widgets`/`_stash_slot_widgets`
+already used. **The owned-blueprint row's label joins `get_shop_item_desc()`'s multi-line stat text
+with `", "` instead of leaving the `"\n"`s in** — first-pass version left them in and the 2-3 line
+result visibly overflowed the row's fixed 30px height into the row below; every other place in the
+HUD that shows this text (shop offer cards, mini-slot tooltips) has a tall-enough box for multiple
+lines, this compact single-line row doesn't, so it needed its own formatting rather than reusing the
+raw description as-is. **`ShopPanel` grew from 520px to 630px tall** (`offset_top/bottom` -260/260 →
+-315/315) to fit the new "Blueprinty" label + 3-row container between the existing stash section and
+`CloseButton` — still comfortably under the 720px window height (the same margin check flagged as
+needed the last time this panel grew, see above). **Verified with a scene-level headless test**
+(instantiates real `main.tscn`+`hud.tscn`, forces the shop open, presses the generated buttons
+directly, asserts on `GameManager` state AND on-screen rect geometry - no row exceeds its
+container, the container doesn't overlap `CloseButton`) **and a full live run** reached through
+actual gameplay (not a debug shortcut - none exists for "make the shop available early"): bought a
+blueprint, watched the button flip from "Koupit blueprint" to "Vyrobit", crafted until scrap ran
+out and confirmed the button correctly greyed itself out, and confirmed the resulting stat bonus
+(`+6 poškození`) applied for real through `get_stat_bonus()`.
+
+**Deliberately not yet built**: the other 6 `SHOP_ITEMS` (synergy/crit-focused entries) getting
+blueprints, more than one material type per enemy variant (still explicitly deferred, see the first
+slice above), and any UI affordance beyond the shop's own "Blueprinty" list for tracking which
+blueprints are owned (e.g. no icon/marker elsewhere in the HUD) - revisit only if playtesting shows
+either gap actually matters.
 
 ## Key tunables when adjusting gameplay
 
@@ -1028,7 +1089,7 @@ resource on power" moment, rather than a new separate panel — see the brainsto
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above), `SHOP_RARITY_COLORS` (rarity diamond icon colors, see "Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon" above), `is_ability_owned()`/`get_ability_value_text()` (drive the green upgrade-indicator arrow and its post-merge value preview, see "A green arrow left of the rarity icon"/"An upgrade card also previews its post-merge value" above)
-- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above), `SHOP_RARITY_COLORS` (rarity diamond icon colors, see "Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon" above), `is_ability_owned()`/`get_ability_value_text()` (drive the green upgrade-indicator arrow and its post-merge value preview, see "A green arrow left of the rarity icon"/"An upgrade card also previews its post-merge value" above), `SHOP_ITEMS[id]["blueprint_cost"]`/`["craft_scrap_cost"]` (which items are craftable and at what price, see "Blueprinty + craftění" above)
+- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above), `BLUEPRINT_ROW_WIDTH`/`HEIGHT`/`GAP` (Blueprinty row sizing, see "Blueprinty + craftění" above)
 - `scenes/ui/rarity_icon.gd` — the diamond-shape polygon points/outline color drawn in `_draw()`, reused by `AbilityDraftPanel`'s `RarityIcon` nodes
 - `scenes/ui/upgrade_icon.gd` — the green triangle's polygon points/color, reused by `AbilityDraftPanel`'s `UpgradeIndicator` nodes
