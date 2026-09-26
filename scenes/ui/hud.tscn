@@ -2,6 +2,8 @@
 
 [ext_resource type="Script" uid="uid://bpq8pxfiyscu2" path="res://scenes/ui/hud.gd" id="1_hud_script"]
 [ext_resource type="Script" path="res://scenes/ui/eye_icon.gd" id="2_eye_icon_script"]
+[ext_resource type="Script" path="res://scenes/ui/rarity_icon.gd" id="3_rarity_icon_script"]
+[ext_resource type="Script" path="res://scenes/ui/upgrade_icon.gd" id="4_upgrade_icon_script"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bar_bg"]
 bg_color = Color(0.09, 0.1, 0.13, 0.95)
@@ -784,7 +786,7 @@ anchor_right = 1.0
 offset_left = -490.0
 offset_top = 50.0
 offset_right = -10.0
-offset_bottom = 618.0
+offset_bottom = 706.0
 
 [node name="Title" type="Label" parent="Control/DebugPanel"]
 layout_mode = 0
@@ -893,12 +895,46 @@ offset_right = 460.0
 offset_bottom = 358.0
 text = "+5 bodů schopnosti"
 
-[node name="FreeRerollToggle" type="Button" parent="Control/DebugPanel"]
+[node name="ForceAbilityDraftButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 366.0
+offset_right = 230.0
+offset_bottom = 402.0
+text = "Vynutit nabídku"
+
+[node name="MaxAbilitiesButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 366.0
 offset_right = 460.0
 offset_bottom = 402.0
+text = "Max nabídka"
+
+[node name="ResetAbilitiesButton" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 410.0
+offset_right = 230.0
+offset_bottom = 446.0
+text = "Reset nabídka"
+
+[node name="AbilityAutoToggle" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 410.0
+offset_right = 460.0
+offset_bottom = 446.0
+toggle_mode = true
+button_pressed = false
+text = "Auto výběr"
+
+[node name="FreeRerollToggle" type="Button" parent="Control/DebugPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 454.0
+offset_right = 460.0
+offset_bottom = 490.0
 toggle_mode = true
 button_pressed = false
 text = "Free reroll: Vypnuto"
@@ -906,41 +942,41 @@ text = "Free reroll: Vypnuto"
 [node name="SpawnEliteButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 410.0
+offset_top = 498.0
 offset_right = 230.0
-offset_bottom = 446.0
+offset_bottom = 534.0
 text = "Spawnout Elite"
 
 [node name="SpawnRangedButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 250.0
-offset_top = 410.0
+offset_top = 498.0
 offset_right = 460.0
-offset_bottom = 446.0
+offset_bottom = 534.0
 text = "Spawnout dálkového"
 
 [node name="SpawnSniperButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 450.0
+offset_top = 538.0
 offset_right = 460.0
-offset_bottom = 486.0
+offset_bottom = 574.0
 text = "Spawnout snipera"
 
 [node name="SpeedButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 494.0
+offset_top = 582.0
 offset_right = 460.0
-offset_bottom = 530.0
+offset_bottom = 618.0
 text = "Rychlost: 1x"
 
 [node name="CloseButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 150.0
-offset_top = 548.0
+offset_top = 636.0
 offset_right = 330.0
-offset_bottom = 584.0
+offset_bottom = 672.0
 text = "Zavřít"
 
 [node name="SkillTreePanel" type="Panel" parent="Control"]
@@ -990,3 +1026,248 @@ offset_top = 582.0
 offset_right = 460.0
 offset_bottom = 618.0
 text = "Zavřít"
+
+[node name="AbilityDraftPanel" type="Panel" parent="Control"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -170.0
+offset_right = 300.0
+offset_bottom = 170.0
+
+[node name="Title" type="Label" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 16.0
+offset_right = 580.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 22
+text = "Vyber schopnost!"
+horizontal_alignment = 1
+
+[node name="Card0" type="Button" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 60.0
+offset_right = 200.0
+offset_bottom = 320.0
+
+[node name="UpgradeIndicator" type="Control" parent="Control/AbilityDraftPanel/Card0"]
+visible = false
+layout_mode = 0
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 8.0
+offset_right = 74.0
+offset_bottom = 24.0
+script = ExtResource("4_upgrade_icon_script")
+
+[node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 80.0
+offset_top = 6.0
+offset_right = 100.0
+offset_bottom = 26.0
+script = ExtResource("3_rarity_icon_script")
+
+[node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 30.0
+offset_right = 170.0
+offset_bottom = 72.0
+theme_override_font_sizes/font_size = 15
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 76.0
+offset_right = 170.0
+offset_bottom = 168.0
+theme_override_font_sizes/font_size = 12
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ResultValueLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 172.0
+offset_right = 170.0
+offset_bottom = 228.0
+theme_override_colors/font_color = Color(0.3, 0.85, 0.35, 1)
+theme_override_font_sizes/font_size = 12
+text = ""
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card0"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 232.0
+offset_right = 170.0
+offset_bottom = 252.0
+theme_override_font_sizes/font_size = 12
+text = "Bronz"
+horizontal_alignment = 1
+
+[node name="Card1" type="Button" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 210.0
+offset_top = 60.0
+offset_right = 390.0
+offset_bottom = 320.0
+
+[node name="UpgradeIndicator" type="Control" parent="Control/AbilityDraftPanel/Card1"]
+visible = false
+layout_mode = 0
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 8.0
+offset_right = 74.0
+offset_bottom = 24.0
+script = ExtResource("4_upgrade_icon_script")
+
+[node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 80.0
+offset_top = 6.0
+offset_right = 100.0
+offset_bottom = 26.0
+script = ExtResource("3_rarity_icon_script")
+
+[node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 30.0
+offset_right = 170.0
+offset_bottom = 72.0
+theme_override_font_sizes/font_size = 15
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 76.0
+offset_right = 170.0
+offset_bottom = 168.0
+theme_override_font_sizes/font_size = 12
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ResultValueLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 172.0
+offset_right = 170.0
+offset_bottom = 228.0
+theme_override_colors/font_color = Color(0.3, 0.85, 0.35, 1)
+theme_override_font_sizes/font_size = 12
+text = ""
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card1"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 232.0
+offset_right = 170.0
+offset_bottom = 252.0
+theme_override_font_sizes/font_size = 12
+text = "Bronz"
+horizontal_alignment = 1
+
+[node name="Card2" type="Button" parent="Control/AbilityDraftPanel"]
+layout_mode = 0
+offset_left = 400.0
+offset_top = 60.0
+offset_right = 580.0
+offset_bottom = 320.0
+
+[node name="UpgradeIndicator" type="Control" parent="Control/AbilityDraftPanel/Card2"]
+visible = false
+layout_mode = 0
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 8.0
+offset_right = 74.0
+offset_bottom = 24.0
+script = ExtResource("4_upgrade_icon_script")
+
+[node name="RarityIcon" type="Control" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 80.0
+offset_top = 6.0
+offset_right = 100.0
+offset_bottom = 26.0
+script = ExtResource("3_rarity_icon_script")
+
+[node name="NameLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 30.0
+offset_right = 170.0
+offset_bottom = 72.0
+theme_override_font_sizes/font_size = 15
+text = "Název"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DescLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 76.0
+offset_right = 170.0
+offset_bottom = 168.0
+theme_override_font_sizes/font_size = 12
+text = "Popis"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ResultValueLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 172.0
+offset_right = 170.0
+offset_bottom = 228.0
+theme_override_colors/font_color = Color(0.3, 0.85, 0.35, 1)
+theme_override_font_sizes/font_size = 12
+text = ""
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RarityLabel" type="Label" parent="Control/AbilityDraftPanel/Card2"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 10.0
+offset_top = 232.0
+offset_right = 170.0
+offset_bottom = 252.0
+theme_override_font_sizes/font_size = 12
+text = "Bronz"
+horizontal_alignment = 1

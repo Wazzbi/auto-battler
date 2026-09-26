@@ -928,6 +928,70 @@ explicitly deferred to keep this first step small), and the crafting UI/interact
 likely folded into the existing periodic Shop, which already pauses and is already the "spend
 resource on power" moment, rather than a new separate panel — see the brainstorm this came from).
 
+**CORRECTION (2026-09-26, same day as the tree): "Dovednosti (strom)" above does NOT replace
+schopnosti — it runs ALONGSIDE the original random-draft schopnosti system, which was fully
+restored after user feedback ("chtěl jsem schopnosti zachovat, ne nahradit").** Everywhere above
+that says the draft/rarity/merge system, `owned_abilities`, `AbilityDraftPanel`,
+`rarity_icon.gd`/`upgrade_icon.gd`, etc. were "removed" — they were NOT; they were undone within
+the same day and are live again, unchanged in mechanics, with one change: **schopnosti's offer now
+triggers after the intro landing (as ORIGINAL, unwaved) AND after EVERY wave clear
+(`_on_wave_cleared()`), not after every level-up.** `_level_up()` only grants dovednosti points now.
+
+**Both systems read/write the SAME `ABILITIES` catalog and their contributions to
+`get_stat_bonus()` ADD TOGETHER** — a player can have "Jádro síly" at dovednostní stupeň 2/3
+(`skill_ranks`) AND independently own a Silver copy of it from the random draft
+(`owned_abilities`) at the same time; both sums are added in `get_stat_bonus()`. To let active
+schopnosti scale independently in each system despite sharing one `ABILITIES[id]` entry, each
+active entry now carries TWO trigger arrays: `"trigger_values"` (4 entries, `ShopRarity`-indexed,
+schopnosti/draft) and `"skill_trigger_values"` (`max_rank`-sized, rank-indexed, dovednosti/tree).
+Likewise there are two parallel description/value functions: `get_ability_desc()`/
+`get_ability_value_text()` (rarity-based, schopnosti) vs. `get_skill_node_desc()`/
+`get_skill_node_value_text()` (rank-based, dovednosti) — passing a rank into the rarity-indexed
+ones (or vice versa) is a real bug, not just a stale name, since the two index domains differ in
+size (0-3 vs 1-5).
+
+**Intro is now TWO forced steps in sequence, not one**: `player.gd`'s `_on_landed()` calls
+`begin_intro_ability_draft()` (schopnosti, step 1 — "jako doteď") — when that offer resolves,
+`resolve_ability_draft()`'s tail (if `state == INTRO`) calls `begin_intro_skill_tree()` (dovednosti,
+step 2) INSTEAD of `finish_intro()` directly; dovednosti's own already-existing intro-force-open
+logic (`hud.gd`'s `_on_skill_points_changed()`) takes it from there, and `finish_intro()` only fires
+when THAT second panel closes. Both panel-show calls happen synchronously within the same call
+stack that the FIRST panel's `hide()` also runs in, so — because Godot only renders at frame
+boundaries, never mid-script — the player never actually sees two panels open at once, even though
+there's a brief logical moment where both `visible` flags are true.
+
+**Wave-10 shop-vs-draft collision is back too, same shape as the original 2026-09-09 fix, just a
+guaranteed collision now instead of an occasional one**: `_on_wave_cleared()` ALWAYS generates an
+ability-draft offer synchronously before checking `current_wave >= FINAL_WAVE`, so on every single
+10th-wave clear a schopnosti offer and a shop auto-open both fire in the same call. `_open_periodic_
+shop()` → `_try_open_pending_shop()` defers (`_shop_open_deferred`) if `pending_ability_drafts > 0`,
+and `resolve_ability_draft()` retries it at its own tail — restored verbatim from before the
+skill-tree rework, just with the trigger reason changed from "level-up happened to coincide" to
+"every wave-10 clear, always". **Verified with a scene-level headless test**: forcing wave 10 to
+clear shows the ability draft, confirms the shop stays hidden + `_shop_open_deferred == true` while
+it's pending, then confirms the shop auto-opens the instant the draft resolves.
+
+**`_refresh_abilities()` (the `AbilitiesContainer` stack, top-left) now shows BOTH sources in one
+list** — dovednosti entries first (stable `ABILITY_ORDER`, one per `rank >= 1`), then schopnosti
+entries after (one per `owned_abilities` instance, in insertion/merge order like before) — through a
+shared `_create_ability_stack_slot(index, label_text, tooltip_text)` helper so both loops build
+identical-looking mini-slots without duplicating the Panel/Label construction code.
+
+**Debug panel now has separate controls for each system** — dovednosti keeps `AddSkillPointButton`/
+`MaxSkillTreeButton`/`ResetSkillTreeButton`/`AddManySkillPointsButton` (added during the tree work);
+schopnosti's original `ForceAbilityDraftButton`/`MaxAbilitiesButton`/`ResetAbilitiesButton`/
+`AbilityAutoToggle` were re-added as NEW rows (DebugPanel grew from 618px to 706px tall to fit them)
+rather than reusing the tree's renamed buttons, since both systems now need independent testing
+affordances.
+
+**Verified with headless tests at every layer** (pure-logic + two scene-level suites): unlock/lock
+behavior and additive stacking math for a shared ability_id across both systems; the full two-step
+intro sequence (schopnosti panel → resolves → chains into dovednosti panel → closes → `PLAYING`);
+wave-clear correctly re-triggers the schopnosti offer; the wave-10 shop/draft collision defers and
+resolves in the right order. Not yet re-verified live/visually in a windowed run at time of writing
+— do that before treating this as fully settled, particularly the two-panel intro sequencing and
+DebugPanel's new height fitting inside the window.
+
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)

@@ -103,12 +103,14 @@ const ABILITY_MINI_SLOT_GAP: float = 4.0
 const ABILITY_STACK_MAX_ROWS: int = 6
 @onready var abilities_container: Control = $Control/AbilitiesContainer
 
-## Dovednostní strom (viz "Dovednostní strom" v CLAUDE.md) - nahradil
-## 2026-09-26 dřívější náhodný AbilityDraftPanel. Otevírá se kliknutím na
-## portrét (viz portrait_button výše), ne automaticky na KAŽDÉM level-upu -
-## jedinou výjimkou je úplně první otevření na začátku hry (viz
-## begin_intro_skill_tree() v game_manager.gd), to je pořád vynucené a
-## pozastavující stejně jako dřívější AbilityDraftPanel.
+## Dovednostní strom (viz "Dovednosti (strom)" v CLAUDE.md) - SOUBĚŽNÝ
+## systém vedle AbilityDraftPanelu níže (schopnosti, náhodná nabídka), ne
+## jeho náhrada (2026-09-26 zpětná vazba - "schopnosti zachovat, ne
+## nahradit"). Otevírá se kliknutím na portrét (viz portrait_button výše),
+## ne automaticky na KAŽDÉM level-upu - jedinou výjimkou je úplně první
+## otevření na začátku hry (viz begin_intro_skill_tree() v game_manager.gd,
+## DRUHÝ ze dvou intro kroků po AbilityDraftPanelu), to je pořád vynucené a
+## pozastavující.
 @onready var skill_tree_panel: Panel = $Control/SkillTreePanel
 @onready var skill_tree_close_button: Button = $Control/SkillTreePanel/CloseButton
 @onready var skill_tree_points_label: Label = $Control/SkillTreePanel/PointsLabel
@@ -123,6 +125,18 @@ const SKILL_NODE_GAP: float = 10.0
 ## každém _refresh_skill_tree_ui() (žádné přestavování stromu za běhu, na
 ## rozdíl od hromádky vlastněných schopností - počet uzlů je pevný).
 var _skill_node_widgets: Dictionary = {}
+
+## Panel volby SCHOPNOSTI (náhodná nabídka, viz "Schopnosti (náhodná
+## nabídka)" v CLAUDE.md) - 3 karty, GameManager.ABILITY_CHOICE_COUNT.
+## Souběžný systém vedle SkillTreePanelu výše, obnoven 2026-09-26 po zpětné
+## vazbě ("schopnosti zachovat, ne nahradit"). Spouštěč: po dopadu (první ze
+## dvou intro kroků) a po KAŽDÉ vlně.
+@onready var ability_draft_panel: Panel = $Control/AbilityDraftPanel
+@onready var ability_cards: Array[Button] = [
+	$Control/AbilityDraftPanel/Card0,
+	$Control/AbilityDraftPanel/Card1,
+	$Control/AbilityDraftPanel/Card2,
+]
 
 @onready var game_over_panel: Panel = $Control/GameOverPanel
 @onready var game_over_label: Label = $Control/GameOverPanel/Label
@@ -147,14 +161,17 @@ var _skill_node_widgets: Dictionary = {}
 @onready var debug_max_skill_tree_button: Button = $Control/DebugPanel/MaxSkillTreeButton
 @onready var debug_reset_skill_tree_button: Button = $Control/DebugPanel/ResetSkillTreeButton
 @onready var debug_add_loop_button: Button = $Control/DebugPanel/AddLoopButton
+## Bulk přídavek bodů DOVEDNOSTI pro rychlé testování stromu bez grindění
+## levelů - NEplete se s ForceAbilityDraftButton/AbilityAutoToggle níže, ty
+## se týkají souběžného systému SCHOPNOSTÍ (náhodná nabídka).
+@onready var debug_add_many_skill_points_button: Button = $Control/DebugPanel/AddManySkillPointsButton
+@onready var debug_force_ability_draft_button: Button = $Control/DebugPanel/ForceAbilityDraftButton
+@onready var debug_max_abilities_button: Button = $Control/DebugPanel/MaxAbilitiesButton
+@onready var debug_reset_abilities_button: Button = $Control/DebugPanel/ResetAbilitiesButton
+@onready var debug_ability_auto_toggle: Button = $Control/DebugPanel/AbilityAutoToggle
 @onready var debug_spawn_elite_button: Button = $Control/DebugPanel/SpawnEliteButton
 @onready var debug_spawn_ranged_button: Button = $Control/DebugPanel/SpawnRangedButton
 @onready var debug_spawn_sniper_button: Button = $Control/DebugPanel/SpawnSniperButton
-## Přejmenováno z dřívějšího "Auto vylepšení" toggle (2026-09-26) - žádná
-## automatická nabídka schopnosti už neexistuje, co by šlo auto-řešit, takže
-## tenhle slot v Debug panelu teď slouží jako rychlé hromadné přidání bodů
-## schopnosti pro testování stromu bez grindění levelů.
-@onready var debug_add_many_skill_points_button: Button = $Control/DebugPanel/AddManySkillPointsButton
 @onready var debug_free_reroll_toggle: Button = $Control/DebugPanel/FreeRerollToggle
 @onready var debug_speed_button: Button = $Control/DebugPanel/SpeedButton
 @onready var debug_close_button: Button = $Control/DebugPanel/CloseButton
@@ -182,6 +199,19 @@ var _end_screen_countdown_active: bool = false
 var _active_countdown_label: Label = null
 var _countdown_label_prefix: String = ""
 
+## Dokud je zapnuté, nabídky SCHOPNOSTI (náhodná nabídka) se vyřizují samy
+## (náhodný pick) bez zobrazení AbilityDraftPanelu - vypnuto defaultně,
+## protože smysl nabídky je, že hráč vidí a dělá skutečnou volbu. Ovládá se
+## přes "Auto výběr" v Debug panelu (`AbilityAutoToggle`). NEplete se s
+## dovednostním stromem - ten žádnou nabídku nemá, co by šlo auto-řešit.
+var _ability_auto_enabled: bool = false
+## Poslední nabídnuté schopnosti, každá {"ability_id": String, "rarity": int}
+## (viz _on_ability_draft_ready) - potřeba, aby _on_ability_auto_toggled()
+## mohl doresit nabídku, na kterou hráč zrovna kouká, i když je zrovna
+## otevřená přes AbilityDraftPanel, ne přes Auto větev.
+var _last_ability_offer: Array = []
+
+
 func _ready() -> void:
 	GameManager.wave_started.connect(_on_wave_started)
 	GameManager.currency_changed.connect(_on_currency_changed)
@@ -190,6 +220,8 @@ func _ready() -> void:
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.skill_points_changed.connect(_on_skill_points_changed)
 	GameManager.skill_ranks_changed.connect(_on_skill_ranks_changed)
+	GameManager.ability_draft_ready.connect(_on_ability_draft_ready)
+	GameManager.ability_inventory_changed.connect(_on_ability_inventory_changed)
 	GameManager.loop_changed.connect(_on_loop_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
 	GameManager.shop_offer_changed.connect(_on_shop_offer_changed)
@@ -199,6 +231,7 @@ func _ready() -> void:
 	victory_panel.hide()
 	shop_panel.hide()
 	skill_tree_panel.hide()
+	ability_draft_panel.hide()
 	wave_cleared_label.hide()
 
 	_setup_shop_cards()
@@ -431,7 +464,7 @@ func _refresh_skill_tree_ui() -> void:
 		widget["panel"].modulate = Color.WHITE
 		widget["rank_label"].text = "Stupeň %d/%d" % [rank, max_rank]
 		widget["desc_label"].text = (
-			GameManager.get_ability_desc(ability_id, rank) if rank > 0
+			GameManager.get_skill_node_desc(ability_id, rank) if rank > 0
 			else "Zatím neinvestováno"
 		)
 
@@ -443,53 +476,164 @@ func _refresh_skill_tree_ui() -> void:
 			widget["button"].disabled = not GameManager.can_invest_skill_point(ability_id)
 
 
-## Hromádka investovaných schopností VLEVO nad zemí (mimo BottomBar, viz
-## AbilitiesContainer v hud.tscn) - POZIČNÍ, jeden slot na KAŽDOU schopnost s
-## rank >= 1, v pevném pořadí GameManager.ABILITY_ORDER (na rozdíl od
-## dřívějška je tohle pořadí teď STABILNÍ - investování dalšího bodu do už
-## odemčené schopnosti nemění, kde v hromádce sedí, protože už neexistuje
-## žádné "sloučení", co by přerovnávalo indexy). Sloupec roste svisle a po
-## ABILITY_STACK_MAX_ROWS se zalomí do dalšího sloupce vpravo, aby hromádka
-## nikdy nezasáhla dolů do BottomBaru bez ohledu na to, kolik schopností
-## hráč odemkne.
+## Když hráč zapne Auto výběr zatímco AbilityDraftPanel zrovna čeká na jeho
+## volbu, dořešíme ji (a případné další zařazené nabídky) rovnou za něj místo
+## aby panel zůstal viset otevřený, dokud by si toho nevšiml a neklikl sám.
+func _on_ability_auto_toggled(enabled: bool) -> void:
+	_ability_auto_enabled = enabled
+	if not enabled or GameManager.pending_ability_drafts <= 0:
+		return
+
+	var pick_index: int = randi() % _last_ability_offer.size()
+	GameManager.resolve_ability_draft(pick_index) # se zapnutým Auto se přes _on_ability_draft_ready samo prořeže i případné další čekající
+	ability_draft_panel.hide()
+	# Stejná pojistka jako v _on_ability_pick_pressed() - resolve_ability_draft()
+	# mohl synchronně otevřít ShopPanel/SkillTreePanel (odložené auto-otevření
+	# po 10. vlně, nebo navazující intro krok dovednostního stromu).
+	if not shop_panel.visible and not skill_tree_panel.visible:
+		get_tree().paused = false
+
+
+func _on_ability_inventory_changed() -> void:
+	_refresh_abilities()
+
+
+## Přijde vždy, když je k dispozici nová nabídka SCHOPNOSTI (po dopadu, nebo
+## po konci vlny - viz game_manager.gd). S vypnutým Auto výběrem zobrazí
+## AbilityDraftPanel a hru pozastaví (stejně jako Obchod) - hráč musí
+## vybrat, než se hra pustí dál. Se zapnutým Auto výběrem nabídku rovnou
+## vyřídí náhodným pickem bez zastavení hry (viz GameManager.resolve_ability_
+## draft() - samo zavolá další nabídku, pokud nějaká čeká).
+func _on_ability_draft_ready(offered: Array) -> void:
+	_last_ability_offer = offered
+
+	if _ability_auto_enabled:
+		var pick_index: int = randi() % offered.size()
+		GameManager.resolve_ability_draft(pick_index)
+		return
+
+	_show_ability_draft_panel(offered)
+
+
+func _show_ability_draft_panel(offered: Array) -> void:
+	for i in ability_cards.size():
+		var card: Button = ability_cards[i]
+		if i >= offered.size():
+			card.hide()
+			continue
+
+		var offer_entry: Dictionary = offered[i]
+		var ability_id: String = offer_entry["ability_id"]
+		var rarity: int = offer_entry["rarity"]
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
+
+		card.show()
+		card.get_node("NameLabel").text = definition["name"]
+		card.get_node("DescLabel").text = GameManager.get_ability_desc(ability_id, rarity)
+		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
+		card.get_node("RarityIcon").rarity_color = GameManager.SHOP_RARITY_COLORS[rarity]
+
+		var already_owned: bool = GameManager.is_ability_owned(ability_id)
+		card.get_node("UpgradeIndicator").visible = already_owned
+
+		var result_label: Label = card.get_node("ResultValueLabel")
+		if already_owned and rarity < GameManager.ShopRarity.DIAMOND:
+			var next_rarity: int = rarity + 1
+			result_label.text = "→ %s (%s)" % [
+				GameManager.get_ability_value_text(ability_id, next_rarity),
+				GameManager.SHOP_RARITY_NAMES[next_rarity],
+			]
+		else:
+			result_label.text = ""
+
+		for connection in card.pressed.get_connections():
+			card.pressed.disconnect(connection["callable"])
+		card.pressed.connect(_on_ability_pick_pressed.bind(i))
+
+	ability_draft_panel.show()
+	get_tree().paused = true
+
+
+func _on_ability_pick_pressed(offer_index: int) -> void:
+	GameManager.resolve_ability_draft(offer_index)
+	# resolve_ability_draft() může synchronně vyvolat DALŠÍ ability_draft_ready
+	# (víc čekajících nabídek naráz), který už _show_ability_draft_panel()
+	# znovu zavolal a panel nechal otevřený s novým obsahem - tady ho proto
+	# zavíráme jen když už doopravdy nic dalšího nečeká. Stejně tak může
+	# synchronně otevřít ShopPanel (odložené automatické otevření po 10.
+	# vlně) NEBO SkillTreePanel (navazující intro krok dovednostního stromu,
+	# viz GameManager.resolve_ability_draft()) - odpauzovat smí, jen když
+	# ani jeden z nich zrovna NEPŘEVZAL pauzu za nás.
+	if GameManager.pending_ability_drafts <= 0:
+		ability_draft_panel.hide()
+		if not shop_panel.visible and not skill_tree_panel.visible:
+			get_tree().paused = false
+
+
+## Hromádka VŠECH vlastněných schopností VLEVO nad zemí (mimo BottomBar, viz
+## AbilitiesContainer v hud.tscn) - POZIČNÍ, kombinuje OBA souběžné systémy
+## (viz "Schopnosti - DVA SOUBĚŽNÉ..." v game_manager.gd): nejdřív dovednostní
+## strom (jeden slot na KAŽDOU schopnost s rank >= 1, v pevném pořadí
+## GameManager.ABILITY_ORDER - stabilní pořadí, investování dalšího bodu do
+## už odemčené schopnosti nemění, kde sedí), pak schopnosti z náhodné
+## nabídky (jeden slot na KAŽDOU vlastněnou INSTANCI z owned_abilities,
+## stejně jako dřív před dovednostním stromem - tenhle blok se přeskupuje
+## při sloučení). Sloupec roste svisle a po ABILITY_STACK_MAX_ROWS se zalomí
+## do dalšího sloupce vpravo, aby hromádka nikdy nezasáhla dolů do
+## BottomBaru bez ohledu na to, kolik toho hráč nasbírá.
 func _refresh_abilities() -> void:
 	for child in abilities_container.get_children():
 		child.queue_free()
 
-	var owned_ids: Array = []
-	for ability_id in GameManager.ABILITY_ORDER:
-		if GameManager.get_skill_rank(ability_id) > 0:
-			owned_ids.append(ability_id)
+	var slot_index: int = 0
 
-	for i in owned_ids.size():
-		var ability_id: String = owned_ids[i]
+	for ability_id in GameManager.ABILITY_ORDER:
 		var rank: int = GameManager.get_skill_rank(ability_id)
+		if rank <= 0:
+			continue
 		var max_rank: int = GameManager.get_skill_max_rank(ability_id)
 		var definition: Dictionary = GameManager.ABILITIES[ability_id]
-
-		var col: int = i / ABILITY_STACK_MAX_ROWS
-		var row: int = i % ABILITY_STACK_MAX_ROWS
-
-		var panel := Panel.new()
-		panel.position = Vector2(
-			col * (ABILITY_MINI_SLOT_WIDTH + ABILITY_MINI_SLOT_GAP),
-			row * (ABILITY_MINI_SLOT_HEIGHT + ABILITY_MINI_SLOT_GAP)
+		_create_ability_stack_slot(
+			slot_index,
+			"%s\nStupeň %d/%d" % [definition["short_name"], rank, max_rank],
+			"%s (Stupeň %d/%d)\n%s" % [definition["name"], rank, max_rank, GameManager.get_skill_node_desc(ability_id, rank)]
 		)
-		panel.size = Vector2(ABILITY_MINI_SLOT_WIDTH, ABILITY_MINI_SLOT_HEIGHT)
-		abilities_container.add_child(panel)
+		slot_index += 1
 
-		var label := Label.new()
-		label.position = Vector2(2.0, 2.0)
-		label.size = Vector2(ABILITY_MINI_SLOT_WIDTH - 4.0, ABILITY_MINI_SLOT_HEIGHT - 4.0)
-		label.add_theme_font_size_override("font_size", 8)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.text = "%s\nStupeň %d/%d" % [definition["short_name"], rank, max_rank]
-		label.tooltip_text = "%s (Stupeň %d/%d)\n%s" % [
-			definition["name"], rank, max_rank, GameManager.get_ability_desc(ability_id, rank)
-		]
-		panel.add_child(label)
+	for entry in GameManager.owned_abilities:
+		var ability_id: String = entry["ability_id"]
+		var rarity: int = entry["rarity"]
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
+		_create_ability_stack_slot(
+			slot_index,
+			"%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[rarity]],
+			"%s (%s)\n%s" % [definition["name"], GameManager.SHOP_RARITY_NAMES[rarity], GameManager.get_ability_desc(ability_id, rarity)]
+		)
+		slot_index += 1
+
+
+func _create_ability_stack_slot(index: int, label_text: String, tooltip_text: String) -> void:
+	var col: int = index / ABILITY_STACK_MAX_ROWS
+	var row: int = index % ABILITY_STACK_MAX_ROWS
+
+	var panel := Panel.new()
+	panel.position = Vector2(
+		col * (ABILITY_MINI_SLOT_WIDTH + ABILITY_MINI_SLOT_GAP),
+		row * (ABILITY_MINI_SLOT_HEIGHT + ABILITY_MINI_SLOT_GAP)
+	)
+	panel.size = Vector2(ABILITY_MINI_SLOT_WIDTH, ABILITY_MINI_SLOT_HEIGHT)
+	abilities_container.add_child(panel)
+
+	var label := Label.new()
+	label.position = Vector2(2.0, 2.0)
+	label.size = Vector2(ABILITY_MINI_SLOT_WIDTH - 4.0, ABILITY_MINI_SLOT_HEIGHT - 4.0)
+	label.add_theme_font_size_override("font_size", 8)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.text = label_text
+	label.tooltip_text = tooltip_text
+	panel.add_child(label)
 
 
 ## Přenačte všechno, co se odvíjí od progrese. Volá se v _ready(), protože
@@ -743,6 +887,7 @@ func _on_shop_close_pressed() -> void:
 func show_game_over(wave_reached: int, currency: int) -> void:
 	_close_shop()
 	_close_skill_tree_panel()
+	_close_ability_draft_panel()
 	game_over_label.text = "Game Over!\nDosažená vlna: %d\nÚroveň: %d\nZlato: %d" % [
 		wave_reached, GameManager.player_level, currency
 	]
@@ -753,6 +898,7 @@ func show_game_over(wave_reached: int, currency: int) -> void:
 func show_victory(currency: int) -> void:
 	_close_shop()
 	_close_skill_tree_panel()
+	_close_ability_draft_panel()
 	victory_label.text = "Level dokončen!\nÚroveň: %d\nZlato: %d" % [GameManager.player_level, currency]
 	victory_panel.show()
 	_start_end_screen_countdown(victory_countdown_label, "Nová hra za")
@@ -769,6 +915,12 @@ func _close_shop() -> void:
 ## pro Obchod.
 func _close_skill_tree_panel() -> void:
 	skill_tree_panel.hide()
+	get_tree().paused = false
+
+
+## Stejná nouzová logika, pro AbilityDraftPanel (náhodná nabídka schopností).
+func _close_ability_draft_panel() -> void:
+	ability_draft_panel.hide()
 	get_tree().paused = false
 
 
@@ -797,6 +949,7 @@ func _restart_game() -> void:
 	game_over_panel.hide()
 	victory_panel.hide()
 	skill_tree_panel.hide()
+	ability_draft_panel.hide()
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 
@@ -833,6 +986,11 @@ func _setup_debug_panel() -> void:
 		for i in 5:
 			GameManager.debug_add_skill_point()
 	)
+	debug_force_ability_draft_button.pressed.connect(func(): GameManager.debug_force_ability_draft())
+	debug_max_abilities_button.pressed.connect(func(): GameManager.debug_max_abilities())
+	debug_reset_abilities_button.pressed.connect(func(): GameManager.debug_reset_abilities())
+	debug_ability_auto_toggle.button_pressed = _ability_auto_enabled
+	debug_ability_auto_toggle.toggled.connect(_on_ability_auto_toggled)
 	debug_speed_button.pressed.connect(_on_debug_speed_pressed)
 
 	# GameManager.debug_free_reroll je stejně jako Engine.time_scale záměrně
