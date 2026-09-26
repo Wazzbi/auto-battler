@@ -39,6 +39,7 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var xp_bar: ProgressBar = $Control/XPBar
 @onready var xp_label: Label = $Control/XPBar/XPLabel
 @onready var gold_label: Label = $Control/GoldLabel
+@onready var scrap_label: Label = $Control/ScrapLabel
 
 @onready var shop_panel: Panel = $Control/ShopPanel
 @onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
@@ -175,6 +176,7 @@ var _last_ability_offer: Array = []
 func _ready() -> void:
 	GameManager.wave_started.connect(_on_wave_started)
 	GameManager.currency_changed.connect(_on_currency_changed)
+	GameManager.scrap_changed.connect(_on_scrap_changed)
 	GameManager.xp_changed.connect(_on_xp_changed)
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.ability_draft_ready.connect(_on_ability_draft_ready)
@@ -265,6 +267,10 @@ func _on_currency_changed(new_amount: int) -> void:
 	gold_label.text = "Zlato: %d" % new_amount
 	if shop_panel.visible:
 		_refresh_shop_panel()
+
+
+func _on_scrap_changed(new_amount: int) -> void:
+	scrap_label.text = "Šrot: %d" % new_amount
 
 
 func _on_xp_changed(current_xp: int, xp_needed: int) -> void:
@@ -427,6 +433,7 @@ func _refresh_progression() -> void:
 	loop_label.text = "Kolo %d" % GameManager.loop_count
 	level_label.text = str(GameManager.player_level)
 	gold_label.text = "Zlato: %d" % GameManager.currency
+	scrap_label.text = "Šrot: %d" % GameManager.scrap
 	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())
 	_refresh_abilities()
 	_refresh_shop_slots()

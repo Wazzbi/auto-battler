@@ -993,12 +993,36 @@ is also flagged to eventually get **narrower** (~30-50%, exact amount flexible) 
 two-column button grid is fairly wide — explicitly low priority, only worth doing if it's cheap;
 don't proactively redesign the layout for this alone.
 
+**Suroviny a crafting (first slice, 2026-09-26)** — the start of a planned deeper progression
+system (blueprints bought in the shop, crafted from raw materials, deliberately priced far below
+the equivalent ready-made shop item to make crafting the obviously "correct" choice rather than a
+side activity) meant to give the player something to actively pursue mid-run, on top of the
+passive schopnost/shop loop. **This first PR is deliberately just the material itself — one type,
+called "šrot" (scrap) — with no blueprints/recipes/crafting UI yet**, following the same
+"prove the smallest slice first" approach `LEVEL_STAT_GROWTH`/the ranged-enemy ramp/armor were each
+introduced with (see their entries above): `enemy.gd`'s new `@export var scrap_reward: int = 1`
+(flat for every enemy type today, same as `reward`/`xp_reward` not currently varying by variant -
+see "Elite enemy" above, which doesn't override them either) flows through `enemy.gd`'s `_die()` →
+`GameManager.enemy_defeated(reward, xp_reward, scrap_reward)` (new third parameter, default `0` so
+any future caller that forgets it fails safe rather than erroring) → `GameManager.scrap`
+(run-scoped, reset in `reset_game()`, mirrors `currency` exactly) → `scrap_changed` signal → HUD's
+new `ScrapLabel` (`Control/ScrapLabel`, positioned directly right of `GoldLabel` at the same
+`offset_top`, same row under `XPBar`, so it reads as a second currency alongside gold rather than a
+separate concept). **Verified with a headless test** (`enemy_defeated(10, 12, N)` accumulates and
+`reset_game()` clears it) and a live windowed run (killed a real enemy at 10x `Engine.time_scale`,
+confirmed "Šrot: 1" appeared in the HUD in sync with "Zlato: 10"). **Deliberately not yet built**:
+which shop items get a blueprint, the blueprint's gold cost vs. the material quantity a craft
+consumes, whether multiple material types eventually exist per enemy variant (discussed but
+explicitly deferred to keep this first step small), and the crafting UI/interaction itself (most
+likely folded into the existing periodic Shop, which already pauses and is already the "spend
+resource on power" moment, rather than a new separate panel — see the brainstorm this came from).
+
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
 - `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_wave`/`variant_ramp_full_wave` (loop-1-only ramp for when ranged/sniper start appearing)
-- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `is_ranged`/`projectile_scene`
+- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) is the one that matters most — it must stay above the player's base `attack_range` (400) for the "protected artillery" behavior described above to hold
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
