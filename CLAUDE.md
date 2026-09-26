@@ -641,17 +641,12 @@ description you find elsewhere as stale):
   parent) — noticeably small relative to the new 112px box, but wasn't part of this request; revisit
   if it reads as too small once real item icons/text exist here.
 
-**Schopnost slots (`AbilitiesContainer`) are POSITIONAL, one per schopnost with `rank >= 1`** —
-ordered by `GameManager.ABILITY_ORDER` (filtered to owned entries), not one dedicated slot per
-`ABILITY_ORDER` type. A slot for a schopnost the player hasn't unlocked yet is simply never created
-(no grayed-out `"short_name\n-"` placeholder for every un-invested node). **This order is now
-STABLE** — investing a further rank into an already-unlocked schopnost never changes where it sits
-in the stack, since there's no more "merge" event that consumes 2 slots and appends a new one at
-the end (see "Schopnosti" above) — a genuine simplification over the old draft system, where a
-merge could visibly reshuffle the stack. `hud.gd`'s `_refresh_abilities()` still rebuilds the ENTIRE
-stack from scratch on every `skill_ranks_changed` signal (`queue_free()` every child, then recreate)
-rather than maintaining a persistent widget pool — simpler to keep than to selectively diff, and the
-list only grows to at most 11 entries, so the rebuild cost is trivial. **Column wrap keeps the stack
+**STALE, see the correction under "Schopnosti (dovednostní strom)" below** — this paragraph
+described an interim state where `AbilitiesContainer` showed dovednosti ranks too; as of
+2026-09-26 it shows ONLY schopnosti from the random draft (`owned_abilities`), rebuilt on
+`ability_inventory_changed`, not `skill_ranks_changed`. The rest of this paragraph (positional
+slots, one per owned instance, reshuffling on merge) is still accurate for that one remaining
+source. **Column wrap keeps the stack
 from ever reaching `BottomBar`**: slots stack downward and
 wrap into a new column to the right after `ABILITY_STACK_MAX_ROWS` (6) — `col = i /
 ABILITY_STACK_MAX_ROWS`, `row = i % ABILITY_STACK_MAX_ROWS` — chosen so even a full column (6 × 52px
@@ -966,11 +961,23 @@ skill-tree rework, just with the trigger reason changed from "level-up happened 
 clear shows the ability draft, confirms the shop stays hidden + `_shop_open_deferred == true` while
 it's pending, then confirms the shop auto-opens the instant the draft resolves.
 
-**`_refresh_abilities()` (the `AbilitiesContainer` stack, top-left) now shows BOTH sources in one
-list** — dovednosti entries first (stable `ABILITY_ORDER`, one per `rank >= 1`), then schopnosti
-entries after (one per `owned_abilities` instance, in insertion/merge order like before) — through a
-shared `_create_ability_stack_slot(index, label_text, tooltip_text)` helper so both loops build
-identical-looking mini-slots without duplicating the Panel/Label construction code.
+**STALE (2026-09-26, later the same day): `_refresh_abilities()` no longer shows dovednosti at
+all.** It briefly showed both sources (dovednosti entries first, then schopnosti) right after
+schopnosti was restored — but the user then clarified dovednosti should work as an invisible
+passive stat bonus in the background (so a future run that starts with pre-invested skill points,
+e.g. a meta-progression "start at level 10" mode, just has higher base stats with no card to show
+for it), and this stack under the portrait should only ever show the schopnosti the player actively
+picked from the random draft. `_refresh_abilities()` now has ONE loop again, over
+`GameManager.owned_abilities` only (via `_create_ability_stack_slot(index, label_text,
+tooltip_text)`) — `skill_ranks` never touches this list. `hud.gd`'s `_on_skill_ranks_changed()` no
+longer calls `_refresh_abilities()` either (it only refreshes `SkillTreePanel` if it happens to be
+open) — investing a dovednost point never changes what this stack shows. **Mechanically nothing
+changed**: `skill_ranks`' contribution to `get_stat_bonus()` was always independent of what's
+displayed here, so removing the cards doesn't touch stat math, only visibility. **Verified with a
+scene-level headless test**: invested a dovednost rank into `power_core` with zero owned schopnosti
+→ `AbilitiesContainer` has 0 children; then added an owned schopnost copy of the same
+`power_core` → exactly 1 child appears (the schopnost, not the dovednost); `get_stat_bonus("damage")`
+reflects both contributions regardless.
 
 **Debug panel now has separate controls for each system** — dovednosti keeps `AddSkillPointButton`/
 `MaxSkillTreeButton`/`ResetSkillTreeButton`/`AddManySkillPointsButton` (added during the tree work);

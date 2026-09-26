@@ -367,7 +367,6 @@ func _on_skill_points_changed(new_amount: int) -> void:
 
 
 func _on_skill_ranks_changed() -> void:
-	_refresh_abilities()
 	if skill_tree_panel.visible:
 		_refresh_skill_tree_ui()
 
@@ -570,30 +569,23 @@ func _on_ability_pick_pressed(offer_index: int) -> void:
 ## (viz "Schopnosti - DVA SOUBĚŽNÉ..." v game_manager.gd): nejdřív dovednostní
 ## strom (jeden slot na KAŽDOU schopnost s rank >= 1, v pevném pořadí
 ## GameManager.ABILITY_ORDER - stabilní pořadí, investování dalšího bodu do
-## už odemčené schopnosti nemění, kde sedí), pak schopnosti z náhodné
-## nabídky (jeden slot na KAŽDOU vlastněnou INSTANCI z owned_abilities,
-## stejně jako dřív před dovednostním stromem - tenhle blok se přeskupuje
-## při sloučení). Sloupec roste svisle a po ABILITY_STACK_MAX_ROWS se zalomí
-## do dalšího sloupce vpravo, aby hromádka nikdy nezasáhla dolů do
-## BottomBaru bez ohledu na to, kolik toho hráč nasbírá.
+## schopnosti z náhodné nabídky (jeden slot na KAŽDOU vlastněnou INSTANCI z
+## owned_abilities, tenhle blok se přeskupuje při sloučení). **Dovednosti
+## (skill tree) se v tomhle listu NEUKAZUJÍ** (2026-09-26, explicit user
+## request) - fungují čistě jako neviditelný pasivní statistický bonus na
+## pozadí (viz get_stat_bonus() v game_manager.gd, kam skill_ranks přispívá
+## bez ohledu na to, co se kde zobrazuje), takže i budoucí run se
+## zvýhodněným startem (např. hráč začne s už investovanými dovednostmi)
+## bude mít vyšší ZÁKLADNÍ staty bez jediné karty navíc v téhle hromádce -
+## viditelné schopnosti tu zůstávají výhradně ty z náhodné nabídky. Sloupec
+## roste svisle a po ABILITY_STACK_MAX_ROWS se zalomí do dalšího sloupce
+## vpravo, aby hromádka nikdy nezasáhla dolů do BottomBaru bez ohledu na to,
+## kolik toho hráč nasbírá.
 func _refresh_abilities() -> void:
 	for child in abilities_container.get_children():
 		child.queue_free()
 
 	var slot_index: int = 0
-
-	for ability_id in GameManager.ABILITY_ORDER:
-		var rank: int = GameManager.get_skill_rank(ability_id)
-		if rank <= 0:
-			continue
-		var max_rank: int = GameManager.get_skill_max_rank(ability_id)
-		var definition: Dictionary = GameManager.ABILITIES[ability_id]
-		_create_ability_stack_slot(
-			slot_index,
-			"%s\nStupeň %d/%d" % [definition["short_name"], rank, max_rank],
-			"%s (Stupeň %d/%d)\n%s" % [definition["name"], rank, max_rank, GameManager.get_skill_node_desc(ability_id, rank)]
-		)
-		slot_index += 1
 
 	for entry in GameManager.owned_abilities:
 		var ability_id: String = entry["ability_id"]
