@@ -120,6 +120,16 @@ theme_override_font_sizes/font_size = 15
 text = "Zlato: 0"
 horizontal_alignment = 0
 
+[node name="ScrapLabel" type="Label" parent="Control"]
+layout_mode = 0
+offset_left = 328.0
+offset_top = 76.0
+offset_right = 528.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 15
+text = "Šrot: 0"
+horizontal_alignment = 0
+
 [node name="AbilitiesContainer" type="Control" parent="Control"]
 layout_mode = 0
 offset_left = 20.0

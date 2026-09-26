@@ -21,6 +21,10 @@ extends Node2D
 @export var reward: int = 10
 ## Zkušenosti za zabití - hráč z nich sbírá úrovně a body do schopností
 @export var xp_reward: int = 12
+## Suroviny (šrot) za zabití - vstup pro budoucí crafting (viz "Suroviny a
+## crafting" v CLAUDE.md). Zatím stejná plochá hodnota pro každého nepřítele,
+## stejně jako reward/xp_reward dnes u Elite.
+@export var scrap_reward: int = 1
 ## Jak blízko svého STŘEDU musí projektil dolétnout, aby se počítal zásah.
 ## Musí zhruba odpovídat polovině šířky vizuálu (Polygon2D), jinak zásah
 ## vypadá, že se stane příliš brzy/pozdě vůči tomu, co je vidět na obrazovce -
@@ -102,5 +106,5 @@ func _die() -> void:
 	if _is_dead:
 		return
 	_is_dead = true
-	GameManager.enemy_defeated(reward, xp_reward)
+	GameManager.enemy_defeated(reward, xp_reward, scrap_reward)
 	queue_free()

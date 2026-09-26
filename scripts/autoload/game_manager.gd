@@ -8,6 +8,9 @@ signal wave_cleared(wave_number: int)
 signal game_over_triggered
 signal game_won_triggered
 signal currency_changed(new_amount: int)
+## Emitne se, když se změní množství suroviny (šrotu) - viz "Suroviny a
+## crafting" v CLAUDE.md. Stejný vzor jako currency_changed.
+signal scrap_changed(new_amount: int)
 signal xp_changed(current_xp: int, xp_needed: int)
 signal level_changed(new_level: int)
 ## Emitne se, když je k dispozici nová nabídka schopností k výběru (viz
@@ -389,6 +392,10 @@ var current_wave: int = 0
 ## viz _start_new_loop(). Resetuje se jen na skutečný Game Over (reset_game()).
 var loop_count: int = 1
 var currency: int = 0
+## Nakrafťovaná surovina (šrot) - vstup pro budoucí blueprinty/crafting v
+## obchodě (viz "Suroviny a crafting" v CLAUDE.md). Zatím jediný typ suroviny,
+## stejné run-scoped chování jako currency (resetuje se v reset_game()).
+var scrap: int = 0
 var enemies_alive: int = 0
 var enemies_remaining_to_spawn: int = 0
 var state: State = State.INTRO
@@ -469,6 +476,7 @@ func reset_game() -> void:
 	state = State.INTRO
 	player_level = 1
 	player_xp = 0
+	scrap = 0
 	pending_ability_drafts = 0
 	_current_ability_offer = []
 	owned_abilities.clear()
@@ -485,10 +493,13 @@ func register_enemy_spawned() -> void:
 	enemies_alive += 1
 
 
-## Zavolá nepřítel při své smrti - přidá měnu i XP a zkontroluje stav vlny
-func enemy_defeated(reward: int, xp_reward: int) -> void:
+## Zavolá nepřítel při své smrti - přidá měnu, suroviny i XP a zkontroluje
+## stav vlny
+func enemy_defeated(reward: int, xp_reward: int, scrap_reward: int = 0) -> void:
 	currency += reward
 	currency_changed.emit(currency)
+	scrap += scrap_reward
+	scrap_changed.emit(scrap)
 	add_xp(xp_reward)
 	enemies_alive -= 1
 
