@@ -714,27 +714,16 @@ func add_xp(amount: int) -> void:
 
 
 ## Zavolá hráč po dopadu úvodní "drop-in" animace (viz player.gd's
-## _on_landed()) - přidá 1 bod schopnosti stejně jako běžný level-up, jen bez
-## přírůstku úrovně/XP (hráč už je na úrovni 1 z reset_game()). Hra zůstává
-## ve State.INTRO (takže pohyb hráče, spawn nepřátel atd. pořád nic nedělají,
-## viz jejich `state != State.PLAYING` guardy), dokud hráč PRVNÍ POPRVÉ
-## nezavře SkillTreePanel - hud.gd force-otevře panel samo, jakmile si přes
-## skill_points_changed všimne State.INTRO (viz "Dovednostní strom" v
-## CLAUDE.md), a finish_intro() zavolá až na zavření panelu, ne na
-## vyčerpání bodů (hráč nemusí bod hned utratit).
-func begin_intro_skill_tree() -> void:
-	pending_skill_points += 1
-	skill_points_changed.emit(pending_skill_points)
-
-
-## Zavolá hráč po dopadu úvodní "drop-in" animace (viz player.gd's
 ## _on_landed()) - vyžádá první nabídku SCHOPNOSTI (náhodný draft) stejným
 ## mechanismem jako konec vlny (pending_ability_drafts/
-## _try_offer_next_ability_draft()). Tohle je PRVNÍ ze dvou intro kroků -
-## teprve jakmile se tahle nabídka vyřídí, resolve_ability_draft() zavolá
-## begin_intro_skill_tree() (dovednostní strom, druhý krok) - viz tam. Hra
-## zůstává ve State.INTRO přes OBA kroky (pohyb hráče, spawn nepřátel atd.
-## pořád nic nedělají, viz jejich `state != State.PLAYING` guardy).
+## _try_offer_next_ability_draft()). Tohle je JEDINÝ intro krok - dovednostní
+## strom (skill_ranks/pending_skill_points) už se do intra vůbec nezapojuje
+## (2026-09-26 zpětná vazba - první bod schopnosti má hráč dostat až na
+## úrovni 2 jako běžný level-up, ne vynuceně před začátkem hry, viz
+## _level_up() a "Dovednostní strom" v CLAUDE.md). Hra zůstává ve State.INTRO
+## přes tenhle krok (pohyb hráče, spawn nepřátel atd. pořád nic nedělají, viz
+## jejich `state != State.PLAYING` guardy) - resolve_ability_draft() zavolá
+## finish_intro() přímo, jakmile se tahle nabídka vyřídí.
 func begin_intro_ability_draft() -> void:
 	pending_ability_drafts += 1
 	_try_offer_next_ability_draft()
@@ -848,13 +837,11 @@ func resolve_ability_draft(offer_index: int) -> bool:
 	# fronta schopností doopravdy doběhla do prázdna.
 	if _shop_open_deferred:
 		_try_open_pending_shop()
-	# Úvodní nabídka schopnosti (viz begin_intro_ability_draft()) je PRVNÍ ze
-	# dvou intro kroků - jakmile fronta doběhne do prázdna, nenavazujeme
-	# přímo na finish_intro(), ale na begin_intro_skill_tree() (dovednostní
-	# strom, druhý krok) - ten už sám finish_intro() zavolá na zavření svého
-	# panelu (viz hud.gd's _on_skill_tree_close_pressed()).
+	# Úvodní nabídka schopnosti (viz begin_intro_ability_draft()) je JEDINÝ
+	# intro krok - jakmile fronta doběhne do prázdna, hra může rovnou naběhnout
+	# (dovednostní strom se do intra už nezapojuje, viz begin_intro_ability_draft()).
 	if state == State.INTRO and pending_ability_drafts <= 0:
-		begin_intro_skill_tree()
+		finish_intro()
 	return true
 
 
@@ -1329,13 +1316,11 @@ func sell_shop_item(collection_name: String, index: int) -> bool:
 	return true
 
 
-## Přepne hru ze State.INTRO do State.PLAYING. Volá HUD (hud.gd's
-## _on_skill_tree_close_pressed()), jakmile hráč POPRVÉ zavře SkillTreePanel -
-## DRUHÝ a poslední ze dvou intro kroků (viz player.gd's _on_landed() →
-## begin_intro_ability_draft() → resolve_ability_draft() →
-## begin_intro_skill_tree()). Nezáleží na tom, jestli hráč dovednostní bod
-## skutečně utratil - zavření panelu samo stačí, protože bod zůstává čekat
-## (žádná nabídka nevyprší).
+## Přepne hru ze State.INTRO do State.PLAYING. Volá resolve_ability_draft(),
+## jakmile se úvodní nabídka SCHOPNOSTI (jediný intro krok, viz player.gd's
+## _on_landed() → begin_intro_ability_draft()) vyřídí - dovednostní strom se
+## do intra od 2026-09-26 už nezapojuje (první bod schopnosti přijde
+## normálně na úrovni 2 přes _level_up(), stejně jako každý další).
 func finish_intro() -> void:
 	if state == State.INTRO:
 		state = State.PLAYING

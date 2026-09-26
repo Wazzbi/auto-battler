@@ -259,14 +259,16 @@ node's `global_position` and were never affected by this bug.
 (`_play_drop_in_animation` in `player.gd`) while `GameManager.state == State.INTRO`, which blocks
 all gameplay `_process` logic automatically. `_on_landed()` triggers a screen shake, a squash
 tween, a procedural impact ring (`scenes/effects/impact_effect.gd`), waits for all three to finish
-playing, and only then calls `GameManager.begin_intro_skill_tree()`.
+playing, and only then calls `GameManager.begin_intro_ability_draft()` (see "STALE" notes under
+"Schopnosti (dovednostní strom)" below — this used to also chain into a forced skill-tree point,
+removed 2026-09-26; the wait/timing mechanics described here are unaffected by that change).
 
-**That wait is deliberate, added same-day as a fix**: the intro point grant used to fire
+**That wait is deliberate, added same-day as a fix**: the intro offer used to fire
 immediately, which pauses the tree the instant the panel shows — cutting the screen shake, squash
 tween, and impact ring off mid-animation, since none of those cosmetic effects run at
 `process_mode = ALWAYS` (unlike the HUD, which does). Fixed by awaiting
 `get_tree().create_timer(impact_effect.duration).timeout` before calling
-`begin_intro_skill_tree()` — `_spawn_impact_effect()` now returns the instantiated effect node
+`begin_intro_ability_draft()` — `_spawn_impact_effect()` now returns the instantiated effect node
 so `_on_landed()` can read its actual `duration` (0.4s by default) rather than hardcoding a
 duplicate number. The impact ring is deliberately the one to wait on: it's the longest of the
 three (camera shake's default `duration` in `camera_follow.gd`'s `shake()` is 0.22s, the squash
@@ -277,27 +279,20 @@ with a headless test sampling the intro panel's `visible` at several timestamps*
 predates the 2026-09-26 switch to `SkillTreePanel`, see below — the timing itself is unchanged,
 only the panel's name and what it shows.)
 
-**The player's very first skill point is granted BEFORE the game starts, not after landing**
-(added 2026-09-25, explicit user request, mechanism reworked 2026-09-26 — see "Schopnosti
-(dovednostní strom)" below for the full system): `begin_intro_skill_tree()` adds 1 point to
-`pending_skill_points` (without incrementing `player_level`/XP — the player is already level 1
-from `reset_game()`), and `hud.gd`'s `skill_points_changed` handler force-opens `SkillTreePanel`
-and pauses the game *specifically* because `state` is still `State.INTRO` at that moment — every
-*later* point (normal level-ups) does NOT auto-open anything, just lights up the portrait badge
-(see below). Since this happens while `state` is still `State.INTRO`, movement/enemy-spawning/
-everything already gated behind `state == State.PLAYING` naturally stays frozen through the pick -
-no separate gating was needed. `finish_intro()` is called from `hud.gd`'s
-`_on_skill_tree_close_pressed()` when `state == State.INTRO`, on panel **close**, not on the point
-being spent — the player can close the intro tree with the point still unspent (it just stays
-queued, same as any other point) and the game still starts. **Verified with two headless tests**:
-one asserting `GameManager` state directly (state stays `INTRO` with `pending_skill_points == 1`
-right after `begin_intro_skill_tree()`), and a second, scene-level one instantiating real
-`main.tscn` + `hud.tscn` confirming `SkillTreePanel` auto-opens and pauses on the intro point, that
-investing via the real node button updates `GameManager.skill_ranks` and unlocks the next node, and
-that closing the panel transitions `state` to `PLAYING` and unpauses — the scene-level check matters
-because a GameManager-only test can't catch a HUD-layer bug (see the wave-10 shop/ability
-panel-collision fix earlier in this file for precedent, itself made moot by this same rework — see
-below).
+**STALE (2026-09-25 → 2026-09-26, then reverted the same day): the player's very first skill point
+used to be granted BEFORE the game starts** via a now-deleted `begin_intro_skill_tree()`, force-
+opening `SkillTreePanel` during `State.INTRO`. **Removed on explicit user request the same day** —
+"první dovednostní bod hráč dostane až na druhém levelu... nezobrazí se panel na začátku hry." The
+first skill point now arrives exactly like every other one: through `_level_up()` when the player
+reaches level 2, no earlier and with no special-cased panel. `player.gd`'s `_on_landed()` still
+kicks off the intro's only remaining step, the random-draft schopnosti offer
+(`begin_intro_ability_draft()`), and `resolve_ability_draft()` calls `finish_intro()` **directly**
+once that offer resolves — `SkillTreePanel` plays no role in intro sequencing anymore and only
+opens when the player clicks the portrait themselves. `hud.gd`'s `_on_skill_points_changed()` and
+`_on_skill_tree_close_pressed()` both dropped their `state == State.INTRO` special-casing since
+it's unreachable now. **Verified with a headless test**: resolving the intro ability-draft offer
+transitions `state` to `PLAYING` while `pending_skill_points` stays `0`, and reaching level 2
+(`add_xp(xp_for_next_level())`) is the first point to ever increment it.
 
 **Game Over / Victory auto-restart flow**: `hud.gd` drives both `GameOverPanel` and `VictoryPanel`
 with the *same* countdown mechanism — `_end_screen_countdown` ticks down via a manually decremented
@@ -514,16 +509,19 @@ right now") so the player can tell "not available yet" from "already maxed / no 
 glance. `_on_skill_node_pressed(ability_id)` just calls `GameManager.invest_skill_point(ability_id)`
 — all validation lives in GameManager, the button handler is a thin pass-through.
 
-**The very first point is a forced, pausing exception** (`begin_intro_skill_tree()`, called from
-player.gd's `_on_landed()` exactly where `begin_intro_ability_draft()` used to be) — grants 1 point
-without incrementing `player_level`/XP (player is already level 1 from `reset_game()`), and
-`_on_skill_points_changed()`'s `state == State.INTRO` check force-opens the panel specifically for
-this one case, since the game hasn't started yet and there's no portrait-click affordance visible
-before the drop-in animation finishes anyway. `finish_intro()` (in `game_manager.gd`) is called from
-`hud.gd`'s `_on_skill_tree_close_pressed()` when `state == State.INTRO` — the INTRO→PLAYING
-transition now happens on the panel's **close**, not on the point being spent, so a player can
-close the intro tree with the point still unspent (it just stays queued, exactly like any other
-point) and the game still starts normally.
+**CORRECTION (2026-09-26, later the same day): the skill tree no longer has any intro-forced
+point/panel at all.** The paragraph above describing `begin_intro_skill_tree()` forcing the panel
+open before the game starts is now stale — that function and its intro hookup were removed on
+explicit user request ("první dovednostní bod hráč dostane až na druhém levelu... nezobrazí se
+panel na začátku hry"). The first skill point now arrives exactly like every other one, through the
+normal `_level_up()` path when the player reaches **level 2** — there is nothing special about it
+at all. `player.gd`'s `_on_landed()` still calls `GameManager.begin_intro_ability_draft()` (the
+random-draft schopnosti offer, unaffected by this change), and `resolve_ability_draft()` now calls
+`finish_intro()` **directly** once that offer resolves — the dovednosti/skill-tree system plays no
+part in intro sequencing anymore, so `SkillTreePanel` never appears until the player clicks the
+portrait themselves (which won't have anything to show until level 2 lights up the badge).
+`_on_skill_points_changed()` and `_on_skill_tree_close_pressed()` in `hud.gd` both dropped their
+`state == State.INTRO` special-casing accordingly, since it's now unreachable.
 
 **Debug panel affordances were renamed, not removed, to match**: "Vynutit schopnost" →
 `AddSkillPointButton` ("+1 bod schopnosti", calls the renamed `debug_add_skill_point()`); "Max
@@ -695,10 +693,9 @@ used to *synchronously* pop the old `AbilityDraftPanel` (inside `enemy_defeated(
 which could collide with `ShopPanel` trying to auto-open on the very same frame. That collision is
 now structurally impossible: a level-up no longer opens or pauses anything by itself (see
 "Schopnosti" above — it just adds a point and lights up the portrait badge), so
-`_open_periodic_shop()` can call `shop_auto_open_requested.emit()` directly and unconditionally. The
-one panel that STILL force-opens automatically (`SkillTreePanel` on the player's very first point,
-see "The very first point is a forced, pausing exception" above) can never collide with the shop
-either, since it fires at the very start of a run, long before wave 10 is reachable.
+`_open_periodic_shop()` can call `shop_auto_open_requested.emit()` directly and unconditionally.
+**`SkillTreePanel` no longer force-opens automatically at all** (removed 2026-09-26, see the
+correction under "Schopnosti (dovednostní strom)" above) — it can never collide with the shop.
 
 **The offer is `SHOP_OFFER_SIZE` (4) random items out of the full 7-item pool, not all 7 at once**
 (`GameManager.shop_offer`, `_generate_shop_offer()`) — picked via `SHOP_ITEM_ORDER.duplicate();
@@ -950,15 +947,13 @@ Likewise there are two parallel description/value functions: `get_ability_desc()
 ones (or vice versa) is a real bug, not just a stale name, since the two index domains differ in
 size (0-3 vs 1-5).
 
-**Intro is now TWO forced steps in sequence, not one**: `player.gd`'s `_on_landed()` calls
-`begin_intro_ability_draft()` (schopnosti, step 1 — "jako doteď") — when that offer resolves,
-`resolve_ability_draft()`'s tail (if `state == INTRO`) calls `begin_intro_skill_tree()` (dovednosti,
-step 2) INSTEAD of `finish_intro()` directly; dovednosti's own already-existing intro-force-open
-logic (`hud.gd`'s `_on_skill_points_changed()`) takes it from there, and `finish_intro()` only fires
-when THAT second panel closes. Both panel-show calls happen synchronously within the same call
-stack that the FIRST panel's `hide()` also runs in, so — because Godot only renders at frame
-boundaries, never mid-script — the player never actually sees two panels open at once, even though
-there's a brief logical moment where both `visible` flags are true.
+**STALE, reverted 2026-09-26 (same day): intro is back to ONE step, not two.** It briefly became a
+two-step chain (schopnosti draft → dovednosti's `begin_intro_skill_tree()`) right after schopnosti
+was restored alongside dovednosti, but the user then asked for the skill tree's intro-forced point
+to go away entirely (first point should arrive at level 2, panel should never auto-open at game
+start). `player.gd`'s `_on_landed()` still calls `begin_intro_ability_draft()` (schopnosti, the only
+intro step now), and `resolve_ability_draft()`'s tail calls `finish_intro()` **directly** once that
+offer resolves — `begin_intro_skill_tree()` no longer exists at all.
 
 **Wave-10 shop-vs-draft collision is back too, same shape as the original 2026-09-09 fix, just a
 guaranteed collision now instead of an occasional one**: `_on_wave_cleared()` ALWAYS generates an

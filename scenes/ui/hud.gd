@@ -106,11 +106,10 @@ const ABILITY_STACK_MAX_ROWS: int = 6
 ## Dovednostní strom (viz "Dovednosti (strom)" v CLAUDE.md) - SOUBĚŽNÝ
 ## systém vedle AbilityDraftPanelu níže (schopnosti, náhodná nabídka), ne
 ## jeho náhrada (2026-09-26 zpětná vazba - "schopnosti zachovat, ne
-## nahradit"). Otevírá se kliknutím na portrét (viz portrait_button výše),
-## ne automaticky na KAŽDÉM level-upu - jedinou výjimkou je úplně první
-## otevření na začátku hry (viz begin_intro_skill_tree() v game_manager.gd,
-## DRUHÝ ze dvou intro kroků po AbilityDraftPanelu), to je pořád vynucené a
-## pozastavující.
+## nahradit"). Otevírá se VŽDY jen kliknutím na portrét (viz portrait_button
+## výše) - žádná automatická/vynucená INTRO výjimka (odstraněna 2026-09-26,
+## stejný den - první bod schopnosti přijde normálně na úrovni 2 přes
+## _level_up(), ne dřív, takže se panel na začátku hry vůbec neukáže).
 @onready var skill_tree_panel: Panel = $Control/SkillTreePanel
 @onready var skill_tree_close_button: Button = $Control/SkillTreePanel/CloseButton
 @onready var skill_tree_points_label: Label = $Control/SkillTreePanel/PointsLabel
@@ -344,22 +343,20 @@ func _show_skill_tree_panel() -> void:
 	get_tree().paused = true
 
 
-## Zavření stromu - stejný vzor jako _on_shop_close_pressed(). Pokud je hra
-## ještě ve State.INTRO (úplně první otevření, vynucené
-## begin_intro_skill_tree()), zavolá navíc finish_intro() - přechod na
-## PLAYING teď váže na ZAVŘENÍ panelu, ne na vyčerpání bodů (hráč nemusí
-## svůj úvodní bod hned utratit, viz "Dovednostní strom" v CLAUDE.md).
+## Zavření stromu - stejný vzor jako _on_shop_close_pressed(). Dovednostní
+## strom se od 2026-09-26 do intra vůbec nezapojuje (viz "Dovednostní strom"
+## v CLAUDE.md) - jedinou cestou z State.INTRO je zavření AbilityDraftPanelu
+## (resolve_ability_draft() → finish_intro() v game_manager.gd), takže tady
+## žádná INTRO-výjimka není potřeba.
 func _on_skill_tree_close_pressed() -> void:
 	skill_tree_panel.hide()
-	if GameManager.state == GameManager.State.INTRO:
-		GameManager.finish_intro()
 	get_tree().paused = false
 
 
 ## Reaguje na KAŽDOU změnu počtu čekajících bodů (level-up i investování) -
-## přebarví portrét a odznáček, a pokud je hra zrovna ve State.INTRO, sama
-## force-otevře strom (úplně první bod ve hře nikdy nečeká na klik, viz
-## begin_intro_skill_tree() v game_manager.gd).
+## jen přebarví portrét a odznáček. Panel se už nikdy sám neotevírá (první
+## bod schopnosti přijde normálně na úrovni 2 jako každý další - viz
+## "Dovednostní strom" v CLAUDE.md) - otevření je vždy jen na klik portrétu.
 func _on_skill_points_changed(new_amount: int) -> void:
 	skill_point_badge.visible = new_amount > 0
 	skill_point_label.text = "+%d" % new_amount
@@ -367,8 +364,6 @@ func _on_skill_points_changed(new_amount: int) -> void:
 
 	if skill_tree_panel.visible:
 		_refresh_skill_tree_ui()
-	elif new_amount > 0 and GameManager.state == GameManager.State.INTRO:
-		_show_skill_tree_panel()
 
 
 func _on_skill_ranks_changed() -> void:

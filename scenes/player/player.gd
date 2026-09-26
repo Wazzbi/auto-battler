@@ -130,16 +130,17 @@ func _play_drop_in_animation() -> void:
 	tween.tween_callback(_on_landed)
 
 
-## Po dopadu se hra NEROZBĚHNE rovnou - proběhnou DVA intro kroky za sebou,
-## SCHOPNOSTI (náhodná nabídka) první, DOVEDNOSTI (strom) druhý (viz
-## GameManager.begin_intro_ability_draft()/resolve_ability_draft() - to
-## druhé samo zavolá begin_intro_skill_tree() na konci prvního kroku).
-## Teprve zavření DRUHÉHO panelu přepne hru do State.PLAYING (viz
-## GameManager.finish_intro(), volané z hud.gd), takže hráč dostane obě
-## úvodní volby dřív, než se rozeběhne pohyb/spawnování nepřátel. Panel se
-## ale neukáže/nepozastaví HNED - nejdřív musí doběhnout dopadový prstenec,
-## otřes kamery i squash tween (viz níže), jinak by ta pauza tyhle kosmetické
-## reakce na dopad "usekla" v půlce (nahlášeno 2026-09-25).
+## Po dopadu se hra NEROZBĚHNE rovnou - proběhne JEDEN intro krok, úvodní
+## nabídka SCHOPNOSTI (náhodný draft, viz GameManager.begin_intro_ability_
+## draft()/resolve_ability_draft()). Dovednostní strom se do intra od
+## 2026-09-26 vůbec nezapojuje (zpětná vazba - první bod schopnosti má hráč
+## dostat až na úrovni 2 jako běžný level-up, ne vynuceně před začátkem hry) -
+## resolve_ability_draft() zavolá GameManager.finish_intro() přímo, jakmile
+## se tahle nabídka vyřídí, takže se SkillTreePanel na začátku hry vůbec
+## neukáže. Panel se ale neukáže/nepozastaví HNED ani pro tenhle jeden krok -
+## nejdřív musí doběhnout dopadový prstenec, otřes kamery i squash tween (viz
+## níže), jinak by ta pauza tyhle kosmetické reakce na dopad "usekla" v
+## půlce (nahlášeno 2026-09-25).
 func _on_landed() -> void:
 	var impact_effect: Node2D = _spawn_impact_effect()
 	landed.emit()
