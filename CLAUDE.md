@@ -259,9 +259,11 @@ node's `global_position` and were never affected by this bug.
 (`_play_drop_in_animation` in `player.gd`) while `GameManager.state == State.INTRO`, which blocks
 all gameplay `_process` logic automatically. `_on_landed()` triggers a screen shake, a squash
 tween, a procedural impact ring (`scenes/effects/impact_effect.gd`), waits for all three to finish
-playing, and only then calls `GameManager.begin_intro_ability_draft()`.
+playing, and only then calls `GameManager.begin_intro_ability_draft()` (see "STALE" notes under
+"Schopnosti (dovednostní strom)" below — this used to also chain into a forced skill-tree point,
+removed 2026-09-26; the wait/timing mechanics described here are unaffected by that change).
 
-**That wait is deliberate, added same-day as a fix**: `begin_intro_ability_draft()` used to fire
+**That wait is deliberate, added same-day as a fix**: the intro offer used to fire
 immediately, which pauses the tree the instant the panel shows — cutting the screen shake, squash
 tween, and impact ring off mid-animation, since none of those cosmetic effects run at
 `process_mode = ALWAYS` (unlike the HUD, which does). Fixed by awaiting
@@ -271,32 +273,26 @@ so `_on_landed()` can read its actual `duration` (0.4s by default) rather than h
 duplicate number. The impact ring is deliberately the one to wait on: it's the longest of the
 three (camera shake's default `duration` in `camera_follow.gd`'s `shake()` is 0.22s, the squash
 tween is `0.08 + 0.15 = 0.23s`), so waiting for it covers the other two automatically. **Verified
-with a headless test sampling `ability_draft_panel.visible` at several timestamps** — confirmed
+with a headless test sampling the intro panel's `visible` at several timestamps** — confirmed
 `false` at 0.6s and 0.8s post-scene-start (still mid-effects) and `true` by 0.98s (0.55s fall +
-0.4s impact ring + a hair of frame slack), not immediately after the 0.55s landing.
+0.4s impact ring + a hair of frame slack), not immediately after the 0.55s landing. (That test
+predates the 2026-09-26 switch to `SkillTreePanel`, see below — the timing itself is unchanged,
+only the panel's name and what it shows.)
 
-**The player's very first schopnost pick happens BEFORE the game starts, not after landing**
-(added 2026-09-25, explicit user request): `begin_intro_ability_draft()` queues an offer through
-the exact same `pending_ability_drafts`/`_try_offer_next_ability_draft()` machinery a normal
-level-up uses (just without incrementing `player_level`/XP — the player is already level 1 from
-`reset_game()`) so `AbilityDraftPanel` shows and pauses the game (`hud.gd`'s
-`_show_ability_draft_panel()`) exactly like any other schopnost offer, with zero new UI code. Since
-this happens while `state` is still `State.INTRO`, movement/enemy-spawning/everything already
-gated behind `state == State.PLAYING` naturally stays frozen through the pick — no separate
-gating was needed. **`finish_intro()` moved out of `player.gd` and into the tail of
-`resolve_ability_draft()`** in `game_manager.gd`: once an offer resolves and
-`pending_ability_drafts` drops back to 0, `resolve_ability_draft()` checks `state == State.INTRO`
-and calls `finish_intro()` itself, so the INTRO→PLAYING transition happens the instant the queue
-actually empties — correctly covering both a manual pick and "Auto vylepšení" (which calls
-`resolve_ability_draft()` directly, bypassing the panel). `player.gd`'s `_on_landed()` no longer
-calls `finish_intro()` at all. **Verified with two headless tests** (not just eyeballed): one
-asserting `GameManager` state directly (state stays `INTRO` with `pending_ability_drafts == 1`
-right after landing, becomes `PLAYING` with exactly 1 owned ability after
-`resolve_ability_draft(0)`), and a second, scene-level one instantiating real `main.tscn` +
-`hud.tscn` asserting `hud.ability_draft_panel.visible`, `get_tree().paused`, and
-`GameManager.enemies_alive == 0` are all true while the offer is pending — the scene-level check
-matters because a GameManager-only test can't catch a HUD-layer bug (see the wave-10 shop/ability
-panel-collision fix earlier in this file for precedent).
+**STALE (2026-09-25 → 2026-09-26, then reverted the same day): the player's very first skill point
+used to be granted BEFORE the game starts** via a now-deleted `begin_intro_skill_tree()`, force-
+opening `SkillTreePanel` during `State.INTRO`. **Removed on explicit user request the same day** —
+"první dovednostní bod hráč dostane až na druhém levelu... nezobrazí se panel na začátku hry." The
+first skill point now arrives exactly like every other one: through `_level_up()` when the player
+reaches level 2, no earlier and with no special-cased panel. `player.gd`'s `_on_landed()` still
+kicks off the intro's only remaining step, the random-draft schopnosti offer
+(`begin_intro_ability_draft()`), and `resolve_ability_draft()` calls `finish_intro()` **directly**
+once that offer resolves — `SkillTreePanel` plays no role in intro sequencing anymore and only
+opens when the player clicks the portrait themselves. `hud.gd`'s `_on_skill_points_changed()` and
+`_on_skill_tree_close_pressed()` both dropped their `state == State.INTRO` special-casing since
+it's unreachable now. **Verified with a headless test**: resolving the intro ability-draft offer
+transitions `state` to `PLAYING` while `pending_skill_points` stays `0`, and reaching level 2
+(`add_xp(xp_for_next_level())`) is the first point to ever increment it.
 
 **Game Over / Victory auto-restart flow**: `hud.gd` drives both `GameOverPanel` and `VictoryPanel`
 with the *same* countdown mechanism — `_end_screen_countdown` ticks down via a manually decremented
@@ -347,12 +343,13 @@ a build's identity.
 Effective stats come from getters (`get_damage()`, `get_attack_speed()`, `get_attack_range()`,
 `get_target_count()`, `get_hp_regen()`, `get_armor()`, `get_crit_chance()`) that add
 `GameManager.get_stat_bonus(stat_id)` — **the single place where progression turns into numbers**,
-summing three sources: `LEVEL_STAT_GROWTH` (automatic, keyed by `player_level`), owned *passive*
-schopnosti, and the shop's `active_shop_items`. The player recomputes on the `level_changed` and
-`ability_inventory_changed` signals. **Balance caveat (partially addressed)**: a run's power still
-depends heavily on what the schopnosti pool happens to offer — but `LEVEL_STAT_GROWTH` guarantees a
-non-zero floor regardless of draft luck, so a bad-luck run is weaker, not stat-flat. Not claimed to
-fully solve fragility, just to soften the worst case.
+summing three sources: `LEVEL_STAT_GROWTH` (automatic, keyed by `player_level`), invested *passive*
+schopnosti (see "Schopnosti" below), and the shop's `active_shop_items`. The player recomputes on
+the `level_changed` and `skill_ranks_changed` signals. **Balance caveat (partially addressed)**: a
+run's power still depends heavily on how the player allocates their skill-tree points and what the
+shop happens to offer — but `LEVEL_STAT_GROWTH` guarantees a non-zero floor regardless of either, so
+an unlucky/unfocused run is weaker, not stat-flat. Not claimed to fully solve fragility, just to
+soften the worst case.
 
 **Critical hits (`base_crit_chance`, `get_crit_chance()`, `CRIT_DAMAGE_MULTIPLIER`)** — added
 2026-09-25, explicit user request. `_shoot()` rolls `randf() < get_crit_chance()` **independently
@@ -419,233 +416,145 @@ typical death point from "wave 2-4 of loop 1" to "deep into loop 1 or partway th
 is the kind of improvement that's meant to be judged by playtesting feel, not chased to a specific
 number.
 
-**Schopnosti (`GameManager.ABILITIES`/`ABILITY_ORDER`, `Control/AbilityDraftPanel` in `hud.tscn`) —
-the single, unified progression-choice system**, replacing what used to be two separate systems: an
-"item draft" (single-stat passive items, offered every level) and "aktivní schopnosti" (trigger/
-effect abilities, offered every 5 levels, `double_tap` only). **Merged 2026-09-09 on explicit user
-direction** — the user asked to drop the per-level item draft entirely and fold everything into one
-"schopnost" (ability) concept, since both were fundamentally the same shape (pick 1 of N random
-picks, roll a rarity, merge duplicates) and keeping two names/two panels for what amounts to one
-mechanic no longer made sense once both used rarity+merge. Every `ABILITIES` entry has a `"type"`:
-- **`"passive"`** (the 7 former draft items: `power_core`, `rapid_coils`, `long_barrel`,
-  `split_rounds`, `reinforced_plating`, `nanite_repair`, `kinetic_dampers`) — `{"stat": String,
-  "value": float}`, a single stat bonus scaled by `PASSIVE_EFFECT_MULTIPLIERS[rarity]`
-  (`get_stat_bonus()` sums these). Deliberately still single-stat, unlike the shop's multi-stat
-  items — that's what keeps schopnosti feeling distinct from the shop, not just a second path to the
-  same numbers.
+**Schopnosti (`GameManager.ABILITIES`/`ABILITY_ORDER`/`SKILL_TREE_BRANCHES`, `Control/SkillTreePanel`
+in `hud.tscn`) — a deterministic DOVEDNOSTNÍ STROM (skill tree)**, reworked 2026-09-26 on explicit
+user direction from a fully different paradigm: the previous system (documented below only for
+historical context — if you see `owned_abilities`, `pending_ability_drafts`,
+`_current_ability_offer`, `ability_draft_ready`, `AbilityDraftPanel`, `_roll_ability_options()`,
+`_try_merge_ability()`, `ABILITY_CHOICE_COUNT`, `ABILITY_MERGE_THRESHOLD`, `ABILITY_RARITY_WEIGHTS`,
+or `PASSIVE_EFFECT_MULTIPLIERS` referenced anywhere, they're all stale) offered 3 RANDOM cards every
+level-up and merged accidental duplicates; the tree instead gives the player a fixed pool of 11
+schopnosti arranged into 4 branches and lets them deliberately choose exactly where every point
+goes, with a strict rank-up-only progression (no RNG, no merging). The user's stated motivation was
+giving the player "something to do between levels" beyond just watching the auto-battle, in a form
+that reads as deliberate strategic planning (a tech tree) rather than another random draft.
+
+**Every `ABILITIES` entry now has `"max_rank"`** (3 for a branch's non-capstone nodes, 5 for its
+final/capstone node) in addition to its existing `"type"` shape:
+- **`"passive"`** — `{"stat": String, "value": float, "max_rank": int}` (or `{"synergy": {...},
+  "max_rank": int}` for the two tag-synergy nodes, see "Tag synergie" below) — `"value"` is the
+  PER-RANK amount; `get_stat_bonus()` multiplies it by the current rank LINEARLY (`value * rank`),
+  no multiplier curve. This is a deliberate simplification over the old system's
+  `PASSIVE_EFFECT_MULTIPLIERS` — there's only one deterministically-growing number per node now,
+  not independently-rolled copies to reconcile, so a flat per-rank value is both simpler to
+  implement and easier for the player to read directly off the UI ("rank 2/3" × "+4 per rank" = "+8
+  currently, +12 at max" is trivial arithmetic the player can do themselves).
 - **`"active"`** (`double_tap`, `orbital_bombardment`) — `{"trigger": String, "trigger_values":
-  Array (one value per `ShopRarity` tier), "effect": String, "effect_params": Dictionary}`. Resolved
-  entirely in `player.gd` (see below), NOT in `get_stat_bonus()`.
+  Array (one value per RANK, sized to exactly `max_rank`), "effect": String, "effect_params":
+  Dictionary}`. Rank still scales trigger FREQUENCY, not effect magnitude, same philosophy as
+  before — `double_tap`'s `trigger_values` shrank from 4 entries to 3 (`[6, 5, 4]`, it's no longer a
+  capstone) and `orbital_bombardment`'s grew from 4 to 5 (`[20.0, 15.0, 11.0, 8.0, 6.0]`, it IS the
+  explosive branch's capstone) — continuing the existing diminishing-interval curve for the new 5th
+  entry, first-pass number like the rest, not balance-tuned. Resolved entirely in `player.gd` (see
+  below), NOT in `get_stat_bonus()`.
 
-**Offer/merge mechanics**: `ABILITY_CHOICE_COUNT` (**3**, restored to the old draft's "pick one of
-three" feel now that the unified pool is big enough for a real choice — was briefly 1 while
-`double_tap` was the only ability that existed). An offer queues on **every single level-up** — see
-"Offer cadence" below for why this replaced an earlier every-5-levels design. `ABILITY_MERGE_THRESHOLD`
-(**2**, not the shop's 3) — schopnosti are free/
-random with no reroll, so a lower merge threshold compensates for the player's lower control over
-which duplicate they get next. Offers roll a rarity per slot (`ABILITY_RARITY_WEIGHTS`, same
-70/20/8/2% shape as the shop) and reuse the shared `ShopRarity` enum/`SHOP_RARITY_NAMES` display
-strings — but **only for an `ability_id` the player doesn't own yet**. `owned_abilities:
-Array[Dictionary]` (each `{"ability_id": String, "rarity": int}`) has no active/stash split (unlike
-the shop) — every owned instance always counts, since there's no purchase-slot pressure to manage.
+**The tree has 4 branches, one per tag, each a plain ordered `Array[String]` from root to capstone**
+(`GameManager.SKILL_TREE_BRANCHES`):
+```
+Kinetická:  power_core → split_rounds → overclock_matrix
+Přesná:     rapid_coils → long_barrel → precision_targeting
+Podpůrná:   reinforced_plating → nanite_repair → kinetic_dampers
+Explozivní: double_tap → orbital_bombardment
+```
+The explosive branch is deliberately shorter (2 nodes, not 3) — a branch doesn't need to match the
+others' length, only the "root → ... → capstone" shape. **A node's prerequisite is derived from its
+position in this array, not stored as its own field** (`get_skill_prereq(ability_id)` scans the 4
+branches and returns the previous entry, or `""` for index 0) — avoids keeping two sources of truth
+(an explicit `"prereq"` key that could drift from the branch order) in sync by hand.
+`is_skill_node_unlocked(ability_id)` is true for a root (`prereq == ""`) or once
+`get_skill_rank(prereq) >= 1` — **"unlocked" does NOT mean "free"**: a root still needs its own
+invested point like any other node, it just has no node before it (explicit user clarification
+during design: "kořen taky vyžaduje vlastní investici, jen nemá podmínku před sebou").
 
-**A repeat offer of an already-owned schopnost is forced to match the player's lowest owned rarity
-of it, not rolled independently** (`_lowest_owned_ability_rarity()`, fixed 2026-09-25 — reported
-after the user ended up owning "Jádro" at both Bronze AND Silver simultaneously, since each pick
-used to roll its own rarity with no awareness of what was already owned). Without this, two
-independently-rolled copies of the same ability could land on different rarities and never merge —
-`_try_merge_ability()` only matches same-`ability_id`-same-`rarity` pairs, so a Bronze and a Silver
-copy of "Jádro" would just sit there permanently unmerged (still both counted by
-`get_stat_bonus()`, so not a power bug, but a confusing, untidy display). Matching the *lowest*
-owned rarity (not highest, not the most recent) is deliberate: merging that new copy with the
-existing lowest one can cascade upward through `_try_merge_ability()`'s own recursion if a
-higher-rarity copy of the same ability also already exists, converging everything toward a single
-instance over time instead of leaving scattered stragglers. At `ShopRarity.DIAMOND` (already the
-top tier) this naturally has no effect — multiple Diamond copies still coexist and stack
-independently, exactly as before this fix, since `_try_merge_ability()` never merges past Diamond
-anyway. **Verified with a headless test**: forced 200 offers while always picking "power_core"
-whenever offered, asserting after every single resolve that it never had two different owned
-rarities at once.
+**Point economy**: `GameManager.pending_skill_points` (int, run-scoped, reset in `reset_game()`)
+grants exactly **1 point per level-up** (`_level_up()`, same cadence as the old draft's "every
+level, no interval" — that reasoning still holds, see the git history of this section for the
+empirical XP-curve verification that motivated it) — but unlike the old system, a level-up no
+longer auto-opens or pauses ANYTHING. `skill_ranks: Dictionary` (`{ability_id: rank}`, missing key
+== rank 0) replaces `owned_abilities` — there is at most ONE "copy" of any schopnost now (a growing
+rank, not independent stackable instances), so a single Dictionary is sufficient; no active/stash
+split either (schopnosti still have no purchase-slot pressure, same as before). `invest_skill_point
+(ability_id)` is the only way a rank ever increases: checks `can_invest_skill_point()` (points > 0,
+node unlocked, rank < max_rank), then decrements the point and increments the rank atomically,
+emitting both `skill_points_changed`/`skill_ranks_changed`.
 
-**A schopnost already owned at Diamond is excluded from the offer pool entirely**
-(`_roll_ability_options()`, fixed 2026-09-25 — reported after the user was offered a "Dvojitý
-zásah" card at Diamond, picked it expecting an upgrade, and got a second independent Diamond copy
-instead, which read as a bug since nothing about the card said "this won't actually upgrade
-anything"). Since `_try_merge_ability()` never merges past Diamond (see above), re-offering a
-Diamond-owned ability can never produce the "upgrade" the `UpgradeIndicator` arrow and green
-`ResultValueLabel` preview imply — so it's filtered out of the pool before the `ABILITY_CHOICE_COUNT`
-slice, the same way `_generate_shop_offer()`'s pool never needed this (the shop has no such ceiling
-signal - merges there are gated by copy count, not something the offer step can see in advance).
-**Falls back to the unfiltered pool if filtering would leave it empty** (i.e. every single
-`ABILITY_ORDER` entry is already owned at Diamond) — offering "just another stacking copy" of
-something is still strictly better than `AbilityDraftPanel` showing zero cards with no way to
-resolve the pending offer, which would otherwise soft-lock the game (only reachable via the Debug
-panel's "Max schopnosti", or a very long real run). **Verified with a headless test**: 300 offer
-rolls with one ability owned at Diamond confirmed it never appears; forcing every `ABILITY_ORDER`
-entry to Diamond still returns a full `ABILITY_CHOICE_COUNT`-sized offer (the fallback); a
-Silver-owned (non-Diamond) ability is still offered normally, matched to Silver, confirming the
-existing "match lowest owned rarity" behavior above this fix is untouched.
+**The portrét is a clickable `Button` that turns yellow with a "+N" badge whenever points are
+pending** (explicit user spec) — `Control/Portrait` changed type from `ColorRect` to `Button`
+(keeping its default theme look, `modulate` toggles it yellow `Color(1.0, 0.85, 0.2)` vs. white),
+and a new sibling `SkillPointBadge`/`SkillPointLabel` pair (mirrors the existing
+`LevelBadge`/`LevelLabel` pattern, just anchored to Portrait's TOP-right corner instead of bottom
+-right so the two badges don't collide) shows the literal count. `LevelBadge`/`LevelLabel` and the
+new badge pair all need `mouse_filter = 2` (IGNORE) since they're siblings overlapping Portrait's
+corners, not children of it — without that, clicking those small badge areas would swallow the
+click before it reaches the Button underneath (same pattern as the old draft cards' icon
+`mouse_filter` fix). `hud.gd`'s `_on_skill_points_changed(new_amount)` is the single place that
+updates the badge AND decides whether to force-open `SkillTreePanel` — it only does the latter when
+`new_amount > 0 AND state == State.INTRO` (guards against the handler firing during `_ready()`'s
+`_refresh_progression()` call, when `new_amount` is still 0 and nothing should pop up yet). Every
+other level-up just updates the badge and leaves the game running — the player decides when (or
+whether) to stop and spend, which is the actual mechanism that answers the user's original ask
+("something to do between levels" without forcing a stop every time).
 
-**Rarity scales differently for passive vs. active schopnosti** — passives scale the stat *value*
-(`PASSIVE_EFFECT_MULTIPLIERS`, `[1.0, 1.5, 2.25, 3.5]`, its own gentler curve vs. the shop's
-`SHOP_RARITY_MULTIPLIERS` since the 2-copy merge threshold grows power faster for the same curve).
-Actives instead scale **trigger FREQUENCY**, not effect magnitude — e.g. `double_tap`'s
-`trigger_values` is `[6, 5, 4, 3]` (shots needed per tier) while `effect_params.multiplier` (2.0×)
-stays constant across all tiers; `orbital_bombardment`'s `trigger_values` is `[20.0, 15.0, 11.0,
-8.0]` (charge seconds per tier, first-pass numbers, not yet balance-tuned) while
-`effect_params.damage` (30.0, hits every alive enemy) stays constant. This is a deliberate,
-consistent rule for every active ability: "higher rarity = fires more often," not "hits harder" —
-simpler to reason about than mixing which axis scales per-ability. **Multiple owned instances of
-the same active schopnost trigger fully independently** — two Diamond `double_tap` copies both proc
-on the same 3rd shot, multiplying together (4× that hit), not adding.
+**`SkillTreePanel` is built procedurally in `hud.gd`** (`_build_skill_tree_ui()`/
+`_refresh_skill_tree_ui()`, same "small but needs per-node dynamic wiring" reasoning as the shop's
+mini-slots/blueprint rows) — one node card per `SKILL_TREE_BRANCHES` entry, laid out in a 4-column
+(branch) × up to-3-row grid (`SKILL_NODE_WIDTH/HEIGHT/GAP`), each card showing name, "Stupeň N/M",
+a value description (`get_ability_desc(ability_id, rank)`, or "Zatím neinvestováno" at rank 0), and
+a single stateful `ActionButton`. A locked node (`is_skill_node_unlocked() == false`) is tinted
+`LOCKED_ITEM_MODULATE`, shows "Zamčeno" as both its rank line and its (disabled) button text — an
+unlocked-but-unaffordable node (0 pending points, or already at `max_rank`) is NOT tinted and shows
+real state ("Investovat"/"Max"), just disabled; **these two disabled states look different on
+purpose** (grayed card = locked, normal card + disabled button = "you could invest here but not
+right now") so the player can tell "not available yet" from "already maxed / no points left" at a
+glance. `_on_skill_node_pressed(ability_id)` just calls `GameManager.invest_skill_point(ability_id)`
+— all validation lives in GameManager, the button handler is a thin pass-through.
 
-**Offer cadence — every level-up, no interval** (2026-09-09, went through two designs the same day).
-The unified system originally launched with `ABILITY_LEVEL_INTERVAL` (5) — an offer only once every
-5 player levels, mirroring the old separate active-ability pool's cadence. The user then pointed out
-`player.gd` has NO input handling at all (no movement/aim/dodge control; the character walks and
-shoots fully automatically), so a schopnost pick is the ONLY interactive moment in the entire game —
-spacing those 5x apart made the opening minutes feel empty. A same-day fix added
-`ABILITY_RAMP_UNTIL_LEVEL` (every level through 5, then the interval afterward, mirroring
-`main.gd`'s `variant_ramp_start_wave`/`variant_ramp_full_wave` ranged/sniper ramp), but the user
-flagged that dual-speed cadence itself as a problem — there was no UI cue explaining why, say, level
-6 gave nothing, so the slowdown read as confusing rather than intentional. The final fix (still
-2026-09-09) removed BOTH `ABILITY_LEVEL_INTERVAL` and `ABILITY_RAMP_UNTIL_LEVEL` entirely: `_level_up()`
-now unconditionally queues an offer every time, letting the game's own growing XP cost
-(`XP_PER_LEVEL_GROWTH`) be the *only* thing that paces how often picks arrive, rather than stacking a
-second, separate pacing mechanism on top of it — one lever instead of two, and no more cliff to
-explain in the UI. **Verified empirically, not assumed**: a headless simulation (real `main.tscn`,
-player made invincible to isolate pure XP pacing from survivability, "Auto vylepšení" force-enabled)
-showed the *existing* XP curve already reaches level 5 in ~1.6 minutes of game time and level 6 in
-~2.1 — comfortably inside the "first 3-5 minutes" target the user was aiming for, so `XP_BASE`/
-`XP_PER_LEVEL_GROWTH` needed no change at all once the offer-cadence problem itself was fixed.
+**CORRECTION (2026-09-26, later the same day): the skill tree no longer has any intro-forced
+point/panel at all.** The paragraph above describing `begin_intro_skill_tree()` forcing the panel
+open before the game starts is now stale — that function and its intro hookup were removed on
+explicit user request ("první dovednostní bod hráč dostane až na druhém levelu... nezobrazí se
+panel na začátku hry"). The first skill point now arrives exactly like every other one, through the
+normal `_level_up()` path when the player reaches **level 2** — there is nothing special about it
+at all. `player.gd`'s `_on_landed()` still calls `GameManager.begin_intro_ability_draft()` (the
+random-draft schopnosti offer, unaffected by this change), and `resolve_ability_draft()` now calls
+`finish_intro()` **directly** once that offer resolves — the dovednosti/skill-tree system plays no
+part in intro sequencing anymore, so `SkillTreePanel` never appears until the player clicks the
+portrait themselves (which won't have anything to show until level 2 lights up the badge).
+`_on_skill_points_changed()` and `_on_skill_tree_close_pressed()` in `hud.gd` both dropped their
+`state == State.INTRO` special-casing accordingly, since it's now unreachable.
 
-**The single unified offer/queue replaced two separate ones** — `pending_ability_drafts`/
-`_current_ability_offer`/`resolve_ability_draft(offer_index)` are now the only such state
-(`pending_drafts`/`_current_offer`/`resolve_draft()`/`ITEMS`/`ITEM_ORDER`/`draft_items`/
-`item_draft_ready`/`draft_inventory_changed`/`DraftPanel`/`ABILITY_LEVEL_INTERVAL`/
-`ABILITY_RAMP_UNTIL_LEVEL` are all gone — if you see any of these referenced, they're stale).
-`_level_up()` increments `pending_ability_drafts` unconditionally, then calls
-`_try_offer_next_ability_draft()`, which
-only actually rolls and emits `ability_draft_ready` if `_current_ability_offer` is empty — **this
-guard is load-bearing**, not decorative: a single big XP grant (e.g. the Debug panel's "+500 XP")
-can call `_level_up()` several times synchronously inside `add_xp()`'s loop, and without the guard
-each qualifying call would roll and emit its own offer, stomping the current one. Offers resolve one
-at a time via `resolve_ability_draft(offer_index: int)`, which clears the offer and calls
-`_try_offer_next_ability_draft()` again — so a big XP grant that crosses the interval more than once
-queues N offers the HUD walks through sequentially.
+**Debug panel affordances were renamed, not removed, to match**: "Vynutit schopnost" →
+`AddSkillPointButton` ("+1 bod schopnosti", calls the renamed `debug_add_skill_point()`); "Max
+schopnosti"/"Reset schopnosti" → `MaxSkillTreeButton`/`ResetSkillTreeButton` (`debug_max_skill_tree()`
+sets every node straight to its `max_rank`, `debug_reset_skill_tree()` clears `skill_ranks` AND
+`pending_skill_points`); "Auto vylepšení" → `AddManySkillPointsButton` ("+5 bodů schopnosti") — the
+old toggle auto-resolved random *draft offers*, which no longer exist (the player always picks
+deliberately now), so it was repurposed as a bulk point grant for faster manual tree testing rather
+than left as dead functionality.
 
-**`AbilityDraftPanel` pauses the game** (`_show_ability_draft_panel()` / `_on_ability_pick_pressed()`
-in `hud.gd`, mirroring the Shop's `get_tree().paused` pattern) — a schopnost pick is meant to be a
-deliberate stop-and-choose moment. The "Auto vylepšení" toggle (`Control/DebugPanel/
-AutoUpgradeToggle`, **default OFF**) resolves offers with a uniformly random pick and skips the
-panel/pause entirely — it started out as a regular `Control/BottomBar` button (like the pre-draft
-ability system's Auto-assign) but was moved into `DebugPanel`, since a literal random-pick button
-sitting permanently next to real player-facing controls undercut the entire point of offering a real
-choice, and only ever made sense as a playtesting convenience anyway. Toggling it **on** while an
-offer is already showing must proactively resolve it (`_on_ability_auto_toggled()`) — otherwise the
-panel would stay stuck open forever, since nothing else would call `resolve_ability_draft()` for it.
-**Noted for later**: once the game loops indefinitely past wave 10 (see below), an experienced player
-with a settled build might legitimately want to "farm" further loops without stopping for every
-schopnost card — if that turns out to be a real desired playstyle, auto-resolve could earn a real,
-non-debug home again (e.g. build-aware weighting instead of a uniform random pick). Not worth
-building now.
-
-**Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon above its name** (`RarityIcon`
-node, `scenes/ui/rarity_icon.gd`, added 2026-09-25 explicit user request) — a small procedurally
-`_draw()`-drawn rhombus (`draw_colored_polygon()` + a thin dark outline for contrast), same
-"no image assets" convention as `eye_icon.gd`. Color comes from the new
-`GameManager.SHOP_RARITY_COLORS` (index = `ShopRarity`, shared enum with `SHOP_RARITY_NAMES`) —
-`_show_ability_draft_panel()` sets `card.get_node("RarityIcon").rarity_color =
-GameManager.SHOP_RARITY_COLORS[rarity]`, which triggers the icon's own `set()` to `queue_redraw()`.
-`SHOP_RARITY_COLORS` is deliberately a general-purpose constant next to `SHOP_RARITY_NAMES`, not
-scoped to the ability panel, so the shop's `ShopCard0..3` (which currently only show the rarity as
-text) could reuse the same icon/colors later without new color data.
-
-**`Card0..2` themselves are `Button` nodes, not `Panel`** (changed same day, explicit follow-up
-request: "aby byly celé karty klikatelné... nahradili bychom tím současné tlačítko") — the whole
-card is now the clickable pick target, replacing a separate small `PickButton` child that used to
-sit at the bottom. `_show_ability_draft_panel()` connects `card.pressed` directly (same
-disconnect-then-reconnect pattern the old `pick_button.pressed` used, so re-showing the panel for a
-new offer doesn't stack duplicate connections) instead of reaching into a `PickButton` child —
-`PickButton` no longer exists anywhere in `hud.tscn`. This gets the requested hover feedback "for
-free": a `Button`'s default normal/hover/pressed `StyleBox`es from Godot's built-in theme apply to
-the whole card automatically, no custom hover code needed, exactly matching what the old
-`PickButton` looked like when hovered — just scaled to the full card now. **Every non-icon child
-(`NameLabel`/`DescLabel`/`RarityLabel`) has `mouse_filter = 2` (IGNORE)** so clicks anywhere over
-them still reach the parent `Button` instead of being swallowed — `RarityIcon` needs this too since
-a plain `Control` defaults to `mouse_filter = STOP` (unlike `Label`, which already defaults to
-IGNORE), and without it the ~20x20 icon area would silently eat clicks. Cards also grew from a
-fixed 240px to 260px tall (`Card0..2`'s `offset_bottom` 300→320 within the unchanged 340px-tall
-`AbilityDraftPanel`) per the same request ("ať karty zaberou celou zbylou dostupnou výšku... nech
-zespoda nějaký rozumný padding") — the extra freed-up space (from dropping the separate button) went
-to `DescLabel` (104px → 154px) so longer descriptions have more breathing room, leaving a 12px
-internal bottom margin under `RarityLabel` and a 20px external margin between the card and the
-panel's own bottom edge. `NameLabel` also grew back from 34px to 42px in the same pass (`30`→`72`
-offset_bottom) after visually confirming a two-line-wrapped name like "Orbitální bombardování"
-clipped into `DescLabel` at the tighter height.
-
-**A green arrow left of the rarity icon flags "this offer upgrades a schopnost you already
-own"** (`UpgradeIndicator` node, `scenes/ui/upgrade_icon.gd`, same day, explicit follow-up request)
-— a small procedurally `_draw()`-drawn upward arrow (7-point head+stem polygon, not just a plain
-triangle - a same-day follow-up after the user tried the simpler triangle first and preferred an
-actual arrow shape at the same size), same convention as `rarity_icon.gd`/`eye_icon.gd`.
-`GameManager.is_ability_owned(ability_id)` (thin public wrapper around the existing
-`_lowest_owned_ability_rarity(ability_id) >= 0` check, added so `hud.gd` doesn't reach into a
-`_`-prefixed "private" method) drives `card.get_node("UpgradeIndicator").visible` in
-`_show_ability_draft_panel()`. Deliberately keyed on ownership alone, not on whether picking it
-would trigger an immediate `_try_merge_ability()` merge this instant — every re-offer of an
-already-owned `ability_id` is forced to the player's lowest owned rarity anyway (see "A repeat
-offer of an already-owned schopnost..." above), so owning it at all already means this pick
-strengthens that schopnost (an immediate merge-and-upgrade below Diamond, or another independently-
-stacking instance at Diamond) — no case where "owned" is true but the pick wouldn't help. Sits at
-`offset_left/right = 58/74` (16px wide, vertically centered on the same y-range as `RarityIcon` at
-`80/100`), with `mouse_filter = 2` like the rest of a card's decorative children, for the same
-reason `RarityIcon` needs it (a plain `Control` defaults to `mouse_filter = STOP`, which would
-swallow clicks landing on that ~16px sliver of an otherwise fully-clickable card). **Verified
-visually** by using the Debug panel to reach a state with 3 owned abilities, then forcing a new
-offer that happened to include 2 of them (Bronze "Kinetické tlumiče"/"Prodloužená hlaveň", both
-showing the triangle) alongside 1 not-yet-owned ability ("Přetěžovací matice", no triangle) —
-confirms it lights up exactly for owned entries and stays off otherwise, not just "always on" or
-"always off" by coincidence.
-
-**An upgrade card also previews its post-merge value, in green** (`ResultValueLabel`, same day,
-explicit follow-up: "u karet, které vylepšují... ukazovali rovnou hodnoty výsledné schopnosti").
-Only shown when `already_owned` is true AND `rarity < ShopRarity.DIAMOND` — above Diamond there's
-no higher tier to merge into (multiple Diamond copies just keep stacking independently, see "A
-repeat offer of an already-owned schopnost..." above), so there's no well-defined "resulting value"
-to preview, and the label is left empty rather than showing something misleading. Text is `"→ %s
-(%s)" % [value_at_next_rarity, next_rarity_name]`, colored via a plain
-`theme_override_colors/font_color` on the `Label` (no BBCode/RichTextLabel needed — kept as a
-second sibling `Label`, not a colored span inside `DescLabel`, specifically so `DescLabel`'s
-existing literal `[TagName]` suffix text never has to pass through a BBCode parser that would
-misread square brackets as tags). **`get_ability_desc()` was refactored to extract
-`get_ability_value_text(ability_id, rarity)`** — the same stat-line/synergy/trigger formatting
-logic, minus the tag suffix — so this preview can call `get_ability_value_text(ability_id, rarity +
-1)` directly instead of duplicating any formatting rules; `get_ability_desc()` itself is now just
-`get_ability_value_text(...) + tag_suffix`. Because the offered rarity for an owned ability is
-always forced to match the player's lowest owned copy (see above), `rarity + 1` is always exactly
-the tier that specific merge would land on — never a guess. **Needed a card layout rebalance**:
-`DescLabel` shrank (168 vs. the previous PR's 222) and `ResultValueLabel` sits in the freed space
-(172-228, 56px) — sized for the longest real case (a 3-tag synergy sentence plus a `" (Rarita)"`
-suffix wraps to 3 lines at the card's 160px text width); `RarityLabel` shifted down to 232-252
-accordingly, still leaving an 8px margin above the card's own bottom edge (260).
-
-**Trigger/effect resolution lives in `player.gd`, not `game_manager.gd`** — GameManager only owns the
-*data* (what schopnosti exist, which ones the player owns, at what rarity). `player.gd` has TWO
-separate consumer functions, one per trigger type, both reading/writing a shared per-owned-instance
-progress array (`_ability_progress: Array[float]`, parallel-indexed to
-`GameManager.owned_abilities`):
+**Trigger/effect resolution still lives in `player.gd`, not `game_manager.gd`** — GameManager only
+owns the *data* (which schopnosti exist, their rank). `player.gd` has TWO separate consumer
+functions, one per trigger type, both reading/writing a shared progress store — **now a
+`Dictionary` keyed by `ability_id`** (`_ability_progress: Dictionary`, changed from the old
+`Array[float]` parallel-indexed to `owned_abilities`) — since a schopnost's identity is now the
+stable `ability_id` itself (at most one rank-track per id, no more independently-stackable
+instances to index), the progress dictionary genuinely improves over the old array: investing a
+LATER point into an ALREADY-unlocked active schopnost no longer resets its in-flight progress
+(`_on_skill_ranks_changed()` only zero-initializes a KEY THE FIRST TIME it appears, i.e. when a node
+is newly unlocked — an already-tracked key is left alone). The old array-based version had to reset
+everything on ANY inventory change because merges reshuffled array indices; that problem doesn't
+exist anymore, so the reset was narrowed accordingly, not kept "just in case."
 - **`_consume_ability_triggers()`** — called once per individual `_shoot()` (so with multishot, each
   projectile is its own "shot" for trigger-counting purposes, not one shot per volley). For every
-  owned instance with `trigger == "shot_count"`, increments its progress by 1; at the rarity's
-  `trigger_values` threshold, resets to 0 and (for `effect == "damage_multiplier"`) multiplies a
+  schopnost with `rank >= 1` and `trigger == "shot_count"`, increments its progress by 1; at
+  `trigger_values[rank - 1]`, resets to 0 and (for `effect == "damage_multiplier"`) multiplies a
   returned multiplier by `effect_params.multiplier`. `_shoot()` does `get_damage() *
   _consume_ability_triggers()` before handing the number to the projectile — `get_damage()` itself
   stays pure stat math, with the schopnost's burst damage applied only to that one shot.
 - **`_process_time_based_abilities(delta)`** — called every frame from `_process()`, independent of
-  shooting/range (so it keeps charging even with no enemy in sight). For every owned instance with
-  `trigger == "time_elapsed"`, increments its progress by `delta` (a float, not an integer shot
-  count); at the rarity's `trigger_values` charge time, resets to 0 and (for `effect ==
+  shooting/range (so it keeps charging even with no enemy in sight). For every schopnost with
+  `rank >= 1` and `trigger == "time_elapsed"`, increments its progress by `delta` (a float, not an
+  integer shot count); at `trigger_values[rank - 1]`, resets to 0 and (for `effect ==
   "aoe_strike"`) calls `_trigger_aoe_strike()`, which deals `effect_params.damage` to **every alive
   enemy** (`get_tree().get_nodes_in_group("enemies")`) through their normal `take_damage()` — same
   reasoning as `debug_skip_wave()` in `main.gd`: routing through the real method keeps reward/XP and
@@ -655,17 +564,25 @@ progress array (`_ability_progress: Array[float]`, parallel-indexed to
 
 **This trigger/effect handling is currently hardcoded for the two existing pairs**
 (`shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`) — both in `player.gd` and in
-`GameManager.get_ability_desc()`'s description text — deliberately not yet generalized into a
+`GameManager.get_ability_value_text()`'s description text — deliberately not yet generalized into a
 dispatch table; a third, genuinely different pair is what should drive that generalization, not a
 guess at what it'll need in advance.
 
-**`_ability_progress` resets to all-zero on ANY schopnost inventory change, not just changes to the
-specific instance affected** (`player.gd`'s `_on_ability_inventory_changed()`, connected to
-`GameManager.ability_inventory_changed`) — a deliberate, documented simplification: owned instances
-don't have a stable identity across a merge (2 consumed instances become 1 new one, at a different
-array index), so "preserve this instance's progress toward its next proc" would need to track
-identity just for this one edge case. Revisit if it becomes noticeable once more schopnosti exist and
-merges happen mid-run more often.
+**Verified with headless tests at both layers**: a pure-logic test (loads a fresh `game_manager.gd`
+instance directly, no autoloads) walks the full chain — roots unlocked/non-roots locked from the
+start, `can_invest_skill_point()`/`invest_skill_point()` gating, unlocking cascades correctly
+(investing a root's first point unlocks its child), `get_stat_bonus()` matches hand-computed values
+(including the `overclock_matrix` tag-synergy node at rank 5 with 3 owned kinetic-tagged things, and
+the automatic `LEVEL_STAT_GROWTH` floor layered on top), every `ABILITY_ORDER` entry's description
+renders at every rank 1..max_rank without error, `debug_max_skill_tree()`/`debug_reset_skill_tree()`
+work, `reset_game()` clears everything; a scene-level test (real `main.tscn` + `hud.tscn`) confirms
+the intro point force-opens `SkillTreePanel` and pauses, that pressing a real node's button updates
+`GameManager` state and refreshes the UI (locked → unlocked, rank text, button text), that closing
+the intro panel transitions `state` to `PLAYING` and unpauses, and that a LATER level-up shows the
+badge WITHOUT auto-opening anything (confirming the intro case is a real one-time exception, not a
+general auto-open-on-points-available rule) — and a live windowed playthrough confirmed the same
+sequence visually, including the stat panel updating in real time (`Poškození: 10 → 14` after
+investing a Bronze-equivalent rank into "Jádro síly").
 
 **HUD layout — a top-left stack, top-right counters, and a slimmed-down `BottomBar`** (`hud.tscn`).
 Went through several reshuffles on 2026-09-09 as the user iterated on where things should live;
@@ -724,18 +641,13 @@ description you find elsewhere as stale):
   parent) — noticeably small relative to the new 112px box, but wasn't part of this request; revisit
   if it reads as too small once real item icons/text exist here.
 
-**Schopnost slots (`AbilitiesContainer`) are POSITIONAL, one per owned INSTANCE**
-in `GameManager.owned_abilities`, not one dedicated slot per `ABILITY_ORDER` type — the same
-principle `_refresh_shop_slots()` already used for `ItemSlot1..6`/`active_shop_items`. The first
-schopnost ever picked lands in slot 0, the second in slot 1, and so on; a slot for a type the
-player doesn't own is simply never created (no more grayed-out `"short_name\n-"` placeholder for
-every unpicked schopnost — that only made sense when there was one fixed slot per type). Because
-`owned_abilities` grows on every pick and shrinks by 1 on every merge (2 consumed → 1 appended, see
-`_try_merge_ability()`), `hud.gd`'s `_refresh_abilities()` rebuilds the ENTIRE stack from scratch
-on every `ability_inventory_changed` signal (`queue_free()` every child, then recreate) rather than
-maintaining a persistent widget pool indexed by type — there's no stable identity to update in
-place across a merge (same reasoning already documented for `player.gd`'s `_ability_progress`
-reset). **Column wrap keeps the stack from ever reaching `BottomBar`**: slots stack downward and
+**STALE, see the correction under "Schopnosti (dovednostní strom)" below** — this paragraph
+described an interim state where `AbilitiesContainer` showed dovednosti ranks too; as of
+2026-09-26 it shows ONLY schopnosti from the random draft (`owned_abilities`), rebuilt on
+`ability_inventory_changed`, not `skill_ranks_changed`. The rest of this paragraph (positional
+slots, one per owned instance, reshuffling on merge) is still accurate for that one remaining
+source. **Column wrap keeps the stack
+from ever reaching `BottomBar`**: slots stack downward and
 wrap into a new column to the right after `ABILITY_STACK_MAX_ROWS` (6) — `col = i /
 ABILITY_STACK_MAX_ROWS`, `row = i % ABILITY_STACK_MAX_ROWS` — chosen so even a full column (6 × 52px
 tall), starting from `AbilitiesContainer`'s `offset_top = 108`, ends (`y = 416`) well above
@@ -768,25 +680,17 @@ one — `shop_offer` itself isn't cleared by closing, so the unspent offer is st
 `GameManager` state, just with no UI path back to it this loop. Revisit if this turns out to be a
 real player frustration, not just a theoretical gap.
 
-**Shop auto-open defers if a schopnost offer is still pending** (`GameManager._shop_open_deferred`,
-`_try_open_pending_shop()`, added 2026-09-09): if the killing blow on wave 10's last enemy grants
-enough XP to level up, that level-up (and its schopnost offer) resolves *synchronously* inside
-`enemy_defeated()` → `add_xp()` → `_level_up()`, **before** `enemy_defeated()` even gets to
-decrement `enemies_alive` and notice the wave is clear a few lines later. Without this guard,
-`_open_periodic_shop()` would fire `shop_auto_open_requested` while `AbilityDraftPanel` was already
-open, popping `ShopPanel` on top of it. `_open_periodic_shop()` now always generates the offer
-immediately (`shop_available`/`shop_offer` update on schedule) but only actually emits
-`shop_auto_open_requested` — the thing that shows+pauses the panel
-— through `_try_open_pending_shop()`, which defers (sets `_shop_open_deferred = true`) if
-`pending_ability_drafts > 0` or `_current_ability_offer` isn't empty. `resolve_ability_draft()` calls
-`_try_open_pending_shop()` again at its own tail, so the shop opens automatically the moment the
-*last* pending schopnost offer resolves — correctly waiting out multi-level XP bursts, not just the
-first offer. **`hud.gd` needed a matching fix, not just GameManager**: `_on_ability_pick_pressed()`/
-`_on_ability_auto_toggled()` used to unconditionally `get_tree().paused = false` once
-`pending_ability_drafts` hit 0 — but `resolve_ability_draft()` can synchronously open the shop
-*during that same call* (via the deferred-open path above), so blindly unpausing afterward would let
-the game run for a frame under the newly-opened `ShopPanel`. Both handlers now check `not
-shop_panel.visible` before unpausing.
+**Shop auto-open no longer needs to defer for anything (2026-09-26)** — it briefly did
+(`GameManager._shop_open_deferred`/`_try_open_pending_shop()`, added 2026-09-09, both since
+removed): if the killing blow on wave 10's last enemy granted enough XP to level up, that level-up
+used to *synchronously* pop the old `AbilityDraftPanel` (inside `enemy_defeated()` → `add_xp()` →
+`_level_up()`, before `enemy_defeated()` even got to notice the wave was clear a few lines later),
+which could collide with `ShopPanel` trying to auto-open on the very same frame. That collision is
+now structurally impossible: a level-up no longer opens or pauses anything by itself (see
+"Schopnosti" above — it just adds a point and lights up the portrait badge), so
+`_open_periodic_shop()` can call `shop_auto_open_requested.emit()` directly and unconditionally.
+**`SkillTreePanel` no longer force-opens automatically at all** (removed 2026-09-26, see the
+correction under "Schopnosti (dovednostní strom)" above) — it can never collide with the shop.
 
 **The offer is `SHOP_OFFER_SIZE` (4) random items out of the full 7-item pool, not all 7 at once**
 (`GameManager.shop_offer`, `_generate_shop_offer()`) — picked via `SHOP_ITEM_ORDER.duplicate();
@@ -830,32 +734,30 @@ can recognize "this schopnost and that shop item are both Precision" and plan a 
 category before either the actual synergy piece appears.
 
 **The real payoff is two NEW entries whose bonus scales with how many owned things share a tag** —
-`ABILITIES["overclock_matrix"]` ("Přetěžovací matice", Kinetic, scales `damage`) and
-`SHOP_ITEMS["resonance_array"]` ("Rezonanční pole", Precision, scales `attack_speed`) — one in each
-system, deliberately mirroring each other so the synergy works in BOTH directions the user asked
-about: pick the schopnost first and hunt for matching-tag shop items afterward, or buy the item
-first and prioritize matching-tag schopnosti at the next few level-ups. These use a `"synergy":
-{"stat": String, "tag": String, "value": float}` dict instead of the usual flat `"stat"/"value"`
-(abilities) or `"stats"` dict (shop items) — `value` is the Bronze-tier bonus **per owned instance
-carrying that tag, counting the synergy piece itself**. `_count_owned_with_tag(tag)` (in
-`game_manager.gd`) sums matches across `owned_abilities` AND `active_shop_items` together (stashed
-items don't count, same rule as everything else stat-relevant) — a player owning `power_core`
-(Kinetic) plus `overclock_matrix` (Kinetic) has `_count_owned_with_tag("kinetic") == 2`, so
-`overclock_matrix` alone contributes `1.5 * PASSIVE_EFFECT_MULTIPLIERS[rarity] * 2` damage, on top
-of `power_core`'s own flat `4.0 * multiplier`. **`get_stat_bonus()` now branches on
-`definition.has("synergy")`** for both the passive-schopnost loop and the active-shop-item loop
-(falls through to the existing flat-value path otherwise) — and `get_shop_item_desc()`/
-`get_stat_bonus()`'s shop-item loop read `SHOP_ITEMS[id].get("stats", {})` now instead of a direct
-`["stats"]` index, since `resonance_array` has no `"stats"` key at all (`.get()` with a default
-avoids the runtime error a missing-key `Dictionary` index would otherwise throw when assigned to a
-typed `Dictionary` variable). **Verified with a headless test**: constructed exact owned-ability/
-owned-item combinations and asserted `get_stat_bonus()` matches hand-calculated numbers (including
-a 3-way stack), asserted every `ABILITY_ORDER`/`SHOP_ITEM_ORDER` entry's description renders without
-error at all 4 rarities, and confirmed `debug_max_abilities()` still works with the new ability in
-the pool. **This is a first-pass tag assignment, not a balance pass** — `support` ended up with 6
-of the 16 total entries vs. `explosive`'s 2, so a Support-tag synergy piece (if one gets added
-later) would be far easier to stack than an Explosive one; revisit the tag distribution once there
-are more entries to spread across all 4, rather than rebalancing prematurely around today's count.
+`ABILITIES["overclock_matrix"]` ("Přetěžovací matice", Kinetic, scales `damage`, kinetic branch's
+capstone) and `SHOP_ITEMS["resonance_array"]` ("Rezonanční pole", Precision, scales `attack_speed`)
+— one in each system, deliberately mirroring each other so the synergy works in BOTH directions the
+user asked about: invest in the schopnost branch first and hunt for matching-tag shop items
+afterward, or buy the item first and prioritize investing in that tag's branch at the next few
+level-ups. These use a `"synergy": {"stat": String, "tag": String, "value": float}` dict instead of
+the usual flat `"stat"/"value"` (abilities) or `"stats"` dict (shop items) — `value` is the
+per-RANK bonus (schopnosti) or Bronze-tier bonus (shop items) **per owned thing carrying that tag,
+counting the synergy piece itself**. `_count_owned_with_tag(tag)` (in `game_manager.gd`) sums
+matches across `skill_ranks` (schopnosti with `rank >= 1`, counted once each regardless of how high
+the rank — synergy scales with how many DIFFERENT things you own in the tag family, not how
+invested each one is) AND `active_shop_items` together (stashed items don't count, same rule as
+everything else stat-relevant) — a player with `power_core` at any rank plus `overclock_matrix` at
+rank 5 has `_count_owned_with_tag("kinetic") == 2`, so `overclock_matrix` alone contributes
+`1.5 * 5 * 2` damage, on top of `power_core`'s own `4.0 * its_rank`. **`get_stat_bonus()` branches
+on `definition.has("synergy")`** for both the passive-schopnost loop and the active-shop-item loop
+(falls through to the existing flat-value path otherwise) — and the shop-item loop reads
+`SHOP_ITEMS[id].get("stats", {})` instead of a direct `["stats"]` index, since `resonance_array` has
+no `"stats"` key at all (`.get()` with a default avoids the runtime error a missing-key `Dictionary`
+index would otherwise throw when assigned to a typed `Dictionary` variable). **This is a first-pass
+tag assignment, not a balance pass** — `support` ended up with 6 of the 16 total entries vs.
+`explosive`'s 2, so a Support-tag synergy piece (if one gets added later) would be far easier to
+stack than an Explosive one; revisit the tag distribution once there are more entries to spread
+across all 4, rather than rebalancing prematurely around today's count.
 
 **Shop items are a separate system from passive schopnosti** (`GameManager.SHOP_ITEMS`/
 `SHOP_ITEM_ORDER`, `Control/ShopPanel` in `hud.tscn`). Where a passive schopnost is free, randomly
@@ -968,20 +870,21 @@ reuse the *real* code paths rather than shortcutting past them:
   it also speeds up Timers, Tweens, and the Game Over/Victory countdown, and (unlike everything
   else on this panel) is **not** reset by a scene reload; the button re-syncs its own label from
   the actual `Engine.time_scale` in `_setup_debug_panel()` so it doesn't lie after a restart.
-- **Vynutit schopnost** (node `ForceAbilityDraftButton`) calls `GameManager.debug_force_ability_draft()`
-  to queue an `AbilityDraftPanel` offer immediately without a level-up — the fastest way to test the
-  schopnost UI/flow without grinding XP (offers already queue on every level-up normally, so this is
-  mostly useful for re-testing the panel without gaining another level).
-- **Max/Reset schopnosti** (node names `MaxItemsButton`/`ResetItemsButton`, kept from before the
-  2026-09-09 draft/ability merge — only the Button `text` and `hud.gd` variable names changed) are a
-  blunt build-testing tool — max gives every `ABILITIES` entry exactly 1 Diamond-rarity instance via
-  `debug_max_abilities()`, reset clears `owned_abilities` entirely via `debug_reset_abilities()`.
-  Reset does **not** refund anything to re-spend, because schopnosti were never bought with a
-  spendable currency in the first place — they're free picks, so "reset" is just a clean slate for
-  the next level-up.
-- **Auto vylepšení** is the moved/renamed old BottomBar "Auto" toggle (see above) — it's here rather
-  than in the main HUD specifically because its only real use is skipping the schopnost-choice pause
-  during testing.
+- **+1 bod schopnosti** (node `AddSkillPointButton`, renamed 2026-09-26 from the old draft system's
+  `ForceAbilityDraftButton`/`debug_force_ability_draft()`) calls `GameManager.debug_add_skill_point()`
+  to grant a point immediately without a level-up — the fastest way to test the tree UI/flow without
+  grinding XP.
+- **Max strom / Reset strom** (node names `MaxSkillTreeButton`/`ResetSkillTreeButton`, renamed
+  2026-09-26 from `MaxItemsButton`/`ResetItemsButton`) are a blunt build-testing tool —
+  `debug_max_skill_tree()` sets every `ABILITIES` entry straight to its `max_rank`,
+  `debug_reset_skill_tree()` clears `skill_ranks` AND `pending_skill_points` back to nothing. Reset
+  does **not** refund points to re-spend elsewhere, because schopnosti were never bought with a
+  spendable currency in the first place — it's just a clean slate for the next level-up to build up
+  points again.
+- **+5 bodů schopnosti** (node `AddManySkillPointsButton`, repurposed 2026-09-26 from the old
+  random-autopick "Auto vylepšení" toggle, which no longer makes sense once every pick is
+  deliberate) — grants 5 points at once via 5 calls to `debug_add_skill_point()`, for quickly
+  reaching deeper/capstone nodes during manual tree testing without grinding levels one at a time.
 - **Free reroll** sets `GameManager.debug_free_reroll`, making shop rerolls free (see "Reroll
   costs..." above) — for testing the shop offer/reroll flow without grinding gold. Same
   not-reset-by-`reset_game()` treatment as **Rychlost**, for the same reason (dev convenience
@@ -1017,6 +920,80 @@ explicitly deferred to keep this first step small), and the crafting UI/interact
 likely folded into the existing periodic Shop, which already pauses and is already the "spend
 resource on power" moment, rather than a new separate panel — see the brainstorm this came from).
 
+**CORRECTION (2026-09-26, same day as the tree): "Dovednosti (strom)" above does NOT replace
+schopnosti — it runs ALONGSIDE the original random-draft schopnosti system, which was fully
+restored after user feedback ("chtěl jsem schopnosti zachovat, ne nahradit").** Everywhere above
+that says the draft/rarity/merge system, `owned_abilities`, `AbilityDraftPanel`,
+`rarity_icon.gd`/`upgrade_icon.gd`, etc. were "removed" — they were NOT; they were undone within
+the same day and are live again, unchanged in mechanics, with one change: **schopnosti's offer now
+triggers after the intro landing (as ORIGINAL, unwaved) AND after EVERY wave clear
+(`_on_wave_cleared()`), not after every level-up.** `_level_up()` only grants dovednosti points now.
+
+**Both systems read/write the SAME `ABILITIES` catalog and their contributions to
+`get_stat_bonus()` ADD TOGETHER** — a player can have "Jádro síly" at dovednostní stupeň 2/3
+(`skill_ranks`) AND independently own a Silver copy of it from the random draft
+(`owned_abilities`) at the same time; both sums are added in `get_stat_bonus()`. To let active
+schopnosti scale independently in each system despite sharing one `ABILITIES[id]` entry, each
+active entry now carries TWO trigger arrays: `"trigger_values"` (4 entries, `ShopRarity`-indexed,
+schopnosti/draft) and `"skill_trigger_values"` (`max_rank`-sized, rank-indexed, dovednosti/tree).
+Likewise there are two parallel description/value functions: `get_ability_desc()`/
+`get_ability_value_text()` (rarity-based, schopnosti) vs. `get_skill_node_desc()`/
+`get_skill_node_value_text()` (rank-based, dovednosti) — passing a rank into the rarity-indexed
+ones (or vice versa) is a real bug, not just a stale name, since the two index domains differ in
+size (0-3 vs 1-5).
+
+**STALE, reverted 2026-09-26 (same day): intro is back to ONE step, not two.** It briefly became a
+two-step chain (schopnosti draft → dovednosti's `begin_intro_skill_tree()`) right after schopnosti
+was restored alongside dovednosti, but the user then asked for the skill tree's intro-forced point
+to go away entirely (first point should arrive at level 2, panel should never auto-open at game
+start). `player.gd`'s `_on_landed()` still calls `begin_intro_ability_draft()` (schopnosti, the only
+intro step now), and `resolve_ability_draft()`'s tail calls `finish_intro()` **directly** once that
+offer resolves — `begin_intro_skill_tree()` no longer exists at all.
+
+**Wave-10 shop-vs-draft collision is back too, same shape as the original 2026-09-09 fix, just a
+guaranteed collision now instead of an occasional one**: `_on_wave_cleared()` ALWAYS generates an
+ability-draft offer synchronously before checking `current_wave >= FINAL_WAVE`, so on every single
+10th-wave clear a schopnosti offer and a shop auto-open both fire in the same call. `_open_periodic_
+shop()` → `_try_open_pending_shop()` defers (`_shop_open_deferred`) if `pending_ability_drafts > 0`,
+and `resolve_ability_draft()` retries it at its own tail — restored verbatim from before the
+skill-tree rework, just with the trigger reason changed from "level-up happened to coincide" to
+"every wave-10 clear, always". **Verified with a scene-level headless test**: forcing wave 10 to
+clear shows the ability draft, confirms the shop stays hidden + `_shop_open_deferred == true` while
+it's pending, then confirms the shop auto-opens the instant the draft resolves.
+
+**STALE (2026-09-26, later the same day): `_refresh_abilities()` no longer shows dovednosti at
+all.** It briefly showed both sources (dovednosti entries first, then schopnosti) right after
+schopnosti was restored — but the user then clarified dovednosti should work as an invisible
+passive stat bonus in the background (so a future run that starts with pre-invested skill points,
+e.g. a meta-progression "start at level 10" mode, just has higher base stats with no card to show
+for it), and this stack under the portrait should only ever show the schopnosti the player actively
+picked from the random draft. `_refresh_abilities()` now has ONE loop again, over
+`GameManager.owned_abilities` only (via `_create_ability_stack_slot(index, label_text,
+tooltip_text)`) — `skill_ranks` never touches this list. `hud.gd`'s `_on_skill_ranks_changed()` no
+longer calls `_refresh_abilities()` either (it only refreshes `SkillTreePanel` if it happens to be
+open) — investing a dovednost point never changes what this stack shows. **Mechanically nothing
+changed**: `skill_ranks`' contribution to `get_stat_bonus()` was always independent of what's
+displayed here, so removing the cards doesn't touch stat math, only visibility. **Verified with a
+scene-level headless test**: invested a dovednost rank into `power_core` with zero owned schopnosti
+→ `AbilitiesContainer` has 0 children; then added an owned schopnost copy of the same
+`power_core` → exactly 1 child appears (the schopnost, not the dovednost); `get_stat_bonus("damage")`
+reflects both contributions regardless.
+
+**Debug panel now has separate controls for each system** — dovednosti keeps `AddSkillPointButton`/
+`MaxSkillTreeButton`/`ResetSkillTreeButton`/`AddManySkillPointsButton` (added during the tree work);
+schopnosti's original `ForceAbilityDraftButton`/`MaxAbilitiesButton`/`ResetAbilitiesButton`/
+`AbilityAutoToggle` were re-added as NEW rows (DebugPanel grew from 618px to 706px tall to fit them)
+rather than reusing the tree's renamed buttons, since both systems now need independent testing
+affordances.
+
+**Verified with headless tests at every layer** (pure-logic + two scene-level suites): unlock/lock
+behavior and additive stacking math for a shared ability_id across both systems; the full two-step
+intro sequence (schopnosti panel → resolves → chains into dovednosti panel → closes → `PLAYING`);
+wave-clear correctly re-triggers the schopnosti offer; the wave-10 shop/draft collision defers and
+resolves in the right order. Not yet re-verified live/visually in a windowed run at time of writing
+— do that before treating this as fully settled, particularly the two-panel intro sequencing and
+DebugPanel's new height fitting inside the window.
+
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
@@ -1028,7 +1005,5 @@ resource on power" moment, rather than a new separate panel — see the brainsto
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = Bronze-tier stat amount, active entries' `"trigger_values"`/`"effect_params"` per rarity tier), `ABILITY_ORDER`, `ABILITY_CHOICE_COUNT` (3, offer size — offered on every level-up, no interval), `ABILITY_MERGE_THRESHOLD` (2-copy merge), `ABILITY_RARITY_WEIGHTS`, `PASSIVE_EFFECT_MULTIPLIERS` (passive rarity scaling curve, gentler than the shop's), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()`), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-instance scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above), `SHOP_RARITY_COLORS` (rarity diamond icon colors, see "Each `AbilityDraftPanel` card shows a diamond-shaped rarity icon" above), `is_ability_owned()`/`get_ability_value_text()` (drive the green upgrade-indicator arrow and its post-merge value preview, see "A green arrow left of the rarity icon"/"An upgrade card also previews its post-merge value" above)
-- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above)
-- `scenes/ui/rarity_icon.gd` — the diamond-shape polygon points/outline color drawn in `_draw()`, reused by `AbilityDraftPanel`'s `RarityIcon` nodes
-- `scenes/ui/upgrade_icon.gd` — the green triangle's polygon points/color, reused by `AbilityDraftPanel`'s `UpgradeIndicator` nodes
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
+- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above), `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (SkillTreePanel node grid sizing, see "Schopnosti" above)
