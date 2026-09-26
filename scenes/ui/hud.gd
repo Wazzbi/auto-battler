@@ -457,10 +457,11 @@ func _refresh_skill_tree_ui() -> void:
 
 		widget["panel"].modulate = Color.WHITE
 		widget["rank_label"].text = "Stupeň %d/%d" % [rank, max_rank]
-		widget["desc_label"].text = (
-			GameManager.get_skill_node_desc(ability_id, rank) if rank > 0
-			else "Zatím neinvestováno"
-		)
+		# Na stupni 0 (odemčeno, ale zatím neinvestováno) rovnou ukážeme
+		# efekt PRVNÍHO stupně místo prázdného textu - hráč tak vidí, co
+		# dostane, ještě než do dovednosti vloží první bod, stejně jako u
+		# už investovaných dovedností (explicit user request 2026-09-26).
+		widget["desc_label"].text = GameManager.get_skill_node_desc(ability_id, max(rank, 1))
 
 		if rank >= max_rank:
 			widget["button"].text = "Max"
