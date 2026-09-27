@@ -1,6 +1,11 @@
 extends Node2D
-## Hráčova postava. Pokud má nepřítele v dosahu, stojí na místě a střílí.
-## Jinak postupuje doprava směrem ke konci levelu.
+## Hráčova postava. Pohyb je od 2026-09-27 VOLNÝ 2D podle vstupu z klávesnice
+## (top-down pivot, viz CLAUDE.md) - `Input.get_vector()` nad
+## move_left/right/up/down. Útok je NEZÁVISLÝ na pohybu: pokud je nepřítel v
+## dosahu, hráč na něj automaticky střílí (žádné ruční míření), ať už se
+## zrovna hýbe, nebo stojí - stejně jako ve Vampire Survivors. Předtím byl
+## pohyb čistě automatický (chůze doprava, zastavení jen když byl nepřítel v
+## dosahu) - tahle stará "jdi jen když je čisto" logika je pryč beze zbytku.
 ##
 ## Kamera NENÍ child tohoto uzlu (viz scenes/camera_follow.gd) - je to
 ## nezávislý uzel pod Main, který hráče sleduje vlastní plynulou logikou.
@@ -42,7 +47,7 @@ signal landed
 ## ("dvojnásobné zranění"), ne další stat k růstu; crit_chance samo o sobě
 ## roste přes schopnosti/itemy (viz get_crit_chance()).
 const CRIT_DAMAGE_MULTIPLIER: float = 2.0
-@export var move_speed: float = 60.0 # px/s postupu, když nikdo není v dosahu
+@export var move_speed: float = 60.0 # px/s volného 2D pohybu podle vstupu (viz _process())
 @export var projectile_scene: PackedScene
 @export var impact_effect_scene: PackedScene
 ## Vizuál pro schopnost "Orbitální bombardování" (trigger "time_elapsed",
@@ -61,8 +66,12 @@ var max_hp: float
 var hp: float
 var cooldown_timer: float = 0.0
 ## X pozice konce levelu - najde se automaticky přes uzel ve skupině "level_end".
-## Level01 už žádný takový marker nemá (level je bezkonečný), takže tohle
-## zůstává na výchozím INF a pohyb hráče se nikdy neomezí - viz CLAUDE.md.
+## DORMANTNÍ od top-down pivotu (2026-09-27): žádný kód už tuhle hodnotu
+## nečte (volný 2D pohyb nemá jednoosý strop), ale pole i vyhledání v
+## _ready() zůstávají schválně - jednoosý X strop stejně nedává pro budoucí
+## ohraničenou arénu smysl (ta by potřebovala 2D tvar, ne jedno X), takže
+## mazání by jen zahodilo bez náhrady. Level01 navíc žádný "level_end" marker
+## nemá (level je bezkonečný), takže tohle bylo mrtvé i předtím - viz CLAUDE.md.
 var level_end_x: float = INF
 ## DEBUG: dokud je zapnuté, take_damage() nic neudělá. Ovládá se z Debug
 ## panelu v HUD (viz hud.gd), na resetu hry (nová instance hráče) se sama
@@ -260,21 +269,18 @@ func _process(delta: float) -> void:
 
 	_process_time_based_abilities(delta)
 
+	# Pohyb a boj běží NEZÁVISLE na sobě, každý snímek, bez ohledu na stav
+	# toho druhého - na rozdíl od staré "jdi jen když je čisto" logiky hráč
+	# může střílet A hýbat se zároveň (Vampire Survivors styl).
+	var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	global_position += input_dir * move_speed * delta
+
 	cooldown_timer -= delta
 	var targets := _find_nearest_enemies(get_target_count())
-
-	if not targets.is_empty():
-		# Aspoň jeden nepřítel v dosahu - zastav se a střílej
-		if cooldown_timer <= 0.0:
-			for target in targets:
-				_shoot(target)
-			cooldown_timer = 1.0 / max(get_attack_speed(), 0.01)
-	else:
-		# Nikdo v dosahu - postupuj dál k cíli levelu. level_end_x je teď jen
-		# vizuální strop pohybu - výhra se váže na dokončení GameManager.FINAL_WAVE,
-		# ne na dosažení konce mapy (viz GameManager._on_wave_cleared()).
-		if global_position.x < level_end_x:
-			global_position.x = min(global_position.x + move_speed * delta, level_end_x)
+	if not targets.is_empty() and cooldown_timer <= 0.0:
+		for target in targets:
+			_shoot(target)
+		cooldown_timer = 1.0 / max(get_attack_speed(), 0.01)
 
 
 ## Vrátí až `count` nejbližších nepřátel v dosahu, seřazené od nejbližšího.
