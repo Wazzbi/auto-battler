@@ -54,26 +54,57 @@ time, not only by win/lose or average survival wave. Planned: a Debug panel tele
 (concurrent enemy count, "close calls" — HP dropping low and recovering) to make this shape
 observable during manual playtesting, not yet built.
 
-**Camera/scrolling model**: the `Camera2D` (`Main/Camera2D` in `main.tscn`, script
-`scenes/camera_follow.gd`) is an **independent sibling node, not a child of the player**. It tracks
-the player's X position with its own exponential lerp (`follow_speed`, default 5.0) offset
-horizontally by `camera_left_margin` so the player renders near the left edge, not centered; Y is
-copied from the player with no lag (needed for the drop-in animation and shake to look right).
-`main.gd`'s `_ready()` wires it up explicitly: `camera.set_target(player)` (which snaps instantly,
-so there's no visible "flying in" on start) and `player.landed.connect(camera.shake)` — the player
-only emits a `landed` signal and has no reference to the camera at all. **This decoupling was a
-deliberate fix**, not the original design: when the camera was a rigid child, its X velocity
-matched the player's exactly, so the *instant* the player stopped walking (an enemy came into
-`attack_range`) the camera's on-screen pan also stopped instantly — collapsing the *apparent*
-closing speed of an approaching enemy from `enemy.speed + player.move_speed` down to just
-`enemy.speed` in a single frame (a real, measured ~43% perceived slowdown, not a change to
-`enemy.speed` itself). The lerp-follow smooths that transition away. Anything that needs "the
-visible screen area" (enemy spawn position in `main.gd`, projectile off-screen cleanup in
-`projectile.gd`, infinite ground tiling in `ground.gd`) still computes it from `camera.global_position`
-— that stays correct because this camera has no *additional* built-in smoothing layered on top
-(`position_smoothing_enabled` is intentionally not used; the manual lerp *is* the smoothing, so
-`global_position` is always exactly what's rendered, same reasoning as the `get_screen_center_position()`
-note in ground.gd below). The horizontal offset is recalculated on `get_viewport().size_changed` too.
+**TOP-DOWN PIVOT IN PROGRESS (started 2026-09-27)**: this project is being converted from the
+horizontal side-scrolling auto-battler described below into a top-down "Vampire Survivors"-style
+game — free 2D player movement via keyboard input, enemies swarming from all directions,
+continuous time-based spawning instead of discrete waves/loops. See the approved plan at
+`C:\Users\david\.claude\plans\validated-jumping-fairy.md` for the full phased breakdown. Phases
+land as separate PRs; **CLAUDE.md is updated phase-by-phase, not all at once** — so at any point
+during this pivot, some sections below describe the OLD side-scrolling behavior (still accurate
+until their phase lands) and some describe the NEW top-down behavior (already landed). Each
+updated section says explicitly which it is. **Landed so far**: Fáze 0+1 (free 2D player
+movement, decoupled from combat — see "player.gd" below, PR #42), Fáze 2 (symmetric camera
+centering — see "Camera/scrolling model" directly below, this PR). **Not yet landed**: aimed
+projectiles, 2D enemy movement + ring spawn, 2D ground rendering, continuous spawn/difficulty
+(waves/loops still exist and work as documented below until that phase lands).
+
+**Camera/scrolling model — TOP-DOWN, updated 2026-09-27**: the `Camera2D` (`Main/Camera2D` in
+`main.tscn`, script `scenes/camera_follow.gd`) is an **independent sibling node, not a child of
+the player**, and now **centers on the player symmetrically on both axes** — no more left-edge
+offset. Both X and Y use the same exponential lerp (`follow_speed`, default 5.0):
+`global_position = global_position.lerp(_target.global_position, 1.0 - exp(-follow_speed*delta))`.
+`main.gd`'s `_ready()` wires it up explicitly: `camera.set_target(player)` (snaps instantly to the
+player's exact position on both axes, so there's no visible "flying in" on start) and
+`player.landed.connect(camera.shake)` — the player only emits a `landed` signal and has no
+reference to the camera at all. Anything that needs "the visible screen area" (enemy spawn
+position in `main.gd`, projectile off-screen cleanup in `projectile.gd`, infinite ground tiling in
+`ground.gd` — all still X-only/1D as of this PR, pending their own pivot phases) still computes it
+from `camera.global_position` — that stays correct because this camera has no *additional*
+built-in smoothing layered on top (`position_smoothing_enabled` is intentionally not used; the
+manual lerp *is* the smoothing, so `global_position` is always exactly what's rendered, same
+reasoning as the `get_screen_center_position()` note in ground.gd below).
+
+**STALE — the paragraph below described the pre-pivot side-scroller camera** (removed 2026-09-27):
+it tracked only the player's X with an exponential lerp offset horizontally by `camera_left_margin`
+(player rendered near the left edge, not centered), while Y was copied from the player with no lag
+at all. That asymmetry existed for two side-scroller-specific reasons, both now moot: (1) the
+left-margin offset gave the player room to see enemies approaching from the direction they were
+walking (doesn't apply once movement is free in all directions), and (2) Y needed to be lag-free
+specifically because the drop-in intro animation and its shake/squash effects assumed the camera
+sat exactly on the player's Y at every instant — **this second point still needed live verification
+after making Y lerp too, and was confirmed fine** (intro fall/impact/shake all still read correctly
+with symmetric lerp, since `set_target()` still snaps instantly on both axes before the drop-in
+animation's own tween begins). The original X-lerp's OWN justification (below) is also mostly moot
+in top-down, kept only as historical context: **this was a deliberate fix**, not the original
+design — when the camera was a rigid child, its X velocity matched the player's exactly, so the
+*instant* the player stopped walking (an enemy came into `attack_range`) the camera's on-screen pan
+also stopped instantly — collapsing the *apparent* closing speed of an approaching enemy from
+`enemy.speed + player.move_speed` down to just `enemy.speed` in a single frame (a real, measured
+~43% perceived slowdown, not a change to `enemy.speed` itself). That specific illusion was a
+one-lane, one-direction artifact — in top-down, the player can move toward/away/orthogonally to any
+enemy at any moment, so there's no single "walking direction" for the camera to compensate for
+anymore. The lerp itself is kept regardless (still makes the camera feel less "sticky" on every
+small player movement, independent of that original illusion-fix reasoning).
 
 **Combat resolution is distance-based, not physics-based.** Player attacks, enemy melee, and
 projectile hits all use `global_position.distance_to(...)` checks against exported range
@@ -117,14 +148,25 @@ be checked last.
 
 **Sniper enemies** (`scenes/enemies/sniper_enemy.tscn`): the third variant, same pattern as ranged
 (`is_ranged = true`, shares `enemy_projectile.tscn`) but with `melee_range` (550) set *higher than
-the player's own base `attack_range`* (400) — this is the entire mechanic, no new code. Since
-`player.gd` only advances (`global_position.x += move_speed * delta`) when **nothing** is within its
-own `get_attack_range()`, and a sniper's engagement range exceeds that, the player can never reach a
-sniper to fight back while *any other, closer* enemy is still alive and holding the player in place —
-the sniper keeps landing free hits until the player clears the field enough to advance into its own
-range. This emergent "protected artillery" behavior wasn't purpose-built; it falls directly out of
-the existing move-when-clear logic once an enemy's range is allowed to exceed the player's, which is
-exactly why `sniper_enemy_chance` (0.15) is set lower than `ranged_enemy_chance` (0.3) — snipers are
+the player's own base `attack_range`* (400).
+
+**STALE (2026-09-27, top-down pivot Fáze 1) — the "protected artillery" mechanic described below
+no longer exists.** It depended entirely on the old move-when-clear logic (`player.gd` only
+advancing when nothing was in its own attack range), which Fáze 1 deleted outright in favor of free
+2D movement — the player can now simply walk around or past a closer enemy to reach a sniper, so
+nothing "holds the player in place" anymore. **Confirmed as an accepted, deliberate loss for this
+pivot** (user sign-off during planning) — no replacement mechanic is planned yet; the sniper is for
+now just "a ranged enemy with more range than the player," rebalance after playtesting the top-down
+game, not before. Kept below for historical context only:
+
+~~Since `player.gd` only advanced (`global_position.x += move_speed * delta`) when **nothing** was
+within its own `get_attack_range()`, and a sniper's engagement range exceeded that, the player could
+never reach a sniper to fight back while *any other, closer* enemy was still alive and holding the
+player in place — the sniper kept landing free hits until the player cleared the field enough to
+advance into its own range. This emergent "protected artillery" behavior wasn't purpose-built; it
+fell directly out of the old move-when-clear logic once an enemy's range was allowed to exceed the
+player's, which is exactly why `sniper_enemy_chance` (0.15) is set lower than `ranged_enemy_chance`
+(0.3) — snipers are~~
 meant to read as a rarer, more dangerous variant, not a routine replacement for the base enemy.
 
 **Ranged/sniper chance ramps in over the first few waves of loop 1** (`main.gd`'s

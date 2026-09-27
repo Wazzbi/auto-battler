@@ -1,55 +1,43 @@
 extends Camera2D
 ## Kamera je NEZÁVISLÝ uzel (sourozenec hráče pod Main, ne jeho dítě) -
-## sleduje hráče vlastní plynulou logikou na ose X místo toho, aby s ním byla
+## sleduje hráče vlastní plynulou logikou (lerp) místo toho, aby s ním byla
 ## rigidně spojená transformací (jako dřív, kdy byla child node hráče).
 ##
-## Důvod: dokud byla kamera child hráče, její pohyb byl 1:1 svázaný s jeho
-## pohybem - jakmile hráč najednou zastavil (nepřítel vešel do dosahu a hráč
-## přestal chodit), kamera se zastavila úplně stejně náhle. To způsobovalo
-## skokovou změnu vnímané rychlosti nepřátel na obrazovce (viz CLAUDE.md) -
-## dokud hráč chodil, k jejich vlastní rychlosti se přičítal i posun kamery,
-## po zastavení hráče najednou ne. Kamera teď hráče plynule "dohání" (lerp),
-## takže se dobrzďuje postupně a tenhle skok mizí.
+## Top-down pivot (2026-09-27): kamera teď VYSTŘEDĚNÁ na hráči SYMETRICKY na
+## obou osách (žádné odsazení k levému okraji) - se starou plošinovkovou
+## chůzí-jen-doprava dávalo smysl mít hráče blíž levému okraji, aby bylo
+## vidět dopředu; s volným 2D pohybem (viz player.gd) není žádný "dopředný"
+## směr k rezervování místa pro. Obě osy teď lerpují stejně (dřív X lerpovalo,
+## Y bylo instantní - ten rozdíl byl specifický pro plošinovkovou intro pádovou
+## animaci, viz níže, a se symetrickým top-down pohybem už nedává smysl).
 ##
-## Osa Y se NEDOBRZĎUJE (sleduje hráče okamžitě) - drop-in animace a její
-## efekty (otřes, squash) počítají s tím, že kamera je přesně na hráčově Y.
-
-## Kolik px od levého okraje obrazovky má hráč zůstat
-@export var camera_left_margin: float = 220.0
-## Jak rychle kamera dohání hráče na ose X (vyšší = svižnější, méně setrvačnosti)
+## STARÝ důvod pro lerp (X, dřív): dokud byla kamera child hráče, její pohyb
+## byl 1:1 svázaný s jeho pohybem - jakmile hráč najednou zastavil (nepřítel
+## vešel do dosahu a hráč přestal chodit), kamera se zastavila úplně stejně
+## náhle, což způsobovalo skokovou změnu vnímané rychlosti nepřátel na
+## obrazovce. Tahle konkrétní iluze byla specifická pro jednosměrnou chůzi a
+## v top-down s volným pohybem už neplatí ve stejné podobě (hráč se může
+## pohybovat k/od/kolmo k libovolnému nepříteli kdykoliv) - lerp ale zůstává,
+## protože obecně dělá kameru příjemnější (méně "lepkavou" na každý drobný
+## pohyb hráče), ne kvůli téhle konkrétní iluzi.
 @export var follow_speed: float = 5.0
 
 var _target: Node2D = null
-var _x_offset: float = 0.0
-
-
-func _ready() -> void:
-	_recalculate_offset()
-	get_viewport().size_changed.connect(_recalculate_offset)
-
-
-func _recalculate_offset() -> void:
-	var viewport_width: float = get_viewport().get_visible_rect().size.x
-	_x_offset = (viewport_width / 2.0) - camera_left_margin
-	if _target != null:
-		global_position.x = _target.global_position.x + _x_offset
 
 
 ## Zavolá main.gd po vytvoření hráče. Kamera se hned napozicuje přesně (bez
 ## plynutí) - jinak by na startu bylo vidět, jak kamera "přiletí" odjinud.
 func set_target(target: Node2D) -> void:
 	_target = target
-	global_position = Vector2(_target.global_position.x + _x_offset, _target.global_position.y)
+	global_position = _target.global_position
 
 
 func _process(delta: float) -> void:
 	if _target == null:
 		return
 
-	var desired_x: float = _target.global_position.x + _x_offset
 	var weight: float = 1.0 - exp(-follow_speed * delta)
-	global_position.x = lerp(global_position.x, desired_x, weight)
-	global_position.y = _target.global_position.y
+	global_position = global_position.lerp(_target.global_position, weight)
 
 
 ## Krátký otřes kamery - volá se přes signál player.landed (viz main.gd),
