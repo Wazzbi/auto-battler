@@ -3,8 +3,11 @@ extends Node
 ## úrovně hráče a jeho vylepšení. Zaregistrován v Project Settings > Autoload
 ## jako "GameManager".
 
-signal wave_started(wave_number: int)
-signal wave_cleared(wave_number: int)
+## Emitne se KAŽDÝ snímek, kdy state == State.PLAYING (top-down pivot
+## 2026-09-27, Fáze 6 - nahrazuje wave_started/wave_cleared/loop_changed,
+## všechny odstraněné spolu s celým vlnovým/kolovým systémem, viz
+## "Kontinuální spawn/obtížnost" níže). HUD z toho počítá běžící "Čas: mm:ss".
+signal survival_time_changed(new_time: float)
 signal game_over_triggered
 signal game_won_triggered
 signal currency_changed(new_amount: int)
@@ -35,7 +38,6 @@ signal ability_draft_ready(offered: Array)
 ## shop_inventory_changed), protože jeden ability_id může mít víc současně
 ## vlastněných instancí na různých raritách, ne jediné číslo "rank".
 signal ability_inventory_changed
-signal loop_changed(new_loop: int)
 ## Emitne se po nákupu nebo prodeji v obchodě - viz "Obchod" níže.
 signal shop_inventory_changed
 ## Emitne se, kdykoliv se vygeneruje nová nabídka 4 itemů (vlna 10 hotová,
@@ -49,17 +51,29 @@ signal shop_auto_open_requested
 
 enum State { INTRO, PLAYING, GAME_OVER, WON }
 
-## Po vyčištění téhle vlny se hra NEKONČÍ, ale spustí se další "kolo" (loop) -
-## viz _on_wave_cleared()/_start_new_loop(). State.WON a VictoryPanel jsou teď
-## nedosažitelné běžnou hrou, ale záměrně ponechané pro budoucí skutečný konec
-## (např. až budou existovat i další planety/levely).
-const FINAL_WAVE: int = 10
+## STALE (2026-09-27, top-down pivot Fáze 6): vlny/kola (FINAL_WAVE,
+## current_wave, loop_count, ENEMY_HP_GROWTH_PER_LOOP, wave_started/
+## wave_cleared/loop_changed) jsou PRYČ úplně - nahrazeny kontinuálním,
+## časem řízeným systémem, viz "Kontinuální spawn/obtížnost" níže a
+## survival_time/get_enemy_hp_multiplier(). State.WON a VictoryPanel zůstávají
+## nedosažitelné běžnou hrou (nic nevolá trigger_win()), záměrně ponechané pro
+## budoucí skutečný konec (např. až budou existovat i další planety/levely).
 
-## O kolik procent víc HP dostanou nově spawnutí nepřátelé za každé další
-## odehrané kolo (kolo 1 = žádný bonus). PROZATÍMNÍ jednoduché lineární
-## škálování jen přes HP - do budoucna se čeká na komplexnější systém
-## (nové typy nepřátel, jiné staty, ...), viz get_enemy_hp_multiplier().
-const ENEMY_HP_GROWTH_PER_LOOP: float = 0.5
+## O kolik procent víc HP dostanou nově spawnutí nepřátelé za každou odehranou
+## minutu přežití (spojitě, ne skokově po kolech jako dřív). PROZATÍMNÍ
+## jednoduché lineární škálování jen přes HP a PRVNÍ ODHAD čísla (ne
+## doladěné hraním, na rozdíl od většiny ostatních konstant v týhle sekci) -
+## do budoucna se čeká na komplexnější systém (nové typy nepřátel, jiné
+## staty, ...), viz get_enemy_hp_multiplier().
+const ENEMY_HP_GROWTH_PER_MINUTE: float = 0.15
+## Jak často (v sekundách reálného přežití) přijde nová nabídka SCHOPNOSTÍ
+## (náhodný draft) - nahrazuje dřívější "po každé vlně". PRVNÍ ODHAD, ne
+## doladěné hraním - má nahradit rytmus, který dřív diktovalo tempo zabíjení,
+## teď je to čistě čas.
+const ABILITY_OFFER_INTERVAL_SECONDS: float = 45.0
+## Jak často (v sekundách reálného přežití) se automaticky otevře obchod -
+## nahrazuje dřívější "na konci každého kola (10 vln)". PRVNÍ ODHAD.
+const SHOP_OPEN_INTERVAL_SECONDS: float = 240.0
 
 ## XP potřebné na 2. úroveň; každá další úroveň stojí o XP_PER_LEVEL_GROWTH víc.
 ## Sníženo z 60 na 40, aby první level-up padl už ve vlně 1, ne až v půlce vlny 2.
@@ -290,9 +304,10 @@ const SHOP_RARITY_COLORS: Array[Color] = [
 ##    sám si vybírá uzel k investici - žádná nabídka, žádné losování.
 ## 2) **SCHOPNOSTI (náhodná nabídka)** - stejné jako PŮVODNÍ systém před
 ##    2026-09-26 (rarity+merge draft, `owned_abilities`/`pending_ability_drafts`
-##    atd., viz "Schopnosti (náhodná nabídka)" níže) - jen s ZMĚNĚNÝM
-##    spouštěčem: dřív každý level-up, teď po dopadu (jako vždy) A po KAŽDÉ
-##    vlně (viz `_on_wave_cleared()`).
+##    atd., viz "Schopnosti (náhodná nabídka)" níže) - spouštěč: po dopadu
+##    (jako vždy) A po každých `ABILITY_OFFER_INTERVAL_SECONDS` sekundách
+##    reálného přežití (top-down pivot Fáze 6, `_process()` výše - dřív po
+##    KAŽDÉ vlně, `_on_wave_cleared()`, teď na vlnách vůbec nezávisí).
 ##
 ## Aby oba systémy mohly sdílet stejný `ABILITIES[id]` a přesto škálovat
 ## nezávisle, má aktivní schopnost DVĚ oddělená pole trigger hodnot:
@@ -419,8 +434,9 @@ const SKILL_TREE_BRANCHES: Array[Array] = [
 ## `ABILITIES` katalogem jako dovednostní strom výše - hráč tak může mít
 ## třeba "Jádro síly" na dovednostním stupni 2/3 A ZÁROVEŇ vlastnit 1
 ## nezávislou Stříbrnou kopii z náhodné nabídky, obojí se sčítá do
-## `get_stat_bonus()`. Spouštěč: po dopadové animaci (jako vždy) a po KAŽDÉ
-## vlně (`_on_wave_cleared()`) - NE po level-upu, to je jen dovednostní
+## `get_stat_bonus()`. Spouštěč: po dopadové animaci (jako vždy) a po každých
+## `ABILITY_OFFER_INTERVAL_SECONDS` sekundách reálného přežití (top-down
+## pivot Fáze 6, `_process()` výše) - NE po level-upu, to je jen dovednostní
 ## strom (viz výše).
 const ABILITY_CHOICE_COUNT: int = 3
 ## Kolik stejných kopií stejné rarity stačí na sloučení do vyšší rarity - míň
@@ -434,18 +450,21 @@ const ABILITY_RARITY_WEIGHTS: Array[float] = [0.70, 0.20, 0.08, 0.02]
 ## což je potřeba vyvážit jemnější křivkou násobitelů.
 const PASSIVE_EFFECT_MULTIPLIERS: Array[float] = [1.0, 1.5, 2.25, 3.5]
 
-var current_wave: int = 0
-## Kolikáté kolo (průchod 10 vlnami) hráč zrovna hraje. Roste, hráčova
-## progrese (úroveň/XP/itemy/měna) se ale mezi koly NERESETUJE -
-## viz _start_new_loop(). Resetuje se jen na skutečný Game Over (reset_game()).
-var loop_count: int = 1
+## Jak dlouho (v sekundách) hráč PŘEŽÍVÁ v aktuálním běhu - tiká jen ve
+## State.PLAYING (viz _process() níže), nahrazuje current_wave/loop_count
+## jako jediný zdroj obtížnostní/tempové progrese (top-down pivot 2026-09-27,
+## Fáze 6). Resetuje se jen na skutečný Game Over (reset_game()).
+var survival_time: float = 0.0
+## Akumulátor pro ABILITY_OFFER_INTERVAL_SECONDS/SHOP_OPEN_INTERVAL_SECONDS -
+## viz _process() níže.
+var _ability_offer_timer: float = 0.0
+var _shop_open_timer: float = 0.0
 var currency: int = 0
 ## Nakrafťovaná surovina (šrot) - vstup pro budoucí blueprinty/crafting v
 ## obchodě (viz "Suroviny a crafting" v CLAUDE.md). Zatím jediný typ suroviny,
 ## stejné run-scoped chování jako currency (resetuje se v reset_game()).
 var scrap: int = 0
 var enemies_alive: int = 0
-var enemies_remaining_to_spawn: int = 0
 var state: State = State.INTRO
 
 var player_level: int = 1
@@ -510,12 +529,12 @@ var shop_reroll_count: int = 0
 ## v reset_game() jako všechno ostatní run-scoped - nový běh musí 10. vlnu
 ## dohrát znovu, stejně jako musí znovu sbírat úrovně a itemy.
 var shop_available: bool = false
-## true, když čeká na otevření AUTOMATICKY otevřená nabídka obchodu (po 10.
-## vlně), ale zrovna běží nevyřízená nabídka schopnosti - viz
-## _try_open_pending_shop(). Řeší kolizi: vyčištění 10. vlny SYNCHRONNĚ
-## vygeneruje i nabídku schopnosti (viz _on_wave_cleared() - teď na KAŽDÉ
-## vlně, ne jen na level-upu jako dřív), takže bez tohohle odložení by
-## AbilityDraftPanel a ShopPanel mohly naskočit na sobě současně.
+## true, když čeká na otevření AUTOMATICKY otevřená nabídka obchodu (viz
+## SHOP_OPEN_INTERVAL_SECONDS), ale zrovna běží nevyřízená nabídka schopnosti -
+## viz _try_open_pending_shop(). Řeší kolizi: dva nezávislé časovače
+## (_ability_offer_timer/_shop_open_timer v _process()) se mohou trefit do
+## stejné sekundy, takže bez tohohle odložení by AbilityDraftPanel a
+## ShopPanel mohly naskočit na sobě současně.
 var _shop_open_deferred: bool = false
 ## DEBUG: když true, reroll_shop() nic neúčtuje - pro rychlé testování bez
 ## grindění zlata. Přepíná se v Debug panelu (hud.gd), NEresetuje se v
@@ -528,11 +547,11 @@ var debug_free_reroll: bool = false
 ## ty už tak čtou čerstvý stav. Kdyby se resetovalo až v _ready() Main uzlu,
 ## hráč by se po restartu naskočil se staty z předchozí hry.
 func reset_game() -> void:
-	current_wave = 0
-	loop_count = 1
+	survival_time = 0.0
+	_ability_offer_timer = 0.0
+	_shop_open_timer = 0.0
 	currency = 0
 	enemies_alive = 0
-	enemies_remaining_to_spawn = 0
 	state = State.INTRO
 	player_level = 1
 	player_xp = 0
@@ -550,13 +569,45 @@ func reset_game() -> void:
 	_shop_open_deferred = false
 
 
-## Zavolá level/spawner, aby oznámil, že spawnul nepřítele (pro sledování stavu vlny)
+## Tiká jen ve State.PLAYING (stejný guard pattern jako player.gd's _process()
+## pro HP regen atd.) - jediné místo, které pohání celý kontinuální systém:
+## survival_time roste, a jakmile ABILITY_OFFER_INTERVAL_SECONDS/
+## SHOP_OPEN_INTERVAL_SECONDS uplyne, spustí se přesně ten samý mechanismus,
+## který dřív spouštěl _on_wave_cleared() (pending_ability_drafts/
+## _try_offer_next_ability_draft()) resp. _start_new_loop() (_open_periodic_
+## shop()) - jen jiný spouštěč, ne jiná logika po spuštění.
+func _process(delta: float) -> void:
+	if state != State.PLAYING:
+		return
+
+	survival_time += delta
+	survival_time_changed.emit(survival_time)
+
+	_ability_offer_timer += delta
+	if _ability_offer_timer >= ABILITY_OFFER_INTERVAL_SECONDS:
+		_ability_offer_timer -= ABILITY_OFFER_INTERVAL_SECONDS
+		pending_ability_drafts += 1
+		_try_offer_next_ability_draft()
+
+	_shop_open_timer += delta
+	if _shop_open_timer >= SHOP_OPEN_INTERVAL_SECONDS:
+		_shop_open_timer -= SHOP_OPEN_INTERVAL_SECONDS
+		_open_periodic_shop()
+
+
+## Zavolá level/spawner, aby oznámil, že spawnul nepřítele (pro GameManager.
+## enemies_alive - main.gd podle něj rozhoduje, kolik dalších ještě spawnout,
+## viz _spawn_around_player()/target_concurrent v main.gd).
 func register_enemy_spawned() -> void:
 	enemies_alive += 1
 
 
-## Zavolá nepřítel při své smrti - přidá měnu, suroviny i XP a zkontroluje
-## stav vlny
+## Zavolá nepřítel při své smrti - přidá měnu, suroviny i XP. STALE poznámka:
+## dřív tu byla i kontrola "vlna vyčištěná" (enemies_alive<=0 &&
+## enemies_remaining_to_spawn<=0 -> _on_wave_cleared()) - ta odpadla úplně
+## spolu s celým vlnovým systémem (Fáze 6); spawn nepřátel i milníky
+## (schopnosti/obchod) teď běží čistě na čase (viz _process() výše), ne na
+## tom, kolik jich hráč zrovna zabil.
 func enemy_defeated(reward: int, xp_reward: int, scrap_reward: int = 0) -> void:
 	currency += reward
 	currency_changed.emit(currency)
@@ -565,54 +616,13 @@ func enemy_defeated(reward: int, xp_reward: int, scrap_reward: int = 0) -> void:
 	add_xp(xp_reward)
 	enemies_alive -= 1
 
-	if enemies_alive <= 0 and enemies_remaining_to_spawn <= 0:
-		_on_wave_cleared()
 
-
-## Konec KAŽDÉ vlny (ne jen 10.) teď nabídne 1 nabídku SCHOPNOSTÍ (náhodný
-## draft, viz "Schopnosti (náhodná nabídka)" výše) - explicit user request
-## 2026-09-26, aby hráč měl pravidelný, předvídatelný rytmus voleb nezávislý
-## na tom, jak rychle stoupá XP/level (na rozdíl od dovednostního stromu,
-## který zůstává vázaný na level-up). Volá se PŘED _start_new_loop(), takže
-## na hranici 10. vlny se nabídka vygeneruje dřív, než se zkusí otevřít
-## obchod - _try_open_pending_shop() (viz _open_periodic_shop()) na to
-## reaguje odložením, dokud se tahle nabídka nevyřídí.
-func _on_wave_cleared() -> void:
-	wave_cleared.emit(current_wave)
-	pending_ability_drafts += 1
-	_try_offer_next_ability_draft()
-	if current_wave >= FINAL_WAVE:
-		_start_new_loop()
-	else:
-		# Žádné čekání na vynucený výběr vlny samotné - hra plynule
-		# pokračuje další vlnou i pod otevřeným AbilityDraftPanelem (ten ji
-		# pozastaví sám přes get_tree().paused, ne přes blokování tady).
-		start_next_wave()
-
-
-func start_next_wave() -> void:
-	current_wave += 1
-	wave_started.emit(current_wave)
-
-
-## Vyčištěním FINAL_WAVE hra nekončí - vlny se vrátí na 1 se silnějšími
-## nepřáteli (viz get_enemy_hp_multiplier()), ale hráčova progrese (úroveň,
-## XP, itemy, měna) i pozice a HP zůstávají přesně tak, jak byly - level
-## je bezkonečný, takže postava jen pokračuje dál dopředu (viz player.gd,
-## HP se doplňuje pasivní regenerací, ne skokově při každém kole).
-func _start_new_loop() -> void:
-	loop_count += 1
-	current_wave = 0
-	loop_changed.emit(loop_count)
-	_open_periodic_shop()
-	start_next_wave()
-
-
-## Obchod se odemyká a nabízí novou nabídku jednou za kolo, na hranici mezi
-## 10. vlnou a další - viz "Periodické otevírání" v CLAUDE.md. shop_available
-## zůstává true i pro zbytek běhu (hráč tlačítkem znovu otevře AKTUÁLNÍ
-## nabídku), ale novou nabídku (a reset ceny rerollu) dostane jen na téhle
-## hranici, ne při každém ručním otevření.
+## Obchod se odemyká a nabízí novou nabídku po SHOP_OPEN_INTERVAL_SECONDS
+## reálného přežití (top-down pivot Fáze 6 - dřív na hranici mezi 10. vlnou a
+## další, viz STALE poznámka u enemy_defeated()). shop_available zůstává true
+## i pro zbytek běhu (hráč tlačítkem znovu otevře AKTUÁLNÍ nabídku), ale
+## novou nabídku (a reset ceny rerollu) dostane jen na téhle hranici, ne při
+## každém ručním otevření.
 func _open_periodic_shop() -> void:
 	shop_available = true
 	shop_reroll_count = 0
@@ -624,11 +634,10 @@ func _open_periodic_shop() -> void:
 ## žádná nevyřízená nabídka SCHOPNOSTI - jinak otevření jen ODLOŽÍ
 ## (_shop_open_deferred) a schová se za resolve_ability_draft(), který tuhle
 ## funkci zavolá znovu, jakmile se poslední čekající nabídka vyřídí. Volá se
-## jak z _open_periodic_shop() (nová nabídka po 10. vlně), tak z konce
-## resolve_ability_draft() (dořešení odloženého otevření). Kolize je teď
-## GARANTOVANÁ na každé 10. vlně (ne jen občasná jako za dob level-upu),
-## protože _on_wave_cleared() vždy nejdřív vygeneruje nabídku schopnosti
-## synchronně, ještě než stihne vyhodnotit "tohle byla 10. vlna".
+## jak z _open_periodic_shop() (časovač obchodu), tak z konce
+## resolve_ability_draft() (dořešení odloženého otevření). Kolize je čistě
+## náhodná (dva NEZÁVISLÉ časovače, viz _process() výše, se mohou trefit do
+## stejné sekundy) - o nic méně reálná než dřív, jen bez vazby na "10. vlnu".
 func _try_open_pending_shop() -> void:
 	if pending_ability_drafts > 0 or not _current_ability_offer.is_empty():
 		_shop_open_deferred = true
@@ -692,11 +701,12 @@ func reroll_shop() -> bool:
 	return true
 
 
-## Násobitel HP nově spawnutých nepřátel pro aktuální kolo - main.gd ho
-## aplikuje v _spawn_enemy() ještě před tím, než nepřítel vstoupí do stromu
-## (aby _ready() v enemy.gd nastavil hp = max_hp už se správnou hodnotou).
+## Násobitel HP nově spawnutých nepřátel - SPOJITĚ podle survival_time (top-down
+## pivot Fáze 6, dřív skokově podle loop_count). main.gd ho aplikuje v
+## _spawn_around_player() ještě před tím, než nepřítel vstoupí do stromu (aby
+## _ready() v enemy.gd nastavil hp = max_hp už se správnou hodnotou).
 func get_enemy_hp_multiplier() -> float:
-	return 1.0 + float(loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP
+	return 1.0 + (survival_time / 60.0) * ENEMY_HP_GROWTH_PER_MINUTE
 
 
 ## Kolik XP je potřeba na další úroveň (roste lineárně s úrovní)
@@ -1331,7 +1341,7 @@ func trigger_game_over() -> void:
 		return
 	state = State.GAME_OVER
 	game_over_triggered.emit()
-	print("Game Over! Dosažená vlna: ", current_wave, " | Úroveň: ", player_level)
+	print("Game Over! Přežitý čas: ", format_survival_time(survival_time), " | Úroveň: ", player_level)
 
 
 ## Zavolá hráč po dosažení konce levelu
@@ -1340,7 +1350,15 @@ func trigger_win() -> void:
 		return
 	state = State.WON
 	game_won_triggered.emit()
-	print("Level dokončen! Vlna: ", current_wave, " | Úroveň: ", player_level)
+	print("Level dokončen! Přežitý čas: ", format_survival_time(survival_time), " | Úroveň: ", player_level)
+
+
+## Formátuje survival_time jako "mm:ss" - sdílené mezi tímhle debug printem a
+## HUD (top-right časovač, Game Over/Victory panely), ať obojí ukazuje
+## stejný formát ze stejného místa.
+func format_survival_time(seconds: float) -> String:
+	var total_seconds: int = int(seconds)
+	return "%d:%02d" % [total_seconds / 60, total_seconds % 60]
 
 
 # --- Debug panel ---------------------------------------------------------
@@ -1407,20 +1425,11 @@ func debug_reset_abilities() -> void:
 	ability_inventory_changed.emit()
 
 
-## DEBUG: přeskočí rovnou na další kolo (jen zvýší multiplikátor HP
-## nepřátel přes get_enemy_hp_multiplier()) - na vlnovém postupu nic nemění
-func debug_add_loop() -> void:
-	loop_count += 1
-	loop_changed.emit(loop_count)
-
-
-## DEBUG: force-dokončí aktuální vlnu. main.gd před zavoláním musí sám dobít
-## všechny živé nepřátele přes jejich normální take_damage() (aby dostali
-## odměnu/XP a započítali se přes enemy_defeated() stejnou cestou jako v
-## běžné hře) - smrt posledního z nich už tak _on_wave_cleared() spustí sama.
-## Tahle metoda pak řeší jen okrajový případ, kdy mezi vlnami zrovna nikdo
-## naživu nebyl, takže žádná smrt neproběhla a wave-clear se nespustil.
-func debug_force_wave_clear() -> void:
-	if enemies_alive > 0 or enemies_remaining_to_spawn > 0:
-		return
-	_on_wave_cleared()
+## DEBUG: posune survival_time dopředu bez čekání - pro rychlé ruční
+## otestování časových milníků (nabídka schopnosti, obchod, Elite checkpoint
+## v main.gd) bez nutnosti skutečně tolik přežít. Nahrazuje dřívější
+## debug_add_loop() (skokový přírůstek loop_count) - kontinuální systém
+## žádný ekvivalent "kola" nemá, jen plynoucí čas.
+func debug_add_survival_time(seconds: float) -> void:
+	survival_time += seconds
+	survival_time_changed.emit(survival_time)
