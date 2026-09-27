@@ -107,5 +107,5 @@ func _die() -> void:
 	if _is_dead:
 		return
 	_is_dead = true
-	GameManager.enemy_defeated(reward, xp_reward, scrap_reward, global_position)
+	GameManager.enemy_defeated(reward, xp_reward, scrap_reward)
 	queue_free()

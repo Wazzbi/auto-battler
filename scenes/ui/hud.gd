@@ -1,13 +1,16 @@
 extends CanvasLayer
 ## HUD - portrét s úrovní, HP a XP bar, hromádka vlastněných schopností, zlato
-## a časovač přežití nahoře. Staty, aktivní/sklad itemy a dovednostní strom
-## žijí od 2026-09-27 v CharacterPanel (viz "CharacterPanel" v CLAUDE.md) -
-## klik na portrét otevře dvouzáložkovou obrazovku (Inventář/Dovednosti),
-## dřívější trvale viditelný BottomBar je pryč. Progrese dovedností funguje
-## jako DOVEDNOSTNÍ STROM (přepracováno 2026-09-26 z dřívějšího náhodného
-## draftu) - KAŽDÝ level-up přidá 1 bod schopnosti (portrét zežloutne s
-## odznáčkem "+N"), hráč si ale sám vybírá KDY a KAM ho investuje kliknutím
-## na portrét, žádný panel se automaticky nevynucuje.
+## a časovač přežití nahoře. Staty a aktivní/sklad itemy žijí v CharacterPanel
+## (klik na portrét, viz "CharacterPanel" v CLAUDE.md).
+##
+## STALE (2026-09-27, "Lobby a meta-progrese"): CharacterPanel dřív měl i
+## druhou záložku s DOVEDNOSTNÍM STROMEM - ten se přesunul výhradně do
+## scenes/ui/lobby.gd/tscn (klidná obrazovka MEZI běhy, ne za chodu), aby
+## nekolidoval tempem s run-scoped nabídkou SCHOPNOSTÍ. CharacterPanel tu
+## proto zůstal jen s jedinou (dřívější "Inventář") sekcí, bez záložek.
+## Portrét žlutě signalizuje `pending_skill_points > 0` čistě jako PASIVNÍ
+## odznáček ("máš co investovat, až budeš v lobby") - klik na portrét v běhu
+## vždy jen otevře Inventář, žádnou investici tu už neřeší.
 ##
 ## Uzel má process_mode = ALWAYS (nastaveno ve scéně), aby lišta i
 ## obchod/CharacterPanel reagovaly i když je hra pozastavená přes
@@ -103,34 +106,12 @@ const ABILITY_STACK_MAX_ROWS: int = 6
 @onready var abilities_container: Control = $Control/AbilitiesContainer
 
 ## CharacterPanel (přejmenováno z dřívějšího samostatného SkillTreePanel,
-## 2026-09-27 - viz "CharacterPanel" v CLAUDE.md) je JEDNA obrazovka se dvěma
-## záložkami nahoře uprostřed: Inventář (staty + aktivní/sklad itemy, dřív
-## BottomBar + ShopPanel sekce) a Dovednosti (dřívější obsah SkillTreePanelu,
-## beze změny logiky). Otevírá se VŽDY jen kliknutím na portrét (viz
-## portrait_button výše) - žádná automatická/vynucená INTRO výjimka
-## (odstraněna 2026-09-26). Výchozí záložka při otevření je Inventář, KROMĚ
-## když čeká nevyužitý bod schopnosti (GameManager.pending_skill_points > 0) -
-## pak se rovnou otevře Dovednosti, ať žlutý odznáček na portrétu pořád
-## znamená "klikni sem a rovnou investuj", ne "klikni, pak ještě přepni
-## záložku" (viz _on_portrait_pressed()).
+## 2026-09-27) - dřív dvouzáložková obrazovka (Inventář/Dovednosti), od
+## "Lobby a meta-progrese" (téhož dne, později) jen JEDNA sekce (staty +
+## aktivní/sklad itemy) - Dovednosti se přesunuly do scenes/ui/lobby.gd/tscn.
+## Otevírá se VŽDY jen kliknutím na portrét (viz portrait_button výše).
 @onready var character_panel: Panel = $Control/CharacterPanel
 @onready var character_panel_close_button: Button = $Control/CharacterPanel/CloseButton
-@onready var inventory_tab_button: Button = $Control/CharacterPanel/InventoryTabButton
-@onready var skill_tree_tab_button: Button = $Control/CharacterPanel/SkillTreeTabButton
-@onready var inventory_tab_content: Control = $Control/CharacterPanel/InventoryTabContent
-@onready var skill_tree_tab_content: Control = $Control/CharacterPanel/SkillTreeTabContent
-@onready var skill_tree_points_label: Label = $Control/CharacterPanel/SkillTreeTabContent/PointsLabel
-@onready var skill_tree_nodes_container: Control = $Control/CharacterPanel/SkillTreeTabContent/NodesContainer
-## Rozměry jednoho uzlu stromu a mřížky - 4 sloupce (větve, viz
-## GameManager.SKILL_TREE_BRANCHES), max 3 řádky (nejdelší větev).
-const SKILL_NODE_WIDTH: float = 170.0
-const SKILL_NODE_HEIGHT: float = 150.0
-const SKILL_NODE_GAP: float = 10.0
-## Dictionary {ability_id: {"panel", "name_label", "rank_label", "desc_label",
-## "button"}} - postaveno jednou v _build_skill_tree_ui(), znovu použito při
-## každém _refresh_skill_tree_ui() (žádné přestavování stromu za běhu, na
-## rozdíl od hromádky vlastněných schopností - počet uzlů je pevný).
-var _skill_node_widgets: Dictionary = {}
 
 ## Panel volby SCHOPNOSTI (náhodná nabídka, viz "Schopnosti (náhodná
 ## nabídka)" v CLAUDE.md) - 3 karty, GameManager.ABILITY_CHOICE_COUNT.
@@ -175,10 +156,6 @@ var _skill_node_widgets: Dictionary = {}
 ## se týkají souběžného systému SCHOPNOSTÍ (náhodná nabídka).
 @onready var debug_add_many_skill_points_button: Button = $Control/DebugPanel/AddManySkillPointsButton
 @onready var debug_force_ability_draft_button: Button = $Control/DebugPanel/ForceAbilityDraftButton
-## Posune GameManager.enemies_killed o 10 (viz "Schopnosti na základě
-## zabití" v CLAUDE.md) - pro rychlé přiblížení se dalšímu prahu bez
-## skutečného grindění zabití.
-@onready var debug_add_kills_button: Button = $Control/DebugPanel/AddKillsButton
 @onready var debug_max_abilities_button: Button = $Control/DebugPanel/MaxAbilitiesButton
 @onready var debug_reset_abilities_button: Button = $Control/DebugPanel/ResetAbilitiesButton
 @onready var debug_ability_auto_toggle: Button = $Control/DebugPanel/AbilityAutoToggle
@@ -232,7 +209,6 @@ func _ready() -> void:
 	GameManager.xp_changed.connect(_on_xp_changed)
 	GameManager.level_changed.connect(_on_level_changed)
 	GameManager.skill_points_changed.connect(_on_skill_points_changed)
-	GameManager.skill_ranks_changed.connect(_on_skill_ranks_changed)
 	GameManager.ability_draft_ready.connect(_on_ability_draft_ready)
 	GameManager.ability_inventory_changed.connect(_on_ability_inventory_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
@@ -247,21 +223,18 @@ func _ready() -> void:
 
 	_setup_shop_cards()
 	_build_inventory_ui()
-	_build_skill_tree_ui()
 
 	portrait_button.pressed.connect(_on_portrait_pressed)
 	character_panel_close_button.pressed.connect(_on_character_panel_close_pressed)
-	inventory_tab_button.pressed.connect(_on_inventory_tab_pressed)
-	skill_tree_tab_button.pressed.connect(_on_skill_tree_tab_pressed)
 
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
 
-	game_over_continue_button.pressed.connect(_restart_game)
+	game_over_continue_button.pressed.connect(_go_to_lobby)
 	game_over_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
 	game_over_panel.mouse_exited.connect(_on_end_panel_mouse_exited)
 
-	victory_continue_button.pressed.connect(_restart_game)
+	victory_continue_button.pressed.connect(_go_to_lobby)
 	victory_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
 	victory_panel.mouse_exited.connect(_on_end_panel_mouse_exited)
 
@@ -276,7 +249,7 @@ func _process(delta: float) -> void:
 	_end_screen_countdown -= delta
 	if _end_screen_countdown <= 0.0:
 		_end_screen_countdown_active = false
-		_restart_game()
+		_go_to_lobby()
 	else:
 		_update_end_screen_countdown_label()
 
@@ -338,170 +311,28 @@ func _on_level_changed(new_level: int) -> void:
 	_refresh_stat_labels()
 
 
-## Klik na portrét vždy otevře CharacterPanel (i s 0 čekajícími body - hráč
-## si tak může prohlédnout staty/itemy nebo co dál v dovednostech odemkne,
-## aniž by nutně hned investoval). Výchozí záložka je Inventář, KROMĚ když
-## čeká nevyužitý bod schopnosti - pak rovnou Dovednosti, ať žlutý odznáček
-## na portrétu pořád znamená "klikni sem a rovnou investuj" (viz
-## character_panel doc komentář výše).
+## Klik na portrét vždy otevře CharacterPanel (jen Inventář - staty + aktivní/
+## sklad itemy). Dovednostní strom už tu není (přesunut do lobby, viz doc
+## komentář nad hud.gd) - žlutý odznáček zůstává čistě informativní.
 func _on_portrait_pressed() -> void:
-	_show_character_panel(GameManager.pending_skill_points <= 0)
-
-
-## show_inventory_default: true otevře záložku Inventář, false Dovednosti.
-func _show_character_panel(show_inventory_default: bool) -> void:
-	_set_active_tab(show_inventory_default)
 	_refresh_inventory_ui()
-	_refresh_skill_tree_ui()
 	character_panel.show()
 	get_tree().paused = true
 
 
-func _on_inventory_tab_pressed() -> void:
-	_set_active_tab(true)
-
-
-func _on_skill_tree_tab_pressed() -> void:
-	_set_active_tab(false)
-
-
-## Přepne, který ze dvou *TabContent kontejnerů je vidět, a zvýrazní
-## odpovídající záložkové tlačítko (bílá = aktivní, LOCKED_ITEM_MODULATE =
-## neaktivní - stejný ztlumující odstín, jaký projekt už používá pro
-## nedostupné itemy/schopnosti, žádná nová barva navíc).
-func _set_active_tab(show_inventory: bool) -> void:
-	inventory_tab_content.visible = show_inventory
-	skill_tree_tab_content.visible = not show_inventory
-	inventory_tab_button.modulate = Color.WHITE if show_inventory else LOCKED_ITEM_MODULATE
-	skill_tree_tab_button.modulate = LOCKED_ITEM_MODULATE if show_inventory else Color.WHITE
-
-
-## Zavření panelu - stejný vzor jako _on_shop_close_pressed(), zavírá bez
-## ohledu na to, která záložka byla aktivní. Dovednostní strom se do intra
-## vůbec nezapojuje (viz CLAUDE.md) - jedinou cestou z State.INTRO je
-## zavření AbilityDraftPanelu (resolve_ability_draft() → finish_intro() v
-## game_manager.gd), takže tady žádná INTRO-výjimka není potřeba.
 func _on_character_panel_close_pressed() -> void:
 	character_panel.hide()
 	get_tree().paused = false
 
 
-## Reaguje na KAŽDOU změnu počtu čekajících bodů (level-up i investování) -
-## jen přebarví portrét a odznáček. Panel se už nikdy sám neotevírá (první
-## bod schopnosti přijde normálně na úrovni 2 jako každý další - viz
-## "Dovednostní strom" v CLAUDE.md) - otevření je vždy jen na klik portrétu.
+## Reaguje na KAŽDOU změnu počtu čekajících META bodů dovednosti (meta
+## level-up i investování v lobby) - jen přebarví portrét a odznáček jako
+## passivní upozornění ("máš co investovat, až budeš v lobby"); klik na
+## portrét v běhu už žádnou investici neřeší (viz _on_portrait_pressed()).
 func _on_skill_points_changed(new_amount: int) -> void:
 	skill_point_badge.visible = new_amount > 0
 	skill_point_label.text = "+%d" % new_amount
 	portrait_button.modulate = Color(1.0, 0.85, 0.2) if new_amount > 0 else Color.WHITE
-
-	if character_panel.visible:
-		_refresh_skill_tree_ui()
-
-
-func _on_skill_ranks_changed() -> void:
-	if character_panel.visible:
-		_refresh_skill_tree_ui()
-
-
-## Postaví jeden uzel na KAŽDOU schopnost ve GameManager.SKILL_TREE_BRANCHES,
-## v mřížce 4 sloupce (větve) x max 3 řádky (nejdelší větev) - viz
-## SKILL_NODE_WIDTH/HEIGHT/GAP výše. Volá se jednou v _ready(); obsah se pak
-## jen PŘEKRESLÍ (_refresh_skill_tree_ui()), strom sám o sobě nemá proměnlivý
-## počet uzlů jako hromádka vlastněných schopností.
-func _build_skill_tree_ui() -> void:
-	for col in GameManager.SKILL_TREE_BRANCHES.size():
-		var branch: Array = GameManager.SKILL_TREE_BRANCHES[col]
-		for row in branch.size():
-			var ability_id: String = branch[row]
-
-			var panel := Panel.new()
-			panel.name = "SkillNode_%s" % ability_id
-			panel.position = Vector2(
-				col * (SKILL_NODE_WIDTH + SKILL_NODE_GAP), row * (SKILL_NODE_HEIGHT + SKILL_NODE_GAP)
-			)
-			panel.size = Vector2(SKILL_NODE_WIDTH, SKILL_NODE_HEIGHT)
-			skill_tree_nodes_container.add_child(panel)
-
-			var name_label := Label.new()
-			name_label.name = "NameLabel"
-			name_label.position = Vector2(6.0, 4.0)
-			name_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 34.0)
-			name_label.add_theme_font_size_override("font_size", 13)
-			name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			panel.add_child(name_label)
-
-			var rank_label := Label.new()
-			rank_label.name = "RankLabel"
-			rank_label.position = Vector2(6.0, 38.0)
-			rank_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 16.0)
-			rank_label.add_theme_font_size_override("font_size", 11)
-			rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			panel.add_child(rank_label)
-
-			var desc_label := Label.new()
-			desc_label.name = "DescLabel"
-			desc_label.position = Vector2(6.0, 56.0)
-			desc_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 58.0)
-			desc_label.add_theme_font_size_override("font_size", 10)
-			desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			panel.add_child(desc_label)
-
-			var button := Button.new()
-			button.name = "ActionButton"
-			button.position = Vector2(6.0, 116.0)
-			button.size = Vector2(SKILL_NODE_WIDTH - 12.0, 28.0)
-			button.pressed.connect(_on_skill_node_pressed.bind(ability_id))
-			panel.add_child(button)
-
-			_skill_node_widgets[ability_id] = {
-				"panel": panel, "name_label": name_label, "rank_label": rank_label,
-				"desc_label": desc_label, "button": button,
-			}
-
-
-func _on_skill_node_pressed(ability_id: String) -> void:
-	GameManager.invest_skill_point(ability_id)
-
-
-## Překreslí zbývající body a všechny uzly - volá se při otevření panelu a
-## při každé změně bodů/ranků, dokud je panel otevřený.
-func _refresh_skill_tree_ui() -> void:
-	skill_tree_points_label.text = "Dostupné body: %d" % GameManager.pending_skill_points
-
-	for ability_id in _skill_node_widgets:
-		var widget: Dictionary = _skill_node_widgets[ability_id]
-		var definition: Dictionary = GameManager.ABILITIES[ability_id]
-		var rank: int = GameManager.get_skill_rank(ability_id)
-		var max_rank: int = GameManager.get_skill_max_rank(ability_id)
-		var unlocked: bool = GameManager.is_skill_node_unlocked(ability_id)
-
-		widget["name_label"].text = definition["name"]
-
-		if not unlocked:
-			widget["panel"].modulate = LOCKED_ITEM_MODULATE
-			widget["rank_label"].text = "Zamčeno"
-			widget["desc_label"].text = ""
-			widget["button"].text = "Zamčeno"
-			widget["button"].disabled = true
-			continue
-
-		widget["panel"].modulate = Color.WHITE
-		widget["rank_label"].text = "Stupeň %d/%d" % [rank, max_rank]
-		# Na stupni 0 (odemčeno, ale zatím neinvestováno) rovnou ukážeme
-		# efekt PRVNÍHO stupně místo prázdného textu - hráč tak vidí, co
-		# dostane, ještě než do dovednosti vloží první bod, stejně jako u
-		# už investovaných dovedností (explicit user request 2026-09-26).
-		widget["desc_label"].text = GameManager.get_skill_node_desc(ability_id, max(rank, 1))
-
-		if rank >= max_rank:
-			widget["button"].text = "Max"
-			widget["button"].disabled = true
-		else:
-			widget["button"].text = "Investovat"
-			widget["button"].disabled = not GameManager.can_invest_skill_point(ability_id)
 
 
 ## Když hráč zapne Auto výběr zatímco AbilityDraftPanel zrovna čeká na jeho
@@ -880,24 +711,26 @@ func _on_shop_close_pressed() -> void:
 	get_tree().paused = false
 
 
-func show_game_over(survival_time: float, currency: int) -> void:
+func show_game_over(survival_time: float, currency: int, meta_xp_gained: int) -> void:
 	_close_shop()
 	_close_character_panel()
 	_close_ability_draft_panel()
-	game_over_label.text = "Game Over!\nPřežitý čas: %s\nÚroveň: %d\nZlato: %d" % [
-		GameManager.format_survival_time(survival_time), GameManager.player_level, currency
+	game_over_label.text = "Game Over!\nPřežitý čas: %s\nÚroveň: %d\nZlato: %d\n+%d meta-XP" % [
+		GameManager.format_survival_time(survival_time), GameManager.player_level, currency, meta_xp_gained
 	]
 	game_over_panel.show()
-	_start_end_screen_countdown(game_over_countdown_label, "Restart za")
+	_start_end_screen_countdown(game_over_countdown_label, "Lobby za")
 
 
-func show_victory(currency: int) -> void:
+func show_victory(currency: int, meta_xp_gained: int) -> void:
 	_close_shop()
 	_close_character_panel()
 	_close_ability_draft_panel()
-	victory_label.text = "Level dokončen!\nÚroveň: %d\nZlato: %d" % [GameManager.player_level, currency]
+	victory_label.text = "Smyčka dokončena!\nÚroveň: %d\nZlato: %d\n+%d meta-XP" % [
+		GameManager.player_level, currency, meta_xp_gained
+	]
 	victory_panel.show()
-	_start_end_screen_countdown(victory_countdown_label, "Nová hra za")
+	_start_end_screen_countdown(victory_countdown_label, "Lobby za")
 
 
 func _close_shop() -> void:
@@ -940,14 +773,19 @@ func _update_end_screen_countdown_label() -> void:
 	_active_countdown_label.text = "%s: %d s" % [_countdown_label_prefix, int(ceil(_end_screen_countdown))]
 
 
-func _restart_game() -> void:
+## Konec běhu (smrt nebo dokončení smyčky) vede do lobby, ne do restartu na
+## místě - main.tscn se znovu spustí až po kliknutí na "Další běh" v lobby
+## (viz scenes/ui/lobby.gd), ne automaticky. GameManager je autoload a scénu
+## přežije beze změny, takže last_run_summary/meta stav je pro lobby.gd
+## dostupný okamžitě po přechodu.
+func _go_to_lobby() -> void:
 	_end_screen_countdown_active = false
 	game_over_panel.hide()
 	victory_panel.hide()
 	character_panel.hide()
 	ability_draft_panel.hide()
 	get_tree().paused = false
-	get_tree().reload_current_scene()
+	get_tree().change_scene_to_file("res://scenes/ui/lobby.tscn")
 
 
 # --- Debug panel ---------------------------------------------------------
@@ -983,7 +821,6 @@ func _setup_debug_panel() -> void:
 			GameManager.debug_add_skill_point()
 	)
 	debug_force_ability_draft_button.pressed.connect(func(): GameManager.debug_force_ability_draft())
-	debug_add_kills_button.pressed.connect(func(): GameManager.debug_add_kills(10))
 	debug_max_abilities_button.pressed.connect(func(): GameManager.debug_max_abilities())
 	debug_reset_abilities_button.pressed.connect(func(): GameManager.debug_reset_abilities())
 	debug_ability_auto_toggle.button_pressed = _ability_auto_enabled
