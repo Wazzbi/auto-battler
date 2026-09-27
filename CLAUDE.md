@@ -65,8 +65,9 @@ until their phase lands) and some describe the NEW top-down behavior (already la
 updated section says explicitly which it is. **Landed so far**: Fáze 0+1 (free 2D player
 movement, decoupled from combat — see "player.gd" below, PR #42), Fáze 2 (symmetric camera
 centering — see "Camera/scrolling model" below, PR #43), Fáze 3 (aimed projectiles — see "Enemy
-projectiles are their own script" below, this PR). **Not yet landed**: 2D enemy movement + ring
-spawn, 2D ground rendering, continuous spawn/difficulty
+projectiles are their own script" below, PR #44), Fáze 4 (2D enemy movement + ring spawn — see
+"Enemies don't block each other" and `main.gd`'s `_spawn_around_player()` below, this PR). **Not
+yet landed**: 2D ground rendering, continuous spawn/difficulty
 (waves/loops still exist and work as documented below until that phase lands).
 
 **Camera/scrolling model — TOP-DOWN, updated 2026-09-27**: the `Camera2D` (`Main/Camera2D` in
@@ -112,7 +113,10 @@ projectile hits all use `global_position.distance_to(...)` checks against export
 constants — there are no `Area2D`/`CollisionShape2D` hit layers. This is intentional for prototype
 simplicity per the README; if collision performance ever matters, this is the layer to revisit.
 
-**Enemies don't block each other**: each enemy moves left toward the player and stops purely at its
+**Enemies don't block each other**: each enemy moves **directly toward the player in 2D**
+(`global_position.move_toward(player_ref.global_position, speed * delta)` — top-down pivot
+2026-09-27, Fáze 4; used to be X-only, `global_position.x -= speed * delta`, so an enemy spawned
+above/below the player would never have approached vertically before this) and stops purely at its
 own `melee_range` (plus a random per-enemy jitter) — it never looks at other enemies' positions.
 This is deliberate, not an oversight: an earlier version made each enemy stop farther back if
 another enemy was already closer to the player (a "queueing" effect), but that broke down once
@@ -914,9 +918,10 @@ reuse the *real* code paths rather than shortcutting past them:
   It only calls `GameManager.debug_force_wave_clear()` — which itself refuses to act unless
   `enemies_alive`/`enemies_remaining_to_spawn` are already both zero — to cover the edge case where
   no enemy was alive to begin with (so no death naturally triggered the wave-clear check).
-- **Spawnout Elite** / **Spawnout dálkového** / **Spawnout snipera** all share `_spawn_at_edge()`
-  with the normal wave spawner (extracted from `_spawn_enemy()` during the Elite work) so a
-  debug-spawned enemy gets the same HP-multiplier-before-`add_child()` treatment as one spawned by
+- **Spawnout Elite** / **Spawnout dálkového** / **Spawnout snipera** all share
+  `_spawn_around_player()` (renamed from `_spawn_at_edge()` in the top-down pivot, see below) with
+  the normal wave spawner so a debug-spawned enemy gets the same HP-multiplier-before-`add_child()`
+  treatment as one spawned by
   the real wave queue.
 - **Rychlost** cycles `Engine.time_scale` through `1x/2x/5x/10x` — this is global engine state, so
   it also speeds up Timers, Tweens, and the Game Over/Victory countdown, and (unlike everything

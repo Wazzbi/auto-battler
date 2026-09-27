@@ -26,7 +26,8 @@ extends Node2D
 ## Násobitel odmocninové křivky obtížnosti - růst je postupný, ne skokový
 @export var difficulty_growth: float = 1.2
 @export var spawn_interval: float = 1.2
-## Jak daleko za pravým okrajem obrazovky se nepřátelé spawnují
+## Jak daleko za viditelným okrajem obrazovky (v libovolném směru od hráče,
+## viz _spawn_around_player()) se nepřátelé spawnují
 @export var spawn_margin: float = 80.0
 ## Kolik nepřátel smí být živých najednou - brání přehlcení hráče v pozdějších vlnách
 @export var max_concurrent_enemies: int = 6
@@ -100,26 +101,31 @@ func _spawn_enemy() -> void:
 		elif ranged_enemy_scene != null and roll < effective_sniper_chance + effective_ranged_chance:
 			scene_to_spawn = ranged_enemy_scene
 
-	_spawn_at_edge(scene_to_spawn)
+	_spawn_around_player(scene_to_spawn)
 	GameManager.enemies_remaining_to_spawn = enemies_left_to_spawn + elites_left_to_spawn
 
 
-## Vytvoří a umístí nepřítele kousek za pravým okrajem aktuálního záběru
-## kamery. Sdílené jádro pro běžné spawnování z fronty vlny i pro
-## debug_spawn_elite() - obě cesty musí dopadnout stejně (naškálované HP,
-## správně zapsaný GameManager.enemies_alive).
-func _spawn_at_edge(scene: PackedScene) -> Node2D:
+## Vytvoří a umístí nepřítele na náhodné místo na kruhu kolem hráče, těsně
+## mimo viditelnou obrazovku (top-down pivot 2026-09-27, dřív vždy kousek za
+## pravým okrajem kamery). Poloměr = polovina DIAGONÁLY viewportu + spawn_margin
+## - půl-šířka by nestačila, protože v "rohových" úhlech (blízko nahoře/dole)
+## by spawn bod pořád ležel uvnitř viditelné oblasti; půl-diagonála zaručí
+## spawn mimo obrazovku bez ohledu na úhel. Sdílené jádro pro běžné spawnování
+## z fronty vlny i pro debug_spawn_elite()/_ranged_enemy()/_sniper_enemy() -
+## všechny cesty musí dopadnout stejně (naškálované HP, správně zapsaný
+## GameManager.enemies_alive) - signatura je stejná jako dřív
+## (PackedScene in, Node2D out), takže žádné volací místo se nemuselo měnit.
+func _spawn_around_player(scene: PackedScene) -> Node2D:
 	var enemy: Node2D = scene.instantiate()
 	# Musí se stát PŘED add_child() - enemy.gd nastavuje hp = max_hp ve svém
 	# _ready(), který proběhne synchronně při vstupu do stromu.
 	enemy.max_hp *= GameManager.get_enemy_hp_multiplier()
 	add_child(enemy)
 
-	# Kamera NENÍ vystředěná na hráči (je posunutá, aby hráč byl vlevo),
-	# takže tady vycházíme z pozice kamery, ne z pozice hráče.
-	var half_width: float = get_viewport().get_visible_rect().size.x / 2.0
-	var spawn_x: float = camera.global_position.x + half_width + spawn_margin
-	enemy.global_position = Vector2(spawn_x, player.global_position.y)
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+	var min_radius: float = viewport_size.length() / 2.0 + spawn_margin
+	var angle: float = randf() * TAU
+	enemy.global_position = player.global_position + Vector2.RIGHT.rotated(angle) * min_radius
 
 	GameManager.register_enemy_spawned()
 	return enemy
@@ -189,16 +195,16 @@ func debug_skip_wave() -> void:
 ## DEBUG: spawne jednoho Elite nepřítele na vyžádání, mimo běžnou frontu vln
 func debug_spawn_elite() -> void:
 	if elite_enemy_scene != null:
-		_spawn_at_edge(elite_enemy_scene)
+		_spawn_around_player(elite_enemy_scene)
 
 
 ## DEBUG: spawne jednoho dálkového nepřítele na vyžádání, mimo běžnou frontu vln
 func debug_spawn_ranged_enemy() -> void:
 	if ranged_enemy_scene != null:
-		_spawn_at_edge(ranged_enemy_scene)
+		_spawn_around_player(ranged_enemy_scene)
 
 
 ## DEBUG: spawne jednoho snipera na vyžádání, mimo běžnou frontu vln
 func debug_spawn_sniper_enemy() -> void:
 	if sniper_enemy_scene != null:
-		_spawn_at_edge(sniper_enemy_scene)
+		_spawn_around_player(sniper_enemy_scene)

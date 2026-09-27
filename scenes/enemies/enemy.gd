@@ -1,8 +1,9 @@
 extends Node2D
-## Základní nepřítel. Pohybuje se doleva směrem k hráči; jakmile je
-## dostatečně blízko (podle svého vlastního melee_range), zastaví se a útočí
-## v pravidelných intervalech - buď kontaktně (výchozí), nebo na dálku
-## projektilem, pokud je zapnuté is_ranged (viz ranged_enemy.tscn).
+## Základní nepřítel. Pohybuje se PŘÍMO K HRÁČI ve 2D (top-down pivot
+## 2026-09-27, dřív jen po ose X); jakmile je dostatečně blízko (podle svého
+## vlastního melee_range), zastaví se a útočí v pravidelných intervalech -
+## buď kontaktně (výchozí), nebo na dálku projektilem, pokud je zapnuté
+## is_ranged (viz ranged_enemy.tscn).
 ##
 ## Nepřátelé se navzájem NEBLOKUJÍ - každý počítá svou stop distanci nezávisle
 ## na ostatních, takže se klidně vizuálně překryjí (žádná Area2D/collision
@@ -71,7 +72,7 @@ func _process(delta: float) -> void:
 	var stop_distance: float = melee_range + melee_range_jitter
 
 	if distance > stop_distance:
-		global_position.x -= speed * delta
+		global_position = global_position.move_toward(player_ref.global_position, speed * delta)
 	else:
 		attack_timer -= delta
 		if attack_timer <= 0.0:
