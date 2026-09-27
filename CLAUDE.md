@@ -66,8 +66,10 @@ updated section says explicitly which it is. **Landed so far**: Fáze 0+1 (free 
 movement, decoupled from combat — see "player.gd" below, PR #42), Fáze 2 (symmetric camera
 centering — see "Camera/scrolling model" below, PR #43), Fáze 3 (aimed projectiles — see "Enemy
 projectiles are their own script" below, PR #44), Fáze 4 (2D enemy movement + ring spawn — see
-"Enemies don't block each other" and `main.gd`'s `_spawn_around_player()` below, this PR). **Not
-yet landed**: 2D ground rendering, continuous spawn/difficulty
+"Enemies don't block each other" and `main.gd`'s `_spawn_around_player()` below, PR #45), Fáze 5
+(2D ground rendering — see "Ground renders infinitely in 2D" below, this PR). **Not yet landed**:
+continuous spawn/difficulty (waves/loops still exist and work as documented below until that phase
+lands — this is the last remaining phase)
 (waves/loops still exist and work as documented below until that phase lands).
 
 **Camera/scrolling model — TOP-DOWN, updated 2026-09-27**: the `Camera2D` (`Main/Camera2D` in
@@ -238,18 +240,31 @@ right. This machinery is kept (not deleted) specifically so a *future*, genuinel
 planet/level can reuse it — add a `Marker2D` in the `level_end` group to any new level scene to cap
 movement there again. `ground.gd`'s `total_width` export is gone for the same reason — see below.
 
-**Ground renders infinitely, tracking the camera** (`ground.gd`): instead of drawing a fixed set of
-tiles up front, `_process()` calls `queue_redraw()` every frame and `_draw()` recomputes which tile
-indices are currently visible from `Camera2D.get_screen_center_position()` (± half the viewport
-width, plus `tile_margin_count` tiles of buffer) and draws only that window. Tile color alternates
-on the tile's *absolute* index (`posmod(i, 2)`), not drawing order, so the checkerboard pattern
-never shifts or flickers as the visible window scrolls. **Use `get_screen_center_position()`, not
-`camera.global_position`** — the Camera2D has `position_smoothing_enabled = true`, so
-`global_position` is the raw, un-smoothed transform while `get_screen_center_position()` is what's
-actually rendered; a large/instant position change (only really happens in tests, not real gradual
-gameplay movement) makes those two diverge, and computing the visible tile range from the wrong one
-draws tiles for a region the camera isn't actually showing yet — the ground appeared to vanish
-entirely during testing until this was fixed.
+**Ground renders infinitely in 2D, tracking the camera** (`ground.gd`) — top-down pivot
+2026-09-27, Fáze 5: instead of drawing a fixed set of tiles up front, `_process()` calls
+`queue_redraw()` every frame and `_draw()` recomputes which tile indices are currently visible on
+**both axes** from `Camera2D.get_screen_center_position()` (± half the viewport size, plus
+`tile_margin_count` tiles of buffer) and draws only that window as a full 2D grid. Tile color
+alternates on the **sum** of the tile's absolute X+Y index (`posmod(x_i + y_i, 2)`), not drawing
+order, so the checkerboard pattern never shifts or flickers as the visible window scrolls in
+*either* axis. The tile-range math lives in its own function, `_get_visible_tile_range() ->
+Dictionary` (returns `first_x`/`last_x`/`first_y`/`last_y`), pulled out of `_draw()` specifically
+so it's callable and assertable from a headless test — `_draw()` itself returns nothing
+inspectable. **Use `get_screen_center_position()`, not `camera.global_position`** — the Camera2D
+has `position_smoothing_enabled = true`, so `global_position` is the raw, un-smoothed transform
+while `get_screen_center_position()` is what's actually rendered; a large/instant position change
+(only really happens in tests, not real gradual gameplay movement) makes those two diverge, and
+computing the visible tile range from the wrong one draws tiles for a region the camera isn't
+actually showing yet — the ground appeared to vanish entirely during testing until this was fixed
+(pre-pivot; the same reasoning was carried forward into the 2D rewrite, and `projectile.gd`'s
+Fáze-3 off-screen cleanup rewrite deliberately reused it too).
+
+**STALE — `height`/`top_stripe_height`/`top_stripe_color` are GONE (Fáze 5).** The pre-pivot
+ground was a single horizontal strip: a fixed-height "floor band" (`height`) with a thin "grass"
+stripe (`top_stripe_height`/`top_stripe_color`) along its top edge, because the side-scroller had
+a clear "up" with nothing to draw above the floor. A full 2D top-down ground has no such edge —
+the checkerboard grid itself is now the entire visible ground in every direction, so those three
+exports and their `_draw()` code were deleted outright rather than adapted.
 
 **The game loops instead of ending at `GameManager.FINAL_WAVE`**: clearing wave 10
 (`FINAL_WAVE`) doesn't call `trigger_win()` anymore — `_on_wave_cleared()` calls
