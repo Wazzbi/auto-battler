@@ -169,183 +169,6 @@ offset_bottom = 44.0
 text = "Čas: 0:00"
 horizontal_alignment = 2
 
-[node name="BottomBar" type="ColorRect" parent="Control" unique_id=1243818576]
-layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -140.0
-color = Color(0.07, 0.08, 0.11, 0.94)
-
-[node name="StatDamage" type="Label" parent="Control/BottomBar" unique_id=1729872004]
-layout_mode = 0
-offset_left = 14.0
-offset_top = 8.0
-offset_right = 200.0
-offset_bottom = 28.0
-theme_override_font_sizes/font_size = 14
-text = "Poškození: 10"
-
-[node name="StatSpeed" type="Label" parent="Control/BottomBar" unique_id=853616865]
-layout_mode = 0
-offset_left = 14.0
-offset_top = 30.0
-offset_right = 200.0
-offset_bottom = 50.0
-theme_override_font_sizes/font_size = 14
-text = "Rychlost: 1.0/s"
-
-[node name="StatRange" type="Label" parent="Control/BottomBar" unique_id=1513748572]
-layout_mode = 0
-offset_left = 14.0
-offset_top = 52.0
-offset_right = 200.0
-offset_bottom = 72.0
-theme_override_font_sizes/font_size = 14
-text = "Dostřel: 400"
-
-[node name="StatHP" type="Label" parent="Control/BottomBar" unique_id=1334704326]
-layout_mode = 0
-offset_left = 14.0
-offset_top = 74.0
-offset_right = 200.0
-offset_bottom = 94.0
-theme_override_font_sizes/font_size = 14
-text = "Max HP: 100"
-
-[node name="StatArmor" type="Label" parent="Control/BottomBar" unique_id=1334704327]
-layout_mode = 0
-offset_left = 14.0
-offset_top = 96.0
-offset_right = 200.0
-offset_bottom = 116.0
-theme_override_font_sizes/font_size = 14
-text = "Brnění: 2"
-
-[node name="StatCrit" type="Label" parent="Control/BottomBar"]
-layout_mode = 0
-offset_left = 14.0
-offset_top = 118.0
-offset_right = 200.0
-offset_bottom = 138.0
-theme_override_font_sizes/font_size = 14
-text = "Kritický zásah: 5 %"
-
-[node name="ItemSlot1" type="ColorRect" parent="Control/BottomBar" unique_id=1141383570]
-layout_mode = 0
-offset_left = 264.0
-offset_top = 14.0
-offset_right = 376.0
-offset_bottom = 126.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot1"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 9
-text = "-"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 2
-
-[node name="ItemSlot2" type="ColorRect" parent="Control/BottomBar" unique_id=162173072]
-layout_mode = 0
-offset_left = 392.0
-offset_top = 14.0
-offset_right = 504.0
-offset_bottom = 126.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot2"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 9
-text = "-"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 2
-
-[node name="ItemSlot3" type="ColorRect" parent="Control/BottomBar" unique_id=113830123]
-layout_mode = 0
-offset_left = 520.0
-offset_top = 14.0
-offset_right = 632.0
-offset_bottom = 126.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot3"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 9
-text = "-"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 2
-
-[node name="ItemSlot4" type="ColorRect" parent="Control/BottomBar" unique_id=558387754]
-layout_mode = 0
-offset_left = 648.0
-offset_top = 14.0
-offset_right = 760.0
-offset_bottom = 126.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot4"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 9
-text = "-"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 2
-
-[node name="ItemSlot5" type="ColorRect" parent="Control/BottomBar" unique_id=1839271119]
-layout_mode = 0
-offset_left = 776.0
-offset_top = 14.0
-offset_right = 888.0
-offset_bottom = 126.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot5"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 9
-text = "-"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 2
-
-[node name="ItemSlot6" type="ColorRect" parent="Control/BottomBar" unique_id=146363010]
-layout_mode = 0
-offset_left = 904.0
-offset_top = 14.0
-offset_right = 1016.0
-offset_bottom = 126.0
-color = Color(0.14, 0.15, 0.19, 1)
-
-[node name="Label" type="Label" parent="Control/BottomBar/ItemSlot6"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 9
-text = "-"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 2
-
 [node name="DebugButton" type="Button" parent="Control"]
 layout_mode = 1
 anchors_preset = 3
@@ -387,9 +210,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -360.0
-offset_top = -260.0
+offset_top = -155.0
 offset_right = 360.0
-offset_bottom = 260.0
+offset_bottom = 155.0
 
 [node name="Title" type="Label" parent="Control/ShopPanel" unique_id=1857439836]
 layout_mode = 0
@@ -641,44 +464,12 @@ offset_right = 460.0
 offset_bottom = 244.0
 text = "Přehodit (20)"
 
-[node name="ActiveLabel" type="Label" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 252.0
-offset_right = 500.0
-offset_bottom = 268.0
-theme_override_font_sizes/font_size = 12
-text = "Aktivní itemy (0/6)"
-
-[node name="ActiveItemsContainer" type="Control" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 270.0
-offset_right = 710.0
-offset_bottom = 344.0
-
-[node name="StashLabel" type="Label" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 352.0
-offset_right = 500.0
-offset_bottom = 368.0
-theme_override_font_sizes/font_size = 12
-text = "Sklad (0/9)"
-
-[node name="StashContainer" type="Control" parent="Control/ShopPanel"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 370.0
-offset_right = 710.0
-offset_bottom = 444.0
-
 [node name="CloseButton" type="Button" parent="Control/ShopPanel" unique_id=1539487263]
 layout_mode = 0
 offset_left = 300.0
-offset_top = 452.0
+offset_top = 256.0
 offset_right = 420.0
-offset_bottom = 484.0
+offset_bottom = 288.0
 text = "Zavřít obchod"
 
 [node name="GameOverPanel" type="Panel" parent="Control" unique_id=2052936013]
@@ -953,7 +744,7 @@ offset_right = 330.0
 offset_bottom = 672.0
 text = "Zavřít"
 
-[node name="SkillTreePanel" type="Panel" parent="Control"]
+[node name="CharacterPanel" type="Panel" parent="Control"]
 visible = false
 layout_mode = 1
 anchors_preset = 8
@@ -961,43 +752,153 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -380.0
+offset_left = -420.0
 offset_top = -320.0
-offset_right = 380.0
+offset_right = 420.0
 offset_bottom = 320.0
 
-[node name="Title" type="Label" parent="Control/SkillTreePanel"]
+[node name="InventoryTabButton" type="Button" parent="Control/CharacterPanel"]
 layout_mode = 0
-offset_left = 20.0
+offset_left = 235.0
 offset_top = 16.0
-offset_right = 740.0
+offset_right = 415.0
 offset_bottom = 50.0
-theme_override_font_sizes/font_size = 22
-text = "Dovednostní strom"
-horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+text = "Inventář"
 
-[node name="PointsLabel" type="Label" parent="Control/SkillTreePanel"]
+[node name="SkillTreeTabButton" type="Button" parent="Control/CharacterPanel"]
+layout_mode = 0
+offset_left = 425.0
+offset_top = 16.0
+offset_right = 605.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 16
+modulate = Color(0.45, 0.45, 0.52, 1)
+text = "Dovednosti"
+
+[node name="InventoryTabContent" type="Control" parent="Control/CharacterPanel"]
 layout_mode = 0
 offset_left = 20.0
-offset_top = 54.0
-offset_right = 740.0
-offset_bottom = 78.0
+offset_top = 60.0
+offset_right = 820.0
+offset_bottom = 610.0
+
+[node name="StatDamage" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 300.0
+offset_bottom = 20.0
+theme_override_font_sizes/font_size = 14
+text = "Poškození: 10"
+
+[node name="StatSpeed" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 22.0
+offset_right = 300.0
+offset_bottom = 42.0
+theme_override_font_sizes/font_size = 14
+text = "Rychlost: 1.0/s"
+
+[node name="StatRange" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 44.0
+offset_right = 300.0
+offset_bottom = 64.0
+theme_override_font_sizes/font_size = 14
+text = "Dostřel: 400"
+
+[node name="StatHP" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 66.0
+offset_right = 300.0
+offset_bottom = 86.0
+theme_override_font_sizes/font_size = 14
+text = "Max HP: 100"
+
+[node name="StatArmor" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 88.0
+offset_right = 300.0
+offset_bottom = 108.0
+theme_override_font_sizes/font_size = 14
+text = "Brnění: 2"
+
+[node name="StatCrit" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 110.0
+offset_right = 300.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 14
+text = "Kritický zásah: 5 %"
+
+[node name="ActiveLabel" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 150.0
+offset_right = 490.0
+offset_bottom = 166.0
+theme_override_font_sizes/font_size = 12
+text = "Aktivní itemy (0/6)"
+
+[node name="ActiveItemsContainer" type="Control" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 168.0
+offset_right = 800.0
+offset_bottom = 242.0
+
+[node name="StashLabel" type="Label" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 252.0
+offset_right = 490.0
+offset_bottom = 268.0
+theme_override_font_sizes/font_size = 12
+text = "Sklad (0/9)"
+
+[node name="StashContainer" type="Control" parent="Control/CharacterPanel/InventoryTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 270.0
+offset_right = 800.0
+offset_bottom = 344.0
+
+[node name="SkillTreeTabContent" type="Control" parent="Control/CharacterPanel"]
+visible = false
+layout_mode = 0
+offset_left = 20.0
+offset_top = 60.0
+offset_right = 820.0
+offset_bottom = 610.0
+
+[node name="PointsLabel" type="Label" parent="Control/CharacterPanel/SkillTreeTabContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 800.0
+offset_bottom = 24.0
 theme_override_font_sizes/font_size = 16
 text = "Dostupné body: 0"
 horizontal_alignment = 1
 
-[node name="NodesContainer" type="Control" parent="Control/SkillTreePanel"]
+[node name="NodesContainer" type="Control" parent="Control/CharacterPanel/SkillTreeTabContent"]
 layout_mode = 0
-offset_left = 20.0
-offset_top = 86.0
-offset_right = 740.0
-offset_bottom = 574.0
+offset_left = 0.0
+offset_top = 32.0
+offset_right = 800.0
+offset_bottom = 550.0
 
-[node name="CloseButton" type="Button" parent="Control/SkillTreePanel"]
+[node name="CloseButton" type="Button" parent="Control/CharacterPanel"]
 layout_mode = 0
-offset_left = 300.0
+offset_left = 340.0
 offset_top = 582.0
-offset_right = 460.0
+offset_right = 500.0
 offset_bottom = 618.0
 text = "Zavřít"
 

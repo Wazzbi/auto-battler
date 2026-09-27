@@ -1,16 +1,17 @@
 extends CanvasLayer
-## HUD - spodní lišta ve stylu MOBA her: staty, portrét s úrovní, HP a XP bar,
-## sloty vlastněných schopností, sloty na předměty (budoucí loot), zlato a
-## tlačítko obchodu. Progrese schopností funguje jako DOVEDNOSTNÍ STROM (viz
-## SkillTreePanel, přepracováno 2026-09-26 z dřívějšího náhodného draftu) -
-## KAŽDÝ level-up přidá 1 bod schopnosti (portrét zežloutne s odznáčkem
-## "+N"), hráč si ale sám vybírá KDY a KAM ho investuje kliknutím na portrét,
-## žádný panel se automaticky nevynucuje (jedinou výjimkou je úplně první bod
-## po dopadu na začátku hry, viz "Dovednostní strom" v CLAUDE.md).
+## HUD - portrét s úrovní, HP a XP bar, hromádka vlastněných schopností, zlato
+## a časovač přežití nahoře. Staty, aktivní/sklad itemy a dovednostní strom
+## žijí od 2026-09-27 v CharacterPanel (viz "CharacterPanel" v CLAUDE.md) -
+## klik na portrét otevře dvouzáložkovou obrazovku (Inventář/Dovednosti),
+## dřívější trvale viditelný BottomBar je pryč. Progrese dovedností funguje
+## jako DOVEDNOSTNÍ STROM (přepracováno 2026-09-26 z dřívějšího náhodného
+## draftu) - KAŽDÝ level-up přidá 1 bod schopnosti (portrét zežloutne s
+## odznáčkem "+N"), hráč si ale sám vybírá KDY a KAM ho investuje kliknutím
+## na portrét, žádný panel se automaticky nevynucuje.
 ##
 ## Uzel má process_mode = ALWAYS (nastaveno ve scéně), aby lišta i
-## obchod/panel schopností reagovaly i když je strom pozastavený přes
-## get_tree().paused (otevřený obchod nebo čekající nabídka schopnosti).
+## obchod/CharacterPanel reagovaly i když je hra pozastavená přes
+## get_tree().paused (otevřený obchod, panel, nebo čekající nabídka schopnosti).
 
 ## Za kolik sekund se hra po Game Over nebo výhře automaticky restartuje,
 ## pokud kurzor nestojí nad příslušným panelem (viz _process a
@@ -27,20 +28,23 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 ## jméno odpovídá aktuálnímu účelu.
 @onready var survival_time_label: Label = $Control/SurvivalTimeLabel
 
-@onready var bottom_bar: ColorRect = $Control/BottomBar
-@onready var stat_damage: Label = $Control/BottomBar/StatDamage
-@onready var stat_speed: Label = $Control/BottomBar/StatSpeed
-@onready var stat_range: Label = $Control/BottomBar/StatRange
-@onready var stat_hp: Label = $Control/BottomBar/StatHP
-@onready var stat_armor: Label = $Control/BottomBar/StatArmor
-@onready var stat_crit: Label = $Control/BottomBar/StatCrit
+## Staty žijí uvnitř CharacterPanel/InventoryTabContent (viz níže) - dřív
+## v trvale viditelném BottomBar, přesunuto 2026-09-27 (viz "CharacterPanel"
+## v CLAUDE.md - BottomBar trvale zabíral spodní pruh obrazovky, což vadilo
+## ještě víc po top-down pivotaci s volným pohybem ve všech směrech).
+@onready var stat_damage: Label = $Control/CharacterPanel/InventoryTabContent/StatDamage
+@onready var stat_speed: Label = $Control/CharacterPanel/InventoryTabContent/StatSpeed
+@onready var stat_range: Label = $Control/CharacterPanel/InventoryTabContent/StatRange
+@onready var stat_hp: Label = $Control/CharacterPanel/InventoryTabContent/StatHP
+@onready var stat_armor: Label = $Control/CharacterPanel/InventoryTabContent/StatArmor
+@onready var stat_crit: Label = $Control/CharacterPanel/InventoryTabContent/StatCrit
 @onready var level_label: Label = $Control/LevelBadge/LevelLabel
-## Portrét je klikatelné tlačítko (viz "Dovednostní strom" v CLAUDE.md) -
+## Portrét je klikatelné tlačítko (viz "CharacterPanel" v CLAUDE.md) -
 ## zbarví se žlutě, když čekají body schopnosti (_on_skill_points_changed()),
-## klik otevře SkillTreePanel. LevelBadge/LevelLabel zůstávají samostatné
-## sourozenecké uzly (ne děti Portrait), překryté přes jeho roh - proto mají
-## v hud.tscn mouse_filter = 2 (IGNORE), ať klik na jejich malou plochu
-## pořád propadne dolů na samotné tlačítko Portrait.
+## klik otevře CharacterPanel (Inventář/Dovednosti záložky). LevelBadge/
+## LevelLabel zůstávají samostatné sourozenecké uzly (ne děti Portrait),
+## překryté přes jeho roh - proto mají v hud.tscn mouse_filter = 2 (IGNORE),
+## ať klik na jejich malou plochu pořád propadne dolů na tlačítko Portrait.
 @onready var portrait_button: Button = $Control/Portrait
 @onready var skill_point_badge: ColorRect = $Control/SkillPointBadge
 @onready var skill_point_label: Label = $Control/SkillPointBadge/SkillPointLabel
@@ -66,25 +70,18 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 	$Control/ShopPanel/ShopCard2,
 	$Control/ShopPanel/ShopCard3,
 ]
-@onready var shop_active_label: Label = $Control/ShopPanel/ActiveLabel
-@onready var shop_active_container: Control = $Control/ShopPanel/ActiveItemsContainer
-@onready var shop_stash_label: Label = $Control/ShopPanel/StashLabel
-@onready var shop_stash_container: Control = $Control/ShopPanel/StashContainer
-## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (jen zobrazení, žádná
-## interakce - prodej/přesun do skladu se řeší jen uvnitř otevřeného
-## obchodu, viz _active_slot_widgets). Plní se pozičně podle
-## GameManager.active_shop_items, viz _refresh_shop_slots() - stejný
-## princip teď platí i pro schopnosti, viz _refresh_abilities().
-@onready var shop_slot_nodes: Array = [
-	$Control/BottomBar/ItemSlot1,
-	$Control/BottomBar/ItemSlot2,
-	$Control/BottomBar/ItemSlot3,
-	$Control/BottomBar/ItemSlot4,
-	$Control/BottomBar/ItemSlot5,
-	$Control/BottomBar/ItemSlot6,
-]
-## Šířka/mezera miniaturních slotů pro aktivní/sklad itemy uvnitř obchodu -
-## vytváří se procedurálně (viz _build_shop_stash_ui()), ne ručně v hud.tscn,
+## Aktivní/sklad sekce žijí od 2026-09-27 v CharacterPanel/InventoryTabContent
+## (dřív uvnitř ShopPanelu vedle nabídky ke koupi) - obchod teď slouží
+## VÝHRADNĚ k nákupu, správa vlastněných itemů (aktivovat/uskladnit/prodat)
+## je čistě záležitost Inventáře. GameManager.active_shop_items/
+## stash_shop_items a jejich funkce (move_shop_item_to_stash() atd.) se
+## touhle změnou vůbec nezměnily, jen se přemístilo UI nad nimi.
+@onready var inventory_active_label: Label = $Control/CharacterPanel/InventoryTabContent/ActiveLabel
+@onready var inventory_active_container: Control = $Control/CharacterPanel/InventoryTabContent/ActiveItemsContainer
+@onready var inventory_stash_label: Label = $Control/CharacterPanel/InventoryTabContent/StashLabel
+@onready var inventory_stash_container: Control = $Control/CharacterPanel/InventoryTabContent/StashContainer
+## Šířka/mezera miniaturních slotů pro aktivní/sklad itemy v Inventáři -
+## vytváří se procedurálně (viz _build_inventory_ui()), ne ručně v hud.tscn,
 ## protože 6+9=15 skoro identických bloků by bylo zbytečně křehké psát
 ## ručně. Každý widget je Dictionary {"panel", "label", "buttons": Array}.
 const SHOP_MINI_SLOT_WIDTH: float = 74.0
@@ -93,28 +90,37 @@ var _active_slot_widgets: Array = []
 var _stash_slot_widgets: Array = []
 
 ## Stejný princip jako obchodní mini-sloty, jen bez tlačítek. Hromádka
-## schopností je MIMO BottomBar (vlevo, nad zemí) a POZIČNÍ - jeden slot na
-## KAŽDOU investovanou schopnost (rank >= 1, viz _refresh_abilities()),
-## sloupce rostou svisle a při ABILITY_STACK_MAX_ROWS se zalomí do dalšího
-## sloupce vpravo, aby hromádka nikdy nezasáhla do BottomBaru - viz
-## "Hromádka schopností" v CLAUDE.md.
+## schopností je vlevo nad zemí a POZIČNÍ - jeden slot na KAŽDOU investovanou
+## schopnost (rank >= 1, viz _refresh_abilities()), sloupce rostou svisle a
+## při ABILITY_STACK_MAX_ROWS se zalomí do dalšího sloupce vpravo - viz
+## "Hromádka schopností" v CLAUDE.md (výškový limit dřív hlídal BottomBar,
+## ten je od 2026-09-27 pryč, ale zalamování zůstává stejné, jen bez
+## konkrétní spodní hranice, kterou by musel respektovat).
 const ABILITY_MINI_SLOT_WIDTH: float = 60.0
 const ABILITY_MINI_SLOT_HEIGHT: float = 48.0
 const ABILITY_MINI_SLOT_GAP: float = 4.0
 const ABILITY_STACK_MAX_ROWS: int = 6
 @onready var abilities_container: Control = $Control/AbilitiesContainer
 
-## Dovednostní strom (viz "Dovednosti (strom)" v CLAUDE.md) - SOUBĚŽNÝ
-## systém vedle AbilityDraftPanelu níže (schopnosti, náhodná nabídka), ne
-## jeho náhrada (2026-09-26 zpětná vazba - "schopnosti zachovat, ne
-## nahradit"). Otevírá se VŽDY jen kliknutím na portrét (viz portrait_button
-## výše) - žádná automatická/vynucená INTRO výjimka (odstraněna 2026-09-26,
-## stejný den - první bod schopnosti přijde normálně na úrovni 2 přes
-## _level_up(), ne dřív, takže se panel na začátku hry vůbec neukáže).
-@onready var skill_tree_panel: Panel = $Control/SkillTreePanel
-@onready var skill_tree_close_button: Button = $Control/SkillTreePanel/CloseButton
-@onready var skill_tree_points_label: Label = $Control/SkillTreePanel/PointsLabel
-@onready var skill_tree_nodes_container: Control = $Control/SkillTreePanel/NodesContainer
+## CharacterPanel (přejmenováno z dřívějšího samostatného SkillTreePanel,
+## 2026-09-27 - viz "CharacterPanel" v CLAUDE.md) je JEDNA obrazovka se dvěma
+## záložkami nahoře uprostřed: Inventář (staty + aktivní/sklad itemy, dřív
+## BottomBar + ShopPanel sekce) a Dovednosti (dřívější obsah SkillTreePanelu,
+## beze změny logiky). Otevírá se VŽDY jen kliknutím na portrét (viz
+## portrait_button výše) - žádná automatická/vynucená INTRO výjimka
+## (odstraněna 2026-09-26). Výchozí záložka při otevření je Inventář, KROMĚ
+## když čeká nevyužitý bod schopnosti (GameManager.pending_skill_points > 0) -
+## pak se rovnou otevře Dovednosti, ať žlutý odznáček na portrétu pořád
+## znamená "klikni sem a rovnou investuj", ne "klikni, pak ještě přepni
+## záložku" (viz _on_portrait_pressed()).
+@onready var character_panel: Panel = $Control/CharacterPanel
+@onready var character_panel_close_button: Button = $Control/CharacterPanel/CloseButton
+@onready var inventory_tab_button: Button = $Control/CharacterPanel/InventoryTabButton
+@onready var skill_tree_tab_button: Button = $Control/CharacterPanel/SkillTreeTabButton
+@onready var inventory_tab_content: Control = $Control/CharacterPanel/InventoryTabContent
+@onready var skill_tree_tab_content: Control = $Control/CharacterPanel/SkillTreeTabContent
+@onready var skill_tree_points_label: Label = $Control/CharacterPanel/SkillTreeTabContent/PointsLabel
+@onready var skill_tree_nodes_container: Control = $Control/CharacterPanel/SkillTreeTabContent/NodesContainer
 ## Rozměry jednoho uzlu stromu a mřížky - 4 sloupce (větve, viz
 ## GameManager.SKILL_TREE_BRANCHES), max 3 řádky (nejdelší větev).
 const SKILL_NODE_WIDTH: float = 170.0
@@ -232,15 +238,17 @@ func _ready() -> void:
 	game_over_panel.hide()
 	victory_panel.hide()
 	shop_panel.hide()
-	skill_tree_panel.hide()
+	character_panel.hide()
 	ability_draft_panel.hide()
 
 	_setup_shop_cards()
-	_build_shop_stash_ui()
+	_build_inventory_ui()
 	_build_skill_tree_ui()
 
 	portrait_button.pressed.connect(_on_portrait_pressed)
-	skill_tree_close_button.pressed.connect(_on_skill_tree_close_pressed)
+	character_panel_close_button.pressed.connect(_on_character_panel_close_pressed)
+	inventory_tab_button.pressed.connect(_on_inventory_tab_pressed)
+	skill_tree_tab_button.pressed.connect(_on_skill_tree_tab_pressed)
 
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
@@ -326,27 +334,51 @@ func _on_level_changed(new_level: int) -> void:
 	_refresh_stat_labels()
 
 
-## Klik na portrét vždy otevře strom (i s 0 čekajícími body - hráč si tak
-## může prohlédnout, co dál odemkne, aniž by nutně hned investoval). Panel
-## sám podle GameManager.can_invest_skill_point() zošedí/zamkne tlačítka,
-## která si hráč zrovna nemůže dovolit.
+## Klik na portrét vždy otevře CharacterPanel (i s 0 čekajícími body - hráč
+## si tak může prohlédnout staty/itemy nebo co dál v dovednostech odemkne,
+## aniž by nutně hned investoval). Výchozí záložka je Inventář, KROMĚ když
+## čeká nevyužitý bod schopnosti - pak rovnou Dovednosti, ať žlutý odznáček
+## na portrétu pořád znamená "klikni sem a rovnou investuj" (viz
+## character_panel doc komentář výše).
 func _on_portrait_pressed() -> void:
-	_show_skill_tree_panel()
+	_show_character_panel(GameManager.pending_skill_points <= 0)
 
 
-func _show_skill_tree_panel() -> void:
+## show_inventory_default: true otevře záložku Inventář, false Dovednosti.
+func _show_character_panel(show_inventory_default: bool) -> void:
+	_set_active_tab(show_inventory_default)
+	_refresh_inventory_ui()
 	_refresh_skill_tree_ui()
-	skill_tree_panel.show()
+	character_panel.show()
 	get_tree().paused = true
 
 
-## Zavření stromu - stejný vzor jako _on_shop_close_pressed(). Dovednostní
-## strom se od 2026-09-26 do intra vůbec nezapojuje (viz "Dovednostní strom"
-## v CLAUDE.md) - jedinou cestou z State.INTRO je zavření AbilityDraftPanelu
-## (resolve_ability_draft() → finish_intro() v game_manager.gd), takže tady
-## žádná INTRO-výjimka není potřeba.
-func _on_skill_tree_close_pressed() -> void:
-	skill_tree_panel.hide()
+func _on_inventory_tab_pressed() -> void:
+	_set_active_tab(true)
+
+
+func _on_skill_tree_tab_pressed() -> void:
+	_set_active_tab(false)
+
+
+## Přepne, který ze dvou *TabContent kontejnerů je vidět, a zvýrazní
+## odpovídající záložkové tlačítko (bílá = aktivní, LOCKED_ITEM_MODULATE =
+## neaktivní - stejný ztlumující odstín, jaký projekt už používá pro
+## nedostupné itemy/schopnosti, žádná nová barva navíc).
+func _set_active_tab(show_inventory: bool) -> void:
+	inventory_tab_content.visible = show_inventory
+	skill_tree_tab_content.visible = not show_inventory
+	inventory_tab_button.modulate = Color.WHITE if show_inventory else LOCKED_ITEM_MODULATE
+	skill_tree_tab_button.modulate = LOCKED_ITEM_MODULATE if show_inventory else Color.WHITE
+
+
+## Zavření panelu - stejný vzor jako _on_shop_close_pressed(), zavírá bez
+## ohledu na to, která záložka byla aktivní. Dovednostní strom se do intra
+## vůbec nezapojuje (viz CLAUDE.md) - jedinou cestou z State.INTRO je
+## zavření AbilityDraftPanelu (resolve_ability_draft() → finish_intro() v
+## game_manager.gd), takže tady žádná INTRO-výjimka není potřeba.
+func _on_character_panel_close_pressed() -> void:
+	character_panel.hide()
 	get_tree().paused = false
 
 
@@ -359,12 +391,12 @@ func _on_skill_points_changed(new_amount: int) -> void:
 	skill_point_label.text = "+%d" % new_amount
 	portrait_button.modulate = Color(1.0, 0.85, 0.2) if new_amount > 0 else Color.WHITE
 
-	if skill_tree_panel.visible:
+	if character_panel.visible:
 		_refresh_skill_tree_ui()
 
 
 func _on_skill_ranks_changed() -> void:
-	if skill_tree_panel.visible:
+	if character_panel.visible:
 		_refresh_skill_tree_ui()
 
 
@@ -480,9 +512,9 @@ func _on_ability_auto_toggled(enabled: bool) -> void:
 	GameManager.resolve_ability_draft(pick_index) # se zapnutým Auto se přes _on_ability_draft_ready samo prořeže i případné další čekající
 	ability_draft_panel.hide()
 	# Stejná pojistka jako v _on_ability_pick_pressed() - resolve_ability_draft()
-	# mohl synchronně otevřít ShopPanel/SkillTreePanel (odložené auto-otevření
-	# po 10. vlně, nebo navazující intro krok dovednostního stromu).
-	if not shop_panel.visible and not skill_tree_panel.visible:
+	# mohl synchronně otevřít ShopPanel (odložené auto-otevření obchodu, viz
+	# _shop_open_deferred v game_manager.gd).
+	if not shop_panel.visible and not character_panel.visible:
 		get_tree().paused = false
 
 
@@ -552,18 +584,17 @@ func _on_ability_pick_pressed(offer_index: int) -> void:
 	# (víc čekajících nabídek naráz), který už _show_ability_draft_panel()
 	# znovu zavolal a panel nechal otevřený s novým obsahem - tady ho proto
 	# zavíráme jen když už doopravdy nic dalšího nečeká. Stejně tak může
-	# synchronně otevřít ShopPanel (odložené automatické otevření po 10.
-	# vlně) NEBO SkillTreePanel (navazující intro krok dovednostního stromu,
-	# viz GameManager.resolve_ability_draft()) - odpauzovat smí, jen když
-	# ani jeden z nich zrovna NEPŘEVZAL pauzu za nás.
+	# synchronně otevřít ShopPanel (odložené automatické otevření obchodu,
+	# viz _shop_open_deferred v game_manager.gd) - odpauzovat smí, jen když
+	# ho zrovna NEPŘEVZAL pauzu za nás.
 	if GameManager.pending_ability_drafts <= 0:
 		ability_draft_panel.hide()
-		if not shop_panel.visible and not skill_tree_panel.visible:
+		if not shop_panel.visible and not character_panel.visible:
 			get_tree().paused = false
 
 
-## Hromádka VŠECH vlastněných schopností VLEVO nad zemí (mimo BottomBar, viz
-## AbilitiesContainer v hud.tscn) - POZIČNÍ, kombinuje OBA souběžné systémy
+## Hromádka VŠECH vlastněných schopností VLEVO nad zemí (viz AbilitiesContainer
+## v hud.tscn) - POZIČNÍ, kombinuje OBA souběžné systémy
 ## (viz "Schopnosti - DVA SOUBĚŽNÉ..." v game_manager.gd): nejdřív dovednostní
 ## strom (jeden slot na KAŽDOU schopnost s rank >= 1, v pevném pořadí
 ## GameManager.ABILITY_ORDER - stabilní pořadí, investování dalšího bodu do
@@ -577,8 +608,7 @@ func _on_ability_pick_pressed(offer_index: int) -> void:
 ## bude mít vyšší ZÁKLADNÍ staty bez jediné karty navíc v téhle hromádce -
 ## viditelné schopnosti tu zůstávají výhradně ty z náhodné nabídky. Sloupec
 ## roste svisle a po ABILITY_STACK_MAX_ROWS se zalomí do dalšího sloupce
-## vpravo, aby hromádka nikdy nezasáhla dolů do BottomBaru bez ohledu na to,
-## kolik toho hráč nasbírá.
+## vpravo bez ohledu na to, kolik toho hráč nasbírá.
 func _refresh_abilities() -> void:
 	for child in abilities_container.get_children():
 		child.queue_free()
@@ -632,7 +662,7 @@ func _refresh_progression() -> void:
 	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())
 	_on_skill_points_changed(GameManager.pending_skill_points)
 	_refresh_abilities()
-	_refresh_shop_slots()
+	_refresh_inventory_ui()
 	_refresh_stat_labels()
 
 
@@ -663,7 +693,7 @@ func _on_shop_card_action_pressed(slot_index: int) -> void:
 
 
 func _on_shop_inventory_changed() -> void:
-	_refresh_shop_slots()
+	_refresh_inventory_ui()
 	if shop_panel.visible:
 		_refresh_shop_panel()
 
@@ -676,7 +706,11 @@ func _on_shop_offer_changed(_offer_ids: Array) -> void:
 
 
 ## Jediný způsob, jak se ShopPanel otevírá (tlačítko Obchod bylo odstraněno
-## 2026-09-09 - obchod je teď čistě automatický, po vyčištění 10. vlny/kola).
+## 2026-09-09 - obchod je teď čistě automatický, po GameManager.
+## SHOP_OPEN_INTERVAL_SECONDS reálného přežití, viz "Kontinuální spawn/
+## obtížnost" v CLAUDE.md). ShopPanel od 2026-09-27 slouží VÝHRADNĚ k
+## nákupu - správa vlastněných itemů (aktivovat/uskladnit/prodat) žije v
+## CharacterPanel/InventoryTabContent, viz _refresh_inventory_ui() níže.
 func _on_shop_auto_open_requested() -> void:
 	_refresh_shop_panel()
 	shop_panel.show()
@@ -717,20 +751,22 @@ func _refresh_shop_panel() -> void:
 	shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
 	shop_reroll_button.disabled = not GameManager.can_reroll_shop()
 
-	_refresh_shop_stash_ui()
+	_refresh_inventory_ui()
 
 
 ## Vytvoří 6 aktivních + 9 sklad miniaturních slotů PROCEDURÁLNĚ (viz
-## _create_shop_mini_slot()) - psát 15 skoro identických bloků ručně v
-## hud.tscn by bylo zbytečně křehké. Volá se jednou v _ready().
-func _build_shop_stash_ui() -> void:
+## _create_inventory_mini_slot()) - psát 15 skoro identických bloků ručně v
+## hud.tscn by bylo zbytečně křehké. Volá se jednou v _ready(). Uzly žijí v
+## CharacterPanel/InventoryTabContent (přesunuto ze ShopPanelu 2026-09-27,
+## viz "CharacterPanel" v CLAUDE.md) - obchod teď slouží jen k nákupu.
+func _build_inventory_ui() -> void:
 	for i in GameManager.SHOP_ACTIVE_SLOTS:
-		var widget: Dictionary = _create_shop_mini_slot(shop_active_container, i, ["Uskladnit"])
+		var widget: Dictionary = _create_inventory_mini_slot(inventory_active_container, i, ["Uskladnit"])
 		widget["buttons"][0].pressed.connect(_on_active_slot_stash_pressed.bind(i))
 		_active_slot_widgets.append(widget)
 
 	for i in GameManager.SHOP_STASH_SLOTS:
-		var widget: Dictionary = _create_shop_mini_slot(shop_stash_container, i, ["Aktivovat", "Prodat"])
+		var widget: Dictionary = _create_inventory_mini_slot(inventory_stash_container, i, ["Aktivovat", "Prodat"])
 		widget["buttons"][0].pressed.connect(_on_stash_slot_activate_pressed.bind(i))
 		widget["buttons"][1].pressed.connect(_on_stash_slot_sell_pressed.bind(i))
 		_stash_slot_widgets.append(widget)
@@ -739,7 +775,7 @@ func _build_shop_stash_ui() -> void:
 ## Jeden miniaturní slot: Panel s Labelem (2 řádky - krátký název + rarita)
 ## a N tlačítky pod sebou. Vrací Dictionary s referencemi, aby refresh/
 ## wiring nemusely znovu procházet strom uzlů přes get_node().
-func _create_shop_mini_slot(parent: Control, index: int, button_texts: Array) -> Dictionary:
+func _create_inventory_mini_slot(parent: Control, index: int, button_texts: Array) -> Dictionary:
 	var panel := Panel.new()
 	panel.position = Vector2(index * (SHOP_MINI_SLOT_WIDTH + SHOP_MINI_SLOT_GAP), 0.0)
 	panel.size = Vector2(SHOP_MINI_SLOT_WIDTH, 28.0 + button_texts.size() * 18.0)
@@ -779,14 +815,16 @@ func _on_stash_slot_sell_pressed(index: int) -> void:
 	GameManager.sell_shop_item("stash", index)
 
 
-## Překreslí aktivní/sklad miniaturní sloty a hlavičky "(N/6)"/"(N/9)" -
-## volá se z _refresh_shop_panel(), takže pokaždé, když je obchod otevřený
-## a něco se změnilo (nákup, sloučení, přesun, prodej).
-func _refresh_shop_stash_ui() -> void:
-	shop_active_label.text = "Aktivní itemy (%d/%d)" % [
+## Překreslí aktivní/sklad miniaturní sloty a hlavičky "(N/6)"/"(N/9)" v
+## Inventáři - volá se z _refresh_shop_panel() (nákup/reroll v otevřeném
+## obchodě), _refresh_progression() a _on_shop_inventory_changed(), takže
+## zůstává čerstvé i když CharacterPanel zrovna není otevřený (stejný vzor
+## jako _refresh_abilities()).
+func _refresh_inventory_ui() -> void:
+	inventory_active_label.text = "Aktivní itemy (%d/%d)" % [
 		GameManager.active_shop_items.size(), GameManager.SHOP_ACTIVE_SLOTS
 	]
-	shop_stash_label.text = "Sklad (%d/%d)" % [
+	inventory_stash_label.text = "Sklad (%d/%d)" % [
 		GameManager.stash_shop_items.size(), GameManager.SHOP_STASH_SLOTS
 	]
 
@@ -794,26 +832,26 @@ func _refresh_shop_stash_ui() -> void:
 		var widget: Dictionary = _active_slot_widgets[i]
 		if i < GameManager.active_shop_items.size():
 			var entry: Dictionary = GameManager.active_shop_items[i]
-			_fill_shop_mini_slot(widget, entry)
+			_fill_inventory_mini_slot(widget, entry)
 			widget["buttons"][0].disabled = false
 		else:
-			_clear_shop_mini_slot(widget)
+			_clear_inventory_mini_slot(widget)
 			widget["buttons"][0].disabled = true
 
 	for i in _stash_slot_widgets.size():
 		var widget: Dictionary = _stash_slot_widgets[i]
 		if i < GameManager.stash_shop_items.size():
 			var entry: Dictionary = GameManager.stash_shop_items[i]
-			_fill_shop_mini_slot(widget, entry)
+			_fill_inventory_mini_slot(widget, entry)
 			widget["buttons"][0].disabled = GameManager.active_shop_items.size() >= GameManager.SHOP_ACTIVE_SLOTS
 			widget["buttons"][1].disabled = false
 		else:
-			_clear_shop_mini_slot(widget)
+			_clear_inventory_mini_slot(widget)
 			widget["buttons"][0].disabled = true
 			widget["buttons"][1].disabled = true
 
 
-func _fill_shop_mini_slot(widget: Dictionary, entry: Dictionary) -> void:
+func _fill_inventory_mini_slot(widget: Dictionary, entry: Dictionary) -> void:
 	var definition: Dictionary = GameManager.SHOP_ITEMS[entry["item_id"]]
 	var label: Label = widget["label"]
 	label.text = "%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]]]
@@ -824,35 +862,10 @@ func _fill_shop_mini_slot(widget: Dictionary, entry: Dictionary) -> void:
 	]
 
 
-func _clear_shop_mini_slot(widget: Dictionary) -> void:
+func _clear_inventory_mini_slot(widget: Dictionary) -> void:
 	widget["label"].text = "-"
 	widget["label"].tooltip_text = ""
 	widget["panel"].modulate = LOCKED_ITEM_MODULATE
-
-
-## Zobrazuje AKTIVNÍ obchodní itemy v BottomBaru (mimo obchod samotný) - stejný
-## poziční princip jako _refresh_abilities() (podle GameManager.active_shop_items
-## Array), takže prázdné sloty jsou vždy na konci bez ohledu na to, který
-## konkrétní item byl prodán/uskladněn. Sklad se tu nezobrazuje vůbec - ten je
-## vidět jen uvnitř otevřeného obchodu (viz _refresh_shop_stash_ui()).
-func _refresh_shop_slots() -> void:
-	for i in shop_slot_nodes.size():
-		var slot: ColorRect = shop_slot_nodes[i]
-		var label: Label = slot.get_node("Label")
-
-		if i < GameManager.active_shop_items.size():
-			var entry: Dictionary = GameManager.active_shop_items[i]
-			var definition: Dictionary = GameManager.SHOP_ITEMS[entry["item_id"]]
-			label.text = "%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]]]
-			slot.modulate = Color.WHITE
-			slot.tooltip_text = "%s (%s)\n%s" % [
-				definition["name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]],
-				GameManager.get_shop_item_desc(entry["item_id"], entry["rarity"])
-			]
-		else:
-			label.text = "-"
-			slot.modulate = LOCKED_ITEM_MODULATE
-			slot.tooltip_text = ""
 
 
 ## Obchod hru pozastaví přes get_tree().paused. HUD má process_mode ALWAYS,
@@ -865,7 +878,7 @@ func _on_shop_close_pressed() -> void:
 
 func show_game_over(survival_time: float, currency: int) -> void:
 	_close_shop()
-	_close_skill_tree_panel()
+	_close_character_panel()
 	_close_ability_draft_panel()
 	game_over_label.text = "Game Over!\nPřežitý čas: %s\nÚroveň: %d\nZlato: %d" % [
 		GameManager.format_survival_time(survival_time), GameManager.player_level, currency
@@ -876,7 +889,7 @@ func show_game_over(survival_time: float, currency: int) -> void:
 
 func show_victory(currency: int) -> void:
 	_close_shop()
-	_close_skill_tree_panel()
+	_close_character_panel()
 	_close_ability_draft_panel()
 	victory_label.text = "Level dokončen!\nÚroveň: %d\nZlato: %d" % [GameManager.player_level, currency]
 	victory_panel.show()
@@ -892,8 +905,8 @@ func _close_shop() -> void:
 ## zafunguje i přes pauzu otevřeného stromu; kdyby to vyvolalo Game Over
 ## uprostřed otevřeného panelu, tohle ho zavře stejně jako _close_shop() dělá
 ## pro Obchod.
-func _close_skill_tree_panel() -> void:
-	skill_tree_panel.hide()
+func _close_character_panel() -> void:
+	character_panel.hide()
 	get_tree().paused = false
 
 
@@ -927,7 +940,7 @@ func _restart_game() -> void:
 	_end_screen_countdown_active = false
 	game_over_panel.hide()
 	victory_panel.hide()
-	skill_tree_panel.hide()
+	character_panel.hide()
 	ability_draft_panel.hide()
 	get_tree().paused = false
 	get_tree().reload_current_scene()
