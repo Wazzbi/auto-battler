@@ -58,23 +58,18 @@ time, not only by win/lose or average survival wave. Planned: a Debug panel tele
 (concurrent enemy count, "close calls" — HP dropping low and recovering) to make this shape
 observable during manual playtesting, not yet built.
 
-**TOP-DOWN PIVOT IN PROGRESS (started 2026-09-27)**: this project is being converted from the
-horizontal side-scrolling auto-battler described below into a top-down "Vampire Survivors"-style
-game — free 2D player movement via keyboard input, enemies swarming from all directions,
-continuous time-based spawning instead of discrete waves/loops. See the approved plan at
-`C:\Users\david\.claude\plans\validated-jumping-fairy.md` for the full phased breakdown. Phases
-land as separate PRs; **CLAUDE.md is updated phase-by-phase, not all at once** — so at any point
-during this pivot, some sections below describe the OLD side-scrolling behavior (still accurate
-until their phase lands) and some describe the NEW top-down behavior (already landed). Each
-updated section says explicitly which it is. **Landed so far**: Fáze 0+1 (free 2D player
-movement, decoupled from combat — see "player.gd" below, PR #42), Fáze 2 (symmetric camera
-centering — see "Camera/scrolling model" below, PR #43), Fáze 3 (aimed projectiles — see "Enemy
-projectiles are their own script" below, PR #44), Fáze 4 (2D enemy movement + ring spawn — see
-"Enemies don't block each other" and `main.gd`'s `_spawn_around_player()` below, PR #45), Fáze 5
-(2D ground rendering — see "Ground renders infinitely in 2D" below, this PR). **Not yet landed**:
-continuous spawn/difficulty (waves/loops still exist and work as documented below until that phase
-lands — this is the last remaining phase)
-(waves/loops still exist and work as documented below until that phase lands).
+**TOP-DOWN PIVOT COMPLETE (2026-09-27)**: this project was converted from the horizontal
+side-scrolling auto-battler into a top-down "Vampire Survivors"-style game — free 2D player
+movement via keyboard input, enemies swarming from all directions, continuous survival-time-driven
+spawning instead of discrete waves/loops. All 6 phases landed the same day (PRs #42-#47); the
+original phased plan lived at `C:\Users\david\.claude\plans\validated-jumping-fairy.md`, which has
+since been reused for later unrelated plans (that file is a scratch workspace, not a permanent
+record — treat it as stale/irrelevant to this pivot by the time you're reading this). Two follow-up
+changes landed later the same day: moving `BottomBar` into a new `CharacterPanel` behind the avatar
+click (see "CharacterPanel" below, PR #48), and replacing the schopnosti offer's time-based trigger
+with a kill-count one (see "Schopnosti na základě zabití" below). If you see a section below still
+describing OLD side-scrolling behavior without a STALE marker, treat it as a documentation gap, not
+current truth — the code itself is fully top-down.
 
 **Camera/scrolling model — TOP-DOWN, updated 2026-09-27**: the `Camera2D` (`Main/Camera2D` in
 `main.tscn`, script `scenes/camera_follow.gd`) is an **independent sibling node, not a child of
@@ -297,10 +292,12 @@ Three independent systems key off it now, each replacing a wave/loop-triggered e
   ENEMY_HP_GROWTH_PER_MINUTE` (continuous-in-time, replaces the old stepped
   `1.0 + (loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP`) — `main.gd`'s `_spawn_around_player()` applies
   it to `enemy.max_hp` *before* `add_child()`, exactly as before (unchanged call site).
-- **Schopnosti (random draft) offers**: an internal `_ability_offer_timer` accumulator fires
-  `pending_ability_drafts += 1` / `_try_offer_next_ability_draft()` every `ABILITY_OFFER_INTERVAL_
-  SECONDS` (first-pass guess: 45s) — replaces the old "every wave clear" trigger, same downstream
-  offer/resolve machinery untouched.
+- **STALE (2026-09-27, later the same day) — schopnosti offers are no longer time-based at all.**
+  This bullet originally described a `_ability_offer_timer` accumulator (`ABILITY_OFFER_INTERVAL_
+  SECONDS`, ~45s) — removed the same day in favor of a KILL-COUNT trigger with a world pickup, see
+  "Schopnosti na základě zabití" below for the full replacement. The downstream offer/resolve
+  machinery (`pending_ability_drafts`/`_try_offer_next_ability_draft()`) is unchanged either way —
+  only what increments `pending_ability_drafts` changed.
 - **Periodic shop**: an internal `_shop_open_timer` accumulator calls `_open_periodic_shop()` every
   `SHOP_OPEN_INTERVAL_SECONDS` (first-pass guess: 240s/4min) — replaces "every loop transition
   (wave-10 clear)". The `_shop_open_deferred`/`_try_open_pending_shop()` collision-avoidance
@@ -352,11 +349,59 @@ grows continuously, and `format_survival_time()` formats correctly; a scene-leve
 Elite checkpoints queue exactly once per crossing (not per frame), the ranged/sniper ramp responds
 to time instead of wave number, the HUD's survival-timer label updates from the signal, and
 `debug_kill_all_enemies()` actually kills real enemy instances. **Not yet balance-tuned** — every
-"first-pass guess" number above (`ABILITY_OFFER_INTERVAL_SECONDS`, `SHOP_OPEN_INTERVAL_SECONDS`,
-`ENEMY_HP_GROWTH_PER_MINUTE`, `seconds_per_wave_equivalent`, `elite_checkpoints_seconds`,
-`variant_ramp_start_time`/`variant_ramp_full_time`) is a structural placeholder, not a value derived
-from playtesting or simulation — expect all of them to need revisiting once the continuous game is
-actually played for a while, same as every other tunable in this project historically has.
+"first-pass guess" number above (`SHOP_OPEN_INTERVAL_SECONDS`, `ENEMY_HP_GROWTH_PER_MINUTE`,
+`seconds_per_wave_equivalent`, `elite_checkpoints_seconds`, `variant_ramp_start_time`/
+`variant_ramp_full_time`) is a structural placeholder, not a value derived from playtesting or
+simulation — expect all of them to need revisiting once the continuous game is actually played for
+a while, same as every other tunable in this project historically has. (`ABILITY_OFFER_INTERVAL_
+SECONDS` itself is GONE, replaced the same day — see "Schopnosti na základě zabití" immediately
+below.)
+
+**Schopnosti na základě zabití — nahrazuje časovač zeleným kosočtvercem** (2026-09-27, později
+téhož dne jako Fáze 6 - explicit user request: "tempo voleb se má odvíjet od toho, co hráč dělá,
+ne od hodin"). `ABILITY_OFFER_INTERVAL_SECONDS`/`_ability_offer_timer` jsou PRYČ - `GameManager.
+_process()` už nabídku schopností vůbec nespouští. Místo toho:
+
+- **`GameManager.enemies_killed: int`** počítá CELKOVÝ počet zabití za aktuální běh (resetuje se v
+  `reset_game()`). `enemy_defeated()` po každém zabití zavolá `_register_kill_toward_ability_
+  pickup(death_position)`, která porovná `enemies_killed` s `_ability_kill_threshold(
+  _ability_offers_granted_by_kills)` - kumulativním prahem pro DALŠÍ nabídku.
+- **Odmocninová křivka** (stejná filozofie jako `_get_target_concurrent_count()` v `main.gd` -
+  postupný, ne skokový růst): `_ability_kill_threshold(offer_index) = round(ABILITY_KILL_THRESHOLD_
+  COEFFICIENT * (offer_index + 1)^1.5)`. S koeficientem 10 (PRVNÍ ODHAD, needoladěné hraním): 10,
+  28, 52, 80, 112, 147, 185, 226, 270, 316 zabití pro prvních 10 nabídek - blízko uživatelem
+  navržených orientačních bodů (10/30/50), jen jako hladká křivka místo tří čísel natvrdo.
+- **Kill, který práh překročí, NEspustí nabídku okamžitě** - jen emitne `ability_pickup_dropped
+  (death_position)`. `main.gd` na to reaguje spawnutím `ability_pickup_scene`
+  (`scenes/pickups/ability_pickup.tscn`) přesně na místě smrti (`_on_ability_pickup_dropped()`) -
+  `GameManager` nezná scény/pozice sám o sobě, jen řekne KDY a KDE main.gd (vlastník veškerého
+  spawnování) má něco vytvořit, stejný princip jako u nepřátel.
+- **`scenes/pickups/ability_pickup.gd`** - zelený kosočtverec (`Polygon2D`, 4 body, žádný obrázkový
+  asset - stejná procedurální filozofie jako zbytek projektu). `_process()` každý snímek kontroluje
+  vzdálenost k hráči (`get_first_node_in_group("player")`, stejný vzor jako `enemy.gd`); jakmile je
+  hráč do `pickup_radius` (40px), zavolá `GameManager.request_ability_offer()` (veřejná obálka nad
+  `pending_ability_drafts += 1`/`_try_offer_next_ability_draft()` - stejná fronta/mechanismus, jaký
+  dřív spouštěl časovač) a HNED se zničí (`queue_free()`). **Zmizí při doteku, NE až po skutečném
+  výběru v panelu** - explicit user rozhodnutí: vizuálně nerozeznatelné (panel hru pauzne prakticky
+  ve stejném snímku), ale jednodušší a bez rizika, že by dva současně ležící kosočtverce (hráč
+  ignoruje první, zabije dost na druhý) spletly, který patří ke které nabídce.
+- **Více kosočtverců může ležet na poli současně** - žádné omezení na počet, protože fronta
+  (`pending_ability_drafts`) už zvládá víc čekajících nabídek sekvenčně (stejný mechanismus, jaký
+  dřív řešil kolizi na hranici 10. vlny). Pokud hráč sebere druhý kosočtverec dřív než první, prostě
+  dostane dvě nabídky za sebou - žádné speciální řešení pořadí není potřeba.
+- **`request_ability_offer()` je nové veřejné rozhraní** nahrazující přímé sahání na privátní
+  `_try_offer_next_ability_draft()` zvenčí - `debug_force_ability_draft()` je teď jen tenký alias
+  nad ním. Nové Debug tlačítko **"+10 zabití"** (`GameManager.debug_add_kills(10)`) pro rychlé
+  přiblížení se dalšímu prahu bez grindění.
+- **Obchod zůstává na časovači** (`SHOP_OPEN_INTERVAL_SECONDS`, beze změny) - explicit user
+  rozhodnutí "obchod necháme zatím na timing, vyřešíme to později", tahle změna se týká VÝHRADNĚ
+  nabídky schopností.
+- **Verified with headless tests at both layers**: pure-logic test potvrdil přesné hodnoty křivky
+  pro prvních 10 nabídek, že `enemy_defeated()` emitne `ability_pickup_dropped` PŘESNĚ na zabití,
+  co práh překročí (ne dřív, ne vícekrát), s korektní pozicí, a že obchodní časovač zůstal
+  nedotčený; scéna-level test (real `main.tscn`) potvrdil, že `main.gd` spawne kosočtverec přesně
+  na hlášenou pozici, že se nesebere z dálky, že se sebere a vyžádá nabídku při vstupu do
+  `pickup_radius`, a že se okamžitě zničí.
 
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is

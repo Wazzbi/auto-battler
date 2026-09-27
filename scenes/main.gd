@@ -53,6 +53,11 @@ extends Node2D
 ## nepřátelé - nahrazuje dřívější "jen na 10. vlně". PRVNÍ ODHAD (každé 3
 ## minuty), needoladěné hraním.
 @export var elite_checkpoints_seconds: Array[float] = [180.0, 360.0, 540.0, 720.0, 900.0]
+## Scéna zeleného kosočtverce (viz "Schopnosti na základě zabití" v
+## CLAUDE.md) - main.gd ho spawne na místě smrti nepřítele, který překročil
+## další práh zabití (GameManager.ability_pickup_dropped), stejně jako
+## spawnuje nepřátele - vlastní scénu/pozici, GameManager jen řekne KDY a KDE.
+@export var ability_pickup_scene: PackedScene
 
 @onready var player: Node2D = $Player
 @onready var camera: Camera2D = $Camera2D
@@ -77,6 +82,7 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	GameManager.game_over_triggered.connect(_on_game_over)
 	GameManager.game_won_triggered.connect(_on_game_won)
+	GameManager.ability_pickup_dropped.connect(_on_ability_pickup_dropped)
 
 	hud.connect_player(player)
 	hud.connect_main(self)
@@ -198,6 +204,19 @@ func _on_game_over() -> void:
 
 func _on_game_won() -> void:
 	hud.show_victory(GameManager.currency)
+
+
+## Zavolá GameManager.enemy_defeated(), když zabitý nepřítel překročí další
+## kumulativní práh zabití (viz "Schopnosti na základě zabití" v CLAUDE.md) -
+## spawne zelený kosočtverec na místě smrti. Samotné vyžádání nabídky
+## (GameManager.request_ability_offer()) proběhne až při sebrání, viz
+## ability_pickup.gd.
+func _on_ability_pickup_dropped(position: Vector2) -> void:
+	if ability_pickup_scene == null:
+		return
+	var pickup: Node2D = ability_pickup_scene.instantiate()
+	add_child(pickup)
+	pickup.global_position = position
 
 
 # --- Debug panel ---------------------------------------------------------

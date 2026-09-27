@@ -33,6 +33,13 @@ signal skill_ranks_changed
 ## dovednostního stromu výše - obě sdílí stejný `ABILITIES` katalog, ale
 ## každý svým vlastním mechanismem (viz "Schopnosti (náhodná nabídka)").
 signal ability_draft_ready(offered: Array)
+## Emitne se na zabití, které překročí další kumulativní práh zabití (viz
+## _ability_kill_threshold() a "Schopnosti na základě zabití" v CLAUDE.md) -
+## `position` je pozice, kde nepřítel zemřel. main.gd na to reaguje spawnutím
+## zeleného kosočtverce (ability_pickup.tscn) na tom místě; samotná nabídka
+## (pending_ability_drafts/ability_draft_ready) se NEspustí hned tady, ale
+## až hráč kosočtverec doopravdy sebere (viz request_ability_offer()).
+signal ability_pickup_dropped(position: Vector2)
 ## Emitne se po přidání nebo sloučení SCHOPNOSTI (owned_abilities) - HUD
 ## podle toho překreslí sloty vlastněných schopností. Bez parametru (jako
 ## shop_inventory_changed), protože jeden ability_id může mít víc současně
@@ -66,11 +73,12 @@ enum State { INTRO, PLAYING, GAME_OVER, WON }
 ## do budoucna se čeká na komplexnější systém (nové typy nepřátel, jiné
 ## staty, ...), viz get_enemy_hp_multiplier().
 const ENEMY_HP_GROWTH_PER_MINUTE: float = 0.15
-## Jak často (v sekundách reálného přežití) přijde nová nabídka SCHOPNOSTÍ
-## (náhodný draft) - nahrazuje dřívější "po každé vlně". PRVNÍ ODHAD, ne
-## doladěné hraním - má nahradit rytmus, který dřív diktovalo tempo zabíjení,
-## teď je to čistě čas.
-const ABILITY_OFFER_INTERVAL_SECONDS: float = 45.0
+## Koeficient křivky pro kumulativní počet zabití potřebný na n-tou nabídku
+## SCHOPNOSTÍ (náhodný draft) - viz _ability_kill_threshold() a "Schopnosti
+## na základě zabití" v CLAUDE.md. Nahrazuje ABILITY_OFFER_INTERVAL_SECONDS
+## (2026-09-27, explicit user request - tempo voleb se má odvíjet od toho,
+## co hráč dělá /zabíjí/, ne od hodin). PRVNÍ ODHAD, ne doladěné hraním.
+const ABILITY_KILL_THRESHOLD_COEFFICIENT: float = 10.0
 ## Jak často (v sekundách reálného přežití) se automaticky otevře obchod -
 ## nahrazuje dřívější "na konci každého kola (10 vln)". PRVNÍ ODHAD.
 const SHOP_OPEN_INTERVAL_SECONDS: float = 240.0
@@ -305,9 +313,10 @@ const SHOP_RARITY_COLORS: Array[Color] = [
 ## 2) **SCHOPNOSTI (náhodná nabídka)** - stejné jako PŮVODNÍ systém před
 ##    2026-09-26 (rarity+merge draft, `owned_abilities`/`pending_ability_drafts`
 ##    atd., viz "Schopnosti (náhodná nabídka)" níže) - spouštěč: po dopadu
-##    (jako vždy) A po každých `ABILITY_OFFER_INTERVAL_SECONDS` sekundách
-##    reálného přežití (top-down pivot Fáze 6, `_process()` výše - dřív po
-##    KAŽDÉ vlně, `_on_wave_cleared()`, teď na vlnách vůbec nezávisí).
+##    (jako vždy) A po překročení dalšího kumulativního prahu zabití (viz
+##    "Schopnosti na základě zabití", `_ability_kill_threshold()` v
+##    `enemy_defeated()` - top-down pivot Fáze 6 nejdřív svázal tenhle
+##    spouštěč s časem, 2026-09-27 přešel na počet zabití).
 ##
 ## Aby oba systémy mohly sdílet stejný `ABILITIES[id]` a přesto škálovat
 ## nezávisle, má aktivní schopnost DVĚ oddělená pole trigger hodnot:
@@ -434,10 +443,10 @@ const SKILL_TREE_BRANCHES: Array[Array] = [
 ## `ABILITIES` katalogem jako dovednostní strom výše - hráč tak může mít
 ## třeba "Jádro síly" na dovednostním stupni 2/3 A ZÁROVEŇ vlastnit 1
 ## nezávislou Stříbrnou kopii z náhodné nabídky, obojí se sčítá do
-## `get_stat_bonus()`. Spouštěč: po dopadové animaci (jako vždy) a po každých
-## `ABILITY_OFFER_INTERVAL_SECONDS` sekundách reálného přežití (top-down
-## pivot Fáze 6, `_process()` výše) - NE po level-upu, to je jen dovednostní
-## strom (viz výše).
+## `get_stat_bonus()`. Spouštěč: po dopadové animaci (jako vždy) a po sebrání
+## kosočtverce, který dropne na dalším prahu zabití (viz "Schopnosti na
+## základě zabití" níže) - NE po level-upu, to je jen dovednostní strom
+## (viz výše).
 const ABILITY_CHOICE_COUNT: int = 3
 ## Kolik stejných kopií stejné rarity stačí na sloučení do vyšší rarity - míň
 ## než obchodních 3 (viz SHOP_RARITY_* sekce), protože schopnosti se nabízí
@@ -455,10 +464,19 @@ const PASSIVE_EFFECT_MULTIPLIERS: Array[float] = [1.0, 1.5, 2.25, 3.5]
 ## jako jediný zdroj obtížnostní/tempové progrese (top-down pivot 2026-09-27,
 ## Fáze 6). Resetuje se jen na skutečný Game Over (reset_game()).
 var survival_time: float = 0.0
-## Akumulátor pro ABILITY_OFFER_INTERVAL_SECONDS/SHOP_OPEN_INTERVAL_SECONDS -
-## viz _process() níže.
-var _ability_offer_timer: float = 0.0
+## Akumulátor pro SHOP_OPEN_INTERVAL_SECONDS - viz _process() níže. Obchod
+## zůstává na časovači (explicit user request 2026-09-27 - "obchod necháme
+## zatím na timing, vyřešíme to později"), jen nabídka schopností přešla na
+## počet zabití, viz enemies_killed/_ability_kill_threshold() níže.
 var _shop_open_timer: float = 0.0
+## Celkový počet zabitých nepřátel za AKTUÁLNÍ běh - jediný vstup pro
+## _ability_kill_threshold(). Resetuje se v reset_game().
+var enemies_killed: int = 0
+## Kolik nabídek schopností už bylo vyvoláno přes práh zabití (NE kolik jich
+## hráč reálně sebral - to sleduje pending_ability_drafts/owned_abilities) -
+## index do _ability_kill_threshold(), roste o 1 pokaždé, když enemy_defeated()
+## zjistí, že enemies_killed překročil další práh a emitne ability_pickup_dropped.
+var _ability_offers_granted_by_kills: int = 0
 var currency: int = 0
 ## Nakrafťovaná surovina (šrot) - vstup pro budoucí blueprinty/crafting v
 ## obchodě (viz "Suroviny a crafting" v CLAUDE.md). Zatím jediný typ suroviny,
@@ -524,16 +542,15 @@ var shop_offer: Array[Dictionary] = []
 ## Kolikrát byla aktuální nabídka přehozená - roste s reroll_shop(), resetuje
 ## se na 0 při každé nové nabídce. Určuje cenu dalšího rerollu.
 var shop_reroll_count: int = 0
-## true od chvíle, co hráč v AKTUÁLNÍM běhu poprvé dohrál 10. vlnu - do té
-## doby je tlačítko Obchod v HUD neaktivní/šedé (viz hud.gd). Resetuje se
-## v reset_game() jako všechno ostatní run-scoped - nový běh musí 10. vlnu
-## dohrát znovu, stejně jako musí znovu sbírat úrovně a itemy.
+## true od chvíle, co v AKTUÁLNÍM běhu poprvé uplynul SHOP_OPEN_INTERVAL_
+## SECONDS - do té doby obchod vůbec nemá žádnou nabídku (viz hud.gd).
+## Resetuje se v reset_game() jako všechno ostatní run-scoped.
 var shop_available: bool = false
 ## true, když čeká na otevření AUTOMATICKY otevřená nabídka obchodu (viz
 ## SHOP_OPEN_INTERVAL_SECONDS), ale zrovna běží nevyřízená nabídka schopnosti -
-## viz _try_open_pending_shop(). Řeší kolizi: dva nezávislé časovače
-## (_ability_offer_timer/_shop_open_timer v _process()) se mohou trefit do
-## stejné sekundy, takže bez tohohle odložení by AbilityDraftPanel a
+## viz _try_open_pending_shop(). Řeší kolizi: obchodní časovač a sebrání
+## kosočtverce schopnosti (viz request_ability_offer()) se mohou trefit do
+## stejné chvíle, takže bez tohohle odložení by AbilityDraftPanel a
 ## ShopPanel mohly naskočit na sobě současně.
 var _shop_open_deferred: bool = false
 ## DEBUG: když true, reroll_shop() nic neúčtuje - pro rychlé testování bez
@@ -548,8 +565,9 @@ var debug_free_reroll: bool = false
 ## hráč by se po restartu naskočil se staty z předchozí hry.
 func reset_game() -> void:
 	survival_time = 0.0
-	_ability_offer_timer = 0.0
 	_shop_open_timer = 0.0
+	enemies_killed = 0
+	_ability_offers_granted_by_kills = 0
 	currency = 0
 	enemies_alive = 0
 	state = State.INTRO
@@ -570,24 +588,16 @@ func reset_game() -> void:
 
 
 ## Tiká jen ve State.PLAYING (stejný guard pattern jako player.gd's _process()
-## pro HP regen atd.) - jediné místo, které pohání celý kontinuální systém:
-## survival_time roste, a jakmile ABILITY_OFFER_INTERVAL_SECONDS/
-## SHOP_OPEN_INTERVAL_SECONDS uplyne, spustí se přesně ten samý mechanismus,
-## který dřív spouštěl _on_wave_cleared() (pending_ability_drafts/
-## _try_offer_next_ability_draft()) resp. _start_new_loop() (_open_periodic_
-## shop()) - jen jiný spouštěč, ne jiná logika po spuštění.
+## pro HP regen atd.) - pohání survival_time a periodický obchod
+## (SHOP_OPEN_INTERVAL_SECONDS, zatím zůstává na časovači, viz _shop_open_timer
+## výše). Nabídka schopností už NENÍ časová - viz enemy_defeated()/
+## _ability_kill_threshold() níže.
 func _process(delta: float) -> void:
 	if state != State.PLAYING:
 		return
 
 	survival_time += delta
 	survival_time_changed.emit(survival_time)
-
-	_ability_offer_timer += delta
-	if _ability_offer_timer >= ABILITY_OFFER_INTERVAL_SECONDS:
-		_ability_offer_timer -= ABILITY_OFFER_INTERVAL_SECONDS
-		pending_ability_drafts += 1
-		_try_offer_next_ability_draft()
 
 	_shop_open_timer += delta
 	if _shop_open_timer >= SHOP_OPEN_INTERVAL_SECONDS:
@@ -602,19 +612,55 @@ func register_enemy_spawned() -> void:
 	enemies_alive += 1
 
 
-## Zavolá nepřítel při své smrti - přidá měnu, suroviny i XP. STALE poznámka:
+## Zavolá nepřítel při své smrti - přidá měnu, suroviny i XP a zkontroluje,
+## jestli tenhle konkrétní zabitý nepřítel překročil další kumulativní práh
+## zabití (viz _ability_kill_threshold() níže) - pokud ano, emitne
+## ability_pickup_dropped(death_position), na což main.gd reaguje spawnutím
+## zeleného kosočtverce (viz "Schopnosti na základě zabití" v CLAUDE.md).
+## `death_position` je nepovinná (default Vector2.ZERO) jen kvůli zpětné
+## kompatibilitě volajících, co pozici neznají - v praxi ji vždycky posílá
+## enemy.gd's _die() (global_position v okamžiku smrti). STALE poznámka:
 ## dřív tu byla i kontrola "vlna vyčištěná" (enemies_alive<=0 &&
 ## enemies_remaining_to_spawn<=0 -> _on_wave_cleared()) - ta odpadla úplně
-## spolu s celým vlnovým systémem (Fáze 6); spawn nepřátel i milníky
-## (schopnosti/obchod) teď běží čistě na čase (viz _process() výše), ne na
-## tom, kolik jich hráč zrovna zabil.
-func enemy_defeated(reward: int, xp_reward: int, scrap_reward: int = 0) -> void:
+## spolu s celým vlnovým systémem (Fáze 6); spawn nepřátel a obchod běží na
+## čase (viz _process() výše), nabídka schopností teď na počtu zabití.
+func enemy_defeated(reward: int, xp_reward: int, scrap_reward: int = 0, death_position: Vector2 = Vector2.ZERO) -> void:
 	currency += reward
 	currency_changed.emit(currency)
 	scrap += scrap_reward
 	scrap_changed.emit(scrap)
 	add_xp(xp_reward)
 	enemies_alive -= 1
+
+	_register_kill_toward_ability_pickup(death_position)
+
+
+## Sdíleno mezi enemy_defeated() a debug_add_kills() - vytažené zvlášť, ať
+## debug tlačítko nemusí duplikovat práh-kontrolní logiku.
+func _register_kill_toward_ability_pickup(death_position: Vector2) -> void:
+	enemies_killed += 1
+	if enemies_killed >= _ability_kill_threshold(_ability_offers_granted_by_kills):
+		_ability_offers_granted_by_kills += 1
+		ability_pickup_dropped.emit(death_position)
+
+
+## Kumulativní počet zabití potřebný na (offer_index + 1)-tou nabídku
+## schopností po zabíjení (offer_index je 0-indexovaný - 0 pro první
+## nabídku). Odmocninová křivka (stejná filozofie jako
+## _get_target_concurrent_count() v main.gd - postupný, ne skokový růst):
+## 10, 28, 52, 80, 112, 147, 185, 226, 270, 316 pro prvních 10 nabídek s
+## ABILITY_KILL_THRESHOLD_COEFFICIENT=10. PRVNÍ ODHAD koeficientu.
+func _ability_kill_threshold(offer_index: int) -> int:
+	return int(round(ABILITY_KILL_THRESHOLD_COEFFICIENT * pow(offer_index + 1, 1.5)))
+
+
+## Veřejné rozhraní pro "hráč právě sebral kosočtverec schopnosti" (viz
+## ability_pickup.gd) - stejná fronta/mechanismus, jaký dřív spouštěl
+## časovač nebo _on_wave_cleared(), jen se veřejně pojmenovaným vstupním
+## bodem místo sahání na privátní _try_offer_next_ability_draft() zvenčí.
+func request_ability_offer() -> void:
+	pending_ability_drafts += 1
+	_try_offer_next_ability_draft()
 
 
 ## Obchod se odemyká a nabízí novou nabídku po SHOP_OPEN_INTERVAL_SECONDS
@@ -1399,10 +1445,22 @@ func debug_reset_skill_tree() -> void:
 
 
 ## DEBUG: rovnou vynutí jednu nabídku SCHOPNOSTI (náhodný draft) bez čekání
-## na konec vlny
+## na sebrání kosočtverce - jen tenký alias pro request_ability_offer(),
+## pojmenovaný podle konvence Debug panelu.
 func debug_force_ability_draft() -> void:
-	pending_ability_drafts += 1
-	_try_offer_next_ability_draft()
+	request_ability_offer()
+
+
+## DEBUG: přidá `count` k enemies_killed a zkontroluje případné překročené
+## prahy (viz _register_kill_toward_ability_pickup()) - pro rychlé
+## přiblížení se dalšímu prahu bez skutečného grindění zabití. Může emitnout
+## ability_pickup_dropped víckrát najednou, pokud `count` přeskočí víc než
+## jeden práh naráz - stejné chování jako by přišlo z opravdových zabití.
+## Position kosočtverce je Vector2.ZERO (souřadnice počátku) - stačí pro
+## otestování mechanismu samotného, ne pro realistické umístění.
+func debug_add_kills(count: int) -> void:
+	for i in count:
+		_register_kill_toward_ability_pickup(Vector2.ZERO)
 
 
 ## DEBUG: nastaví každou schopnost (náhodná nabídka) rovnou na 1 kopii

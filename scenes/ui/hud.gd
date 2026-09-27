@@ -175,6 +175,10 @@ var _skill_node_widgets: Dictionary = {}
 ## se týkají souběžného systému SCHOPNOSTÍ (náhodná nabídka).
 @onready var debug_add_many_skill_points_button: Button = $Control/DebugPanel/AddManySkillPointsButton
 @onready var debug_force_ability_draft_button: Button = $Control/DebugPanel/ForceAbilityDraftButton
+## Posune GameManager.enemies_killed o 10 (viz "Schopnosti na základě
+## zabití" v CLAUDE.md) - pro rychlé přiblížení se dalšímu prahu bez
+## skutečného grindění zabití.
+@onready var debug_add_kills_button: Button = $Control/DebugPanel/AddKillsButton
 @onready var debug_max_abilities_button: Button = $Control/DebugPanel/MaxAbilitiesButton
 @onready var debug_reset_abilities_button: Button = $Control/DebugPanel/ResetAbilitiesButton
 @onready var debug_ability_auto_toggle: Button = $Control/DebugPanel/AbilityAutoToggle
@@ -979,6 +983,7 @@ func _setup_debug_panel() -> void:
 			GameManager.debug_add_skill_point()
 	)
 	debug_force_ability_draft_button.pressed.connect(func(): GameManager.debug_force_ability_draft())
+	debug_add_kills_button.pressed.connect(func(): GameManager.debug_add_kills(10))
 	debug_max_abilities_button.pressed.connect(func(): GameManager.debug_max_abilities())
 	debug_reset_abilities_button.pressed.connect(func(): GameManager.debug_reset_abilities())
 	debug_ability_auto_toggle.button_pressed = _ability_auto_enabled
