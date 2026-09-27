@@ -518,10 +518,12 @@ formatting path that turns a stat into display text special-cases it via
 instead of the generic `STAT_DISPLAY_NAMES`/`_format_stat_number()` pair every other stat uses. Both
 `get_ability_desc()` and `get_shop_item_desc()` route ALL their stat-line formatting through this one
 helper now (refactored from 4 near-duplicate inline call sites) specifically so adding `crit_chance`
-only needed one special case, not four. The `Control/BottomBar` stat column also shows it
-(`StatCrit`, `hud.gd`'s `_refresh_stat_labels()`) — the 5 existing rows there had to shrink from a
-28px step to 22px to fit a 6th row inside `BottomBar`'s fixed 140px height without overflowing (this
-also incidentally fixed a pre-existing 6px overflow `StatArmor` already had before this change).
+only needed one special case, not four. The stat column also shows it (`StatCrit`, `hud.gd`'s
+`_refresh_stat_labels()`) — the 5 existing rows there had to shrink from a 28px step to 22px to fit
+a 6th row inside the available height without overflowing (this also incidentally fixed a
+pre-existing 6px overflow `StatArmor` already had before this change). **This stat column now lives
+in `CharacterPanel`/`InventoryTabContent`, not `BottomBar`** (moved 2026-09-27, see "CharacterPanel"
+above) — the 22px step size itself carried over unchanged, just the parent container did not.
 
 **Two new entries pay off the new stat, tagged "precision"** (fits alongside the existing
 accuracy/rate-of-fire precision entries) — `ABILITIES["precision_targeting"]` (passive, +6%
@@ -729,10 +731,11 @@ general auto-open-on-points-available rule) — and a live windowed playthrough 
 sequence visually, including the stat panel updating in real time (`Poškození: 10 → 14` after
 investing a Bronze-equivalent rank into "Jádro síly").
 
-**HUD layout — a top-left stack, top-right counters, and a slimmed-down `BottomBar`** (`hud.tscn`).
-Went through several reshuffles on 2026-09-09 as the user iterated on where things should live;
+**HUD layout — a top-left stack and top-right counters** (`hud.tscn`). Went through several
+reshuffles on 2026-09-09 as the user iterated on where things should live, and again 2026-09-27
+when `BottomBar` was removed entirely in favor of `CharacterPanel` (see "CharacterPanel" above) —
 this describes the current state, current as the authoritative reference (treat any older
-description you find elsewhere as stale):
+description you find elsewhere, including `BottomBar` mentions below, as stale):
 
 - **Top-left**: `Portrait`/`LevelBadge`/`LevelLabel` (`offset_left = 20`, `offset_top = 20` —
   top edge deliberately matches `HPBar`'s top edge, see below, AND the top margin deliberately
@@ -762,44 +765,72 @@ description you find elsewhere as stale):
   and was made right-aligned too (explicit user follow-up) so both labels' text hugs their own
   box's right edge consistently, keeping the visible 20px gap between "Kolo N" and "Vlna N" exact
   regardless of either number's digit count.
-- **Bottom-right, TEMPORARY** (user's own wording): `DebugButton`. Moved out of its long-standing
-  top-right spot 2026-09-09 to make room for `LoopLabel`/`WaveLabel` — expect this to move again
-  once the HUD's visual pass settles. Because `BottomBar` is an opaque `ColorRect`, `DebugButton`'s
-  node had to be moved to AFTER `BottomBar` (and its children) in `hud.tscn`'s child order, not just
-  re-anchored — an earlier-declared sibling renders UNDERNEATH a later one, so leaving it declared
-  before `BottomBar` while visually overlapping it would have made the button invisible and
-  unclickable. Keep this node-order dependency in mind if `DebugButton` (or anything else meant to
-  float on top of `BottomBar`) moves again.
-- **`BottomBar` itself** now holds only the stat readouts (`StatDamage`/`StatSpeed`/`StatRange`/
-  `StatHP`/`StatArmor`) and `ItemSlot1..6` — currently decorative/unrelated (future equipment
-  loot). `ShopButton` was removed entirely earlier the same day (see "Shop opens periodically"
-  below); nothing in `BottomBar` reads `GameManager.shop_available` anymore. **`ItemSlot1..6` are
-  112×112 squares, centered horizontally in `BottomBar`** (`offset_left = 264` → `offset_right =
-  1016` for the 6-slot row as a whole, out of the project's 1280px baseline width — symmetric
-  264px margin on each side) and vertically filling the bar's height minus a 14px margin top and
-  bottom (`offset_top = 14`, `offset_bottom = 126`, out of `BottomBar`'s 140px height) — explicit
-  user request 2026-09-09 ("center them, grow to fill available height, keep the margin, stay
-  square"). Slot-to-slot gap is 16px (`offset_left` steps by 128 = 112 + 16). Squares grew from the
-  original 44×44 (were left-aligned at `offset_left = 310`, matching the HP/XP bars' old left edge
-  from before those moved) — that original size/position is now stale if you see it referenced
-  anywhere. The `Label` child of each slot is untouched (`font_size = 9`, anchored to fill the
-  parent) — noticeably small relative to the new 112px box, but wasn't part of this request; revisit
-  if it reads as too small once real item icons/text exist here.
+- **STALE (2026-09-27) — `BottomBar` no longer exists, deleted entirely.** It used to hold the stat
+  readouts (`StatDamage`/`StatSpeed`/`StatRange`/`StatHP`/`StatArmor`/`StatCrit`) and `ItemSlot1..6`
+  (112×112 squares showing active shop items, read-only) as a trap always-visible strip pinned to
+  the bottom 140px of the screen. Both pieces of content moved into `CharacterPanel` (see dedicated
+  section below) — the motivation was that a permanently-occupied bottom strip made even less sense
+  after the top-down pivot's free 2D movement than it did in the original side-scroller. The
+  `DebugButton`-must-come-after-`BottomBar`-in-child-order constraint documented here previously is
+  moot now that `BottomBar` doesn't exist — `DebugButton` still needs to render on top of whatever
+  panel might visually overlap it, just check current sibling order in `hud.tscn` directly rather
+  than trusting this note.
+
+**`CharacterPanel` — a single tabbed screen replacing both the old always-visible `BottomBar` and
+the shop's active/stash sections** (added 2026-09-27, explicit user request: move `BottomBar`
+somewhere else, put it behind the avatar click alongside the skill tree, and while doing it also
+move the shop's stash display there too). Clicking the portrait (`portrait_button`) opens
+`CharacterPanel` (renamed from the pre-existing `SkillTreePanel` — same trigger, same
+pause-the-game behavior, see "Dovednostní strom" above for why the panel-open mechanics themselves
+are unchanged) — an 840×640 panel centered on screen (widened from the old `SkillTreePanel`'s
+760×640 specifically to comfortably fit a 9-slot stash row, see below) with two tab buttons
+top-center (`InventoryTabButton`/`SkillTreeTabButton`) toggling which of two full-size child
+`Control`s is visible: `InventoryTabContent` (default) and `SkillTreeTabContent` (the skill tree's
+`PointsLabel`/`NodesContainer`, unchanged content, just reparented one level deeper and no longer
+carrying its own `Title` — the tab buttons themselves now serve as the section header). Active tab
+is shown white, inactive tab uses `LOCKED_ITEM_MODULATE` (the same dimming color the project already
+uses for unavailable items/schopnosti — deliberately no new color introduced just for this).
+
+**Default tab depends on whether a dovednostní bod is pending**: `_on_portrait_pressed()` opens
+Inventář normally, but opens Dovednosti directly when `GameManager.pending_skill_points > 0` — the
+yellow "+N" badge on the portrait has always meant "click here to invest," and defaulting to
+Inventář unconditionally would have silently turned that into a two-click flow (portrait, then the
+Dovednosti tab) every time the badge is lit. This preserves the original one-click badge→invest
+path while still making Inventář the general-purpose default the rest of the time.
+
+**`InventoryTabContent` holds three previously-separate pieces, all now in one place**: the stat
+labels (moved verbatim from `BottomBar`, same `_refresh_stat_labels()` body, just new `@onready`
+paths), and the shop's `ActiveItemsContainer`/`StashContainer` mini-slot grids (moved verbatim from
+`ShopPanel`, same procedural-build code in `_build_inventory_ui()` — renamed from
+`_build_shop_stash_ui()` — and same refresh code in `_refresh_inventory_ui()` — renamed from
+`_refresh_shop_stash_ui()`). **`ShopPanel` now does ONLY buying** — the 4 offer cards + reroll
+button — and shrank accordingly (720×520 → 720×310, `CloseButton` moved up to follow). **No
+`GameManager` changes were needed for any of this** — `active_shop_items`/`stash_shop_items` and
+every function over them (`buy_shop_item()`, `move_shop_item_to_stash()`,
+`move_shop_item_to_active()`, `sell_shop_item()`) are exactly as documented below; only the UI
+displaying them moved. `_refresh_inventory_ui()` is called from `_refresh_shop_panel()` (buying/
+rerolling while the shop is open), `_refresh_progression()`, and `_on_shop_inventory_changed()` —
+so the Inventář tab is always current even while `CharacterPanel` itself is closed, same pattern
+`_refresh_abilities()` already used. **Verified with a headless test**: `BottomBar` confirmed absent
+from the scene tree; portrait click with 0 pending points opens Inventář, with a pending point opens
+Dovednosti directly; both tab buttons toggle correctly in both directions; stat labels and a
+constructed `active_shop_items` entry both render correctly from their new locations.
 
 **STALE, see the correction under "Schopnosti (dovednostní strom)" below** — this paragraph
 described an interim state where `AbilitiesContainer` showed dovednosti ranks too; as of
 2026-09-26 it shows ONLY schopnosti from the random draft (`owned_abilities`), rebuilt on
 `ability_inventory_changed`, not `skill_ranks_changed`. The rest of this paragraph (positional
 slots, one per owned instance, reshuffling on merge) is still accurate for that one remaining
-source. **Column wrap keeps the stack
-from ever reaching `BottomBar`**: slots stack downward and
+source. **Column wrap keeps the stack from growing unboundedly downward**: slots stack downward and
 wrap into a new column to the right after `ABILITY_STACK_MAX_ROWS` (6) — `col = i /
 ABILITY_STACK_MAX_ROWS`, `row = i % ABILITY_STACK_MAX_ROWS` — chosen so even a full column (6 × 52px
-tall), starting from `AbilitiesContainer`'s `offset_top = 108`, ends (`y = 416`) well above
-`BottomBar`'s top edge for the project's 720px-tall window; this is a static budget (like every
-other HUD offset in this project, see `ground.gd`'s "no dynamic viewport-based layout" precedent),
-not computed from the actual viewport height at runtime, so a much shorter window — or moving
-`AbilitiesContainer` further down the screen — would need this constant revisited by hand.
+tall), starting from `AbilitiesContainer`'s `offset_top = 108`, ends (`y = 416`) well within the
+project's 720px-tall window. **STALE detail**: this used to be justified specifically as "stays
+above `BottomBar`'s top edge" — `BottomBar` is gone (2026-09-27, see "CharacterPanel" above), so the
+budget is now just "fits the window," not "avoids a specific sibling." This is a static budget (like
+every other HUD offset in this project, see `ground.gd`'s "no dynamic viewport-based layout"
+precedent), not computed from the actual viewport height at runtime, so a much shorter window — or
+moving `AbilitiesContainer` further down the screen — would need this constant revisited by hand.
 
 **Shop pauses the game via `get_tree().paused`**, which is why the HUD `CanvasLayer` has
 `process_mode = 3` (ALWAYS) in `hud.tscn` — without it the shop's own close button would freeze
@@ -860,9 +891,10 @@ restarts, not game state).
 **`ShopPanel` must stay well under the game's 720px window height** — it once grew to exactly
 720px tall (edge-to-edge with the default window, zero margin) after adding a now-removed combine-
 items section, which pushed the "Zavřít obchod" button off-screen with no way to close the panel.
-Currently 520px tall (offer row + reroll button + active row + stash row + close button) — still
-under budget, but with much less spare margin than before now that the active/stash sections exist;
-any future addition needs to actively check this rather than assume there's room.
+**Shrank back to 310px tall (2026-09-27)** when the active/stash sections moved out to
+`CharacterPanel` (see "CharacterPanel" above) — `ShopPanel` is now just offer row + reroll button +
+close button, comfortably under budget again; any future addition still needs to actively check
+this rather than assume there's room.
 
 **Tag synergie — schopnosti a itemy sdílejí kategorie, aby šlo plánovat build kolem obou zdrojů
 dohromady** (added 2026-09-25, explicit user request: "chci vymýšlet strategii volby itemů podle
@@ -971,20 +1003,24 @@ the offer, and 3 matching duplicates auto-merge). If you see references to `comb
 `SHOP_COMBINE_ORDER`, `recipe`, `owned_shop_items`, `shop_item_investment`, `upgrade_shop_item()`,
 or `MAX_SHOP_SLOTS` (renamed `SHOP_ACTIVE_SLOTS`) anywhere, they're all stale.
 
-**The 6 active + 9 stash mini-slots in the shop panel are built procedurally in `hud.gd`, not
-hand-authored in `hud.tscn`** (`_build_shop_stash_ui()`/`_create_shop_mini_slot()`) — 15 nearly
-identical small widgets (a `Label` + 1-2 `Button`s each) were judged not worth writing by hand in
-the scene file; `hud.tscn` only has two empty `Control` containers
-(`ActiveItemsContainer`/`StashContainer`) that the code populates once in `_ready()` and then
-refreshes in place. Each widget is tracked as a plain `Dictionary` (`{"panel", "label", "buttons"}`)
-in `_active_slot_widgets`/`_stash_slot_widgets` rather than typed nodes, since they were never
+**The 6 active + 9 stash mini-slots are built procedurally in `hud.gd`, not hand-authored in
+`hud.tscn`** (`_build_inventory_ui()`/`_create_inventory_mini_slot()`, renamed from
+`_build_shop_stash_ui()`/`_create_shop_mini_slot()` when they moved out of `ShopPanel` into
+`CharacterPanel`/`InventoryTabContent` — see "CharacterPanel" above) — 15 nearly identical small
+widgets (a `Label` + 1-2 `Button`s each) were judged not worth writing by hand in the scene file;
+`hud.tscn` only has two empty `Control` containers (`ActiveItemsContainer`/`StashContainer`, now
+under `InventoryTabContent`) that the code populates once in `_ready()` and then refreshes in
+place via `_refresh_inventory_ui()` (renamed from `_refresh_shop_stash_ui()`). Each widget is
+tracked as a plain `Dictionary` (`{"panel", "label", "buttons"}`) in
+`_active_slot_widgets`/`_stash_slot_widgets` rather than typed nodes, since they were never
 declared in the scene tree to have `@onready`-style paths in the first place.
 
-**`Control/BottomBar/ItemSlot1..6` display *active* shop items only (name + rarity), positionally**
-(`hud.gd`'s `_refresh_shop_slots()`) — stashed items never show here, matching "only active items
-matter for gameplay"; this is read-only, unlike the interactive mini-slots inside the open shop
-panel. Empty slots trail at the end regardless of which specific slot index was vacated, same
-reasoning as before.
+**STALE (2026-09-27) — `Control/BottomBar/ItemSlot1..6` no longer exists.** It used to be a
+read-only, purely-decorative second display of active shop items sitting in the always-visible
+`BottomBar` — separate from (and redundant with) the interactive active-items mini-slot grid that
+already existed inside the shop. Both were merged into one interactive display when `BottomBar` was
+removed (see "CharacterPanel" above) — there is now exactly one place active items are shown, and
+it's always the interactive one.
 
 **Debug panel** (`hud.gd`, `scenes/ui/eye_icon.gd`): a dev-only panel toggled by the `DebugButton`
 — TEMPORARILY in the bottom-right corner as of 2026-09-09, see "HUD layout" above — which shows
@@ -1151,4 +1187,4 @@ DebugPanel's new height fitting inside the window.
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); the X-cap machinery this would feed is dormant (see "Level01 is boundless" above), so adding one alone won't do anything today
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window, now on both axes)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
-- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above), `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (SkillTreePanel node grid sizing, see "Schopnosti" above)
+- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above), `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (CharacterPanel's skill tree node grid sizing, see "CharacterPanel" and "Schopnosti" above)
