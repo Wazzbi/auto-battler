@@ -1,12 +1,21 @@
 extends Control
 ## Klidná obrazovka MEZI běhy (viz "Lobby a meta-progrese" v CLAUDE.md,
-## 2026-09-27) - ukazuje souhrn právě skončeného běhu, nechá hráče investovat
-## TRVALÉ meta body do dovednostního stromu (přesunuto beze změny logiky z
+## 2026-09-27) - TRVALý dovednostní strom (přesunuto beze změny logiky z
 ## dřívějšího hud.gd/CharacterPanel - jen se přesunula obrazovka, ne
-## GameManager.SKILL_TREE_BRANCHES/invest_skill_point() pod tím) a spustí
-## další běh. GameManager je autoload a scénu přežije beze změny -
-## last_run_summary/meta_level/meta_xp/skill_ranks jsou tu dostupné okamžitě
-## po přechodu z hud.gd's _go_to_lobby().
+## GameManager.SKILL_TREE_BRANCHES/invest_skill_point() pod tím), obchod
+## (druhý tab, reuse GameManager.shop_offer/buy_shop_item()/reroll_shop() -
+## stejná run-scoped nabídka, kterou v běhu otvírá periodický časovač, tady
+## jen navíc přístupná manuálně než se run-scoped stav při "Další běh" smaže)
+## a tlačítko na spuštění dalšího běhu. GameManager je autoload a scénu
+## přežije beze změny - meta_level/meta_xp/skill_ranks i run-scoped
+## currency/shop_offer JSOU tu dostupné okamžitě po přechodu z hud.gd's
+## _go_to_lobby().
+##
+## STALE (2026-09-27, později téhož dne): dřív tu byl navrch souhrn právě
+## skončeného běhu (`last_run_summary` - "Zemřel jsi."/"Smyčka dokončena!" +
+## úroveň/zlato/meta-XP) - odstraněno na explicit user request, obrazovka teď
+## začíná rovnou na dovednostech/obchodu. `GameManager.last_run_summary` se
+## dál plní (`_finish_run()`), jen se tu už nezobrazuje.
 
 const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 ## Rozměry jednoho uzlu stromu a mřížky - 4 sloupce (větve, viz
@@ -16,12 +25,27 @@ const SKILL_NODE_WIDTH: float = 170.0
 const SKILL_NODE_HEIGHT: float = 150.0
 const SKILL_NODE_GAP: float = 10.0
 
-@onready var summary_label: Label = $SummaryLabel
 @onready var meta_level_label: Label = $MetaLevelLabel
 @onready var meta_xp_bar: ProgressBar = $MetaXPBar
 @onready var meta_xp_label: Label = $MetaXPBar/MetaXPLabel
-@onready var skill_points_label: Label = $SkillPointsLabel
+@onready var gold_label: Label = $GoldLabel
+
+@onready var dovednosti_tab_button: Button = $DovednostiTabButton
+@onready var obchod_tab_button: Button = $ObchodTabButton
+@onready var skill_points_badge: ColorRect = $SkillPointsBadge
+@onready var skill_points_badge_label: Label = $SkillPointsBadge/SkillPointsBadgeLabel
+
 @onready var nodes_container: Control = $NodesContainer
+@onready var shop_tab_content: Control = $ShopTabContent
+@onready var shop_cards: Array = [
+	$ShopTabContent/ShopCard0,
+	$ShopTabContent/ShopCard1,
+	$ShopTabContent/ShopCard2,
+	$ShopTabContent/ShopCard3,
+]
+@onready var shop_reroll_button: Button = $ShopTabContent/RerollButton
+@onready var shop_empty_label: Label = $ShopTabContent/ShopEmptyLabel
+
 @onready var next_run_button: Button = $NextRunButton
 
 ## Dictionary {ability_id: {"panel", "name_label", "rank_label", "desc_label",
@@ -34,30 +58,20 @@ func _ready() -> void:
 	GameManager.skill_points_changed.connect(_on_skill_points_changed)
 	GameManager.skill_ranks_changed.connect(_on_skill_ranks_changed)
 	GameManager.meta_level_changed.connect(_on_meta_level_changed)
+	GameManager.currency_changed.connect(_on_currency_changed)
+	GameManager.shop_offer_changed.connect(_on_shop_offer_changed)
+	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
 
+	dovednosti_tab_button.pressed.connect(_on_dovednosti_tab_pressed)
+	obchod_tab_button.pressed.connect(_on_obchod_tab_pressed)
 	next_run_button.pressed.connect(_on_next_run_pressed)
+	_setup_shop_cards()
+	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
 
-	_show_run_summary()
 	_build_skill_tree_ui()
 	_refresh_meta_ui()
-
-
-## GameManager.last_run_summary je vždycky naplněné, když sem hráč dorazí
-## normální cestou (_finish_run() ho nastaví PŘED přechodem sem, viz
-## trigger_game_over()/trigger_win()) - prázdné jen při ručním otevření téhle
-## scény samotné v editoru (F6), proto ten fallback.
-func _show_run_summary() -> void:
-	var summary: Dictionary = GameManager.last_run_summary
-	if summary.is_empty():
-		summary_label.text = "Vítej!"
-		return
-
-	var reason_text: String = (
-		"Smyčka dokončena!" if summary.get("reason") == "completed" else "Zemřel jsi."
-	)
-	summary_label.text = "%s\nÚroveň: %d   Zlato: %d   +%d meta-XP" % [
-		reason_text, summary.get("level", 1), summary.get("currency", 0), summary.get("meta_xp_gained", 0),
-	]
+	_on_currency_changed(GameManager.currency)
+	_set_active_tab(true)
 
 
 func _on_meta_level_changed(_new_level: int) -> void:
@@ -78,7 +92,36 @@ func _refresh_meta_ui() -> void:
 	meta_xp_bar.max_value = GameManager.meta_xp_for_next_level()
 	meta_xp_bar.value = GameManager.meta_xp
 	meta_xp_label.text = "%d / %d" % [GameManager.meta_xp, GameManager.meta_xp_for_next_level()]
-	skill_points_label.text = "Dostupné body dovednosti: %d" % GameManager.pending_skill_points
+
+	var pending: int = GameManager.pending_skill_points
+	skill_points_badge.visible = pending > 0
+	skill_points_badge_label.text = "+%d" % pending
+
+
+func _on_currency_changed(new_amount: int) -> void:
+	gold_label.text = "Zlato: %d" % new_amount
+	if shop_tab_content.visible:
+		_refresh_shop_tab()
+
+
+## Přepne mezi dvěma taby (Dovednosti/Obchod) - stejný vzor jako dřívější
+## CharacterPanel v hud.gd (bílá = aktivní, LOCKED_ITEM_MODULATE = neaktivní).
+func _set_active_tab(show_dovednosti: bool) -> void:
+	nodes_container.visible = show_dovednosti
+	shop_tab_content.visible = not show_dovednosti
+	dovednosti_tab_button.modulate = Color.WHITE if show_dovednosti else LOCKED_ITEM_MODULATE
+	obchod_tab_button.modulate = LOCKED_ITEM_MODULATE if show_dovednosti else Color.WHITE
+
+	if not show_dovednosti:
+		_refresh_shop_tab()
+
+
+func _on_dovednosti_tab_pressed() -> void:
+	_set_active_tab(true)
+
+
+func _on_obchod_tab_pressed() -> void:
+	_set_active_tab(false)
 
 
 ## Postaví jeden uzel na KAŽDOU schopnost ve GameManager.SKILL_TREE_BRANCHES,
@@ -177,6 +220,70 @@ func _refresh_skill_tree_ui() -> void:
 		else:
 			widget["button"].text = "Investovat"
 			widget["button"].disabled = not GameManager.can_invest_skill_point(ability_id)
+
+
+## Napojí každou kartu na její SLOT INDEX v GameManager.shop_offer - stejný
+## vzor jako dřívější hud.gd's _setup_shop_cards() (ShopPanel v běhu, beze
+## změny logiky/GameManageru, jen druhá UI nad stejnými daty).
+func _setup_shop_cards() -> void:
+	for i in shop_cards.size():
+		var card: Panel = shop_cards[i]
+		var action_button: Button = card.get_node("ActionButton")
+		action_button.pressed.connect(_on_shop_card_action_pressed.bind(i))
+
+
+func _on_shop_card_action_pressed(slot_index: int) -> void:
+	GameManager.buy_shop_item(slot_index)
+
+
+func _on_shop_offer_changed(_offer_ids: Array) -> void:
+	if shop_tab_content.visible:
+		_refresh_shop_tab()
+
+
+func _on_shop_inventory_changed() -> void:
+	if shop_tab_content.visible:
+		_refresh_shop_tab()
+
+
+func _on_shop_reroll_pressed() -> void:
+	GameManager.reroll_shop()
+
+
+## Obchod je pořád run-scoped (GameManager.shop_available/shop_offer se
+## resetují v reset_game()) - dokud se v aktuálním běhu ještě neotevřel
+## periodický časovač, není co nabízet. ShopEmptyLabel to řekne přímo místo
+## tichého prázdného tabu.
+func _refresh_shop_tab() -> void:
+	var has_offer: bool = GameManager.shop_available and not GameManager.shop_offer.is_empty()
+	shop_empty_label.visible = not has_offer
+	shop_reroll_button.visible = has_offer
+
+	for i in shop_cards.size():
+		var card: Panel = shop_cards[i]
+
+		if not has_offer or i >= GameManager.shop_offer.size():
+			card.hide()
+			continue
+		card.show()
+
+		var offer_entry: Dictionary = GameManager.shop_offer[i]
+		var item_id: String = offer_entry["item_id"]
+		var rarity: int = offer_entry["rarity"]
+		var definition: Dictionary = GameManager.SHOP_ITEMS[item_id]
+
+		card.get_node("NameLabel").text = definition["name"]
+		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
+		card.get_node("DescLabel").text = GameManager.get_shop_item_desc(item_id, rarity)
+		card.get_node("CostLabel").text = "Cena: %d" % GameManager.get_shop_item_cost(item_id, rarity)
+
+		var action_button: Button = card.get_node("ActionButton")
+		action_button.text = "Koupit"
+		action_button.disabled = not GameManager.can_buy_shop_item(i)
+
+	if has_offer:
+		shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
+		shop_reroll_button.disabled = not GameManager.can_reroll_shop()
 
 
 ## Spustí main.tscn znovu - main.gd's _enter_tree() zavolá GameManager.
