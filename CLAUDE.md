@@ -64,8 +64,9 @@ during this pivot, some sections below describe the OLD side-scrolling behavior 
 until their phase lands) and some describe the NEW top-down behavior (already landed). Each
 updated section says explicitly which it is. **Landed so far**: Fáze 0+1 (free 2D player
 movement, decoupled from combat — see "player.gd" below, PR #42), Fáze 2 (symmetric camera
-centering — see "Camera/scrolling model" directly below, this PR). **Not yet landed**: aimed
-projectiles, 2D enemy movement + ring spawn, 2D ground rendering, continuous spawn/difficulty
+centering — see "Camera/scrolling model" below, PR #43), Fáze 3 (aimed projectiles — see "Enemy
+projectiles are their own script" below, this PR). **Not yet landed**: 2D enemy movement + ring
+spawn, 2D ground rendering, continuous spawn/difficulty
 (waves/loops still exist and work as documented below until that phase lands).
 
 **Camera/scrolling model — TOP-DOWN, updated 2026-09-27**: the `Camera2D` (`Main/Camera2D` in
@@ -194,13 +195,22 @@ ranged enemy existed: since enemies don't block each other and can visually over
 nearest target) would be actively dangerous reused for an enemy's own projectile — it would let one
 enemy shoot another in the back the moment its assigned target (the player) became invalid.
 `enemy_projectile.gd` has no such fallback at all: if `target` isn't valid, the projectile just
-keeps flying left and eventually self-cleans up off-screen, full stop, no scanning for a substitute
-target of any kind. It also flies the opposite direction (`position.x -= speed * delta`, vs. the
-player's projectile flying right) and cleans up past the *left* edge of the camera's view instead of
-the right, and its `hit_radius` is a fixed export rather than read from the target (`projectile.gd`
-reads `target.hit_radius` because enemies come in different visual sizes; there's only one possible
-target type for an enemy projectile — the player — so a fixed value matching the player's own
-`Polygon2D` half-width is simpler and sufficient).
+keeps flying in its last-aimed direction and eventually self-cleans up off-screen, full stop, no
+scanning for a substitute target of any kind. Its `hit_radius` is a fixed export rather than read
+from the target (`projectile.gd` reads `target.hit_radius` because enemies come in different
+visual sizes; there's only one possible target type for an enemy projectile — the player — so a
+fixed value matching the player's own `Polygon2D` half-width is simpler and sufficient).
+
+**STALE (2026-09-27, top-down pivot Fáze 3)**: this paragraph used to say the enemy projectile
+"flies the opposite direction (`position.x -= speed * delta`, vs. the player's projectile flying
+right) and cleans up past the left edge of the camera's view instead of the right." Both
+projectile scripts now compute an aimed `direction: Vector2` once at `setup()` time
+(`global_position.direction_to(target.global_position)`, with a zero-vector guard) and move via
+`position += direction * speed * delta` — no more hardcoded axis. Off-screen cleanup in both is
+now a full 2D check against the visible rect around `camera.get_screen_center_position()` (not
+`camera.global_position` — same `position_smoothing_enabled` reasoning as `ground.gd` below),
+not a single-edge X comparison. Neither projectile homes on a moving target — direction is fixed
+at the instant of firing, same as before, just no longer locked to a single axis.
 
 **Enemies guard against dying twice in the same frame** (`enemy.gd`'s `_is_dead` flag, checked at
 the top of `take_damage()` and set at the top of `_die()`): `queue_free()` doesn't remove a node
