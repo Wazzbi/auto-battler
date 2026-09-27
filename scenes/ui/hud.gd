@@ -21,10 +21,11 @@ const END_SCREEN_RESTART_DELAY: float = 10.0
 ## Ztlumení slotu itemu/schopnosti, který hráč ještě nevlastní
 const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 
-@onready var loop_label: Label = $Control/LoopLabel
-@onready var wave_label: Label = $Control/WaveLabel
-@onready var wave_cleared_label: Label = $Control/WaveClearedLabel
-@onready var wave_cleared_timer: Timer = $WaveClearedTimer
+## Běžící časovač přežití "mm:ss" (top-down pivot Fáze 6, nahrazuje dřívější
+## LoopLabel/WaveLabel dvojici - žádné vlny/kola už neexistují, viz
+## _on_survival_time_changed()). Uzel v .tscn přejmenován z "WaveLabel", ať
+## jméno odpovídá aktuálnímu účelu.
+@onready var survival_time_label: Label = $Control/SurvivalTimeLabel
 
 @onready var bottom_bar: ColorRect = $Control/BottomBar
 @onready var stat_damage: Label = $Control/BottomBar/StatDamage
@@ -151,7 +152,7 @@ var _skill_node_widgets: Dictionary = {}
 @onready var debug_panel: Panel = $Control/DebugPanel
 @onready var debug_kill_button: Button = $Control/DebugPanel/KillButton
 @onready var debug_invincible_toggle: Button = $Control/DebugPanel/InvincibleToggle
-@onready var debug_skip_wave_button: Button = $Control/DebugPanel/SkipWaveButton
+@onready var debug_kill_all_enemies_button: Button = $Control/DebugPanel/KillAllEnemiesButton
 @onready var debug_add_xp_small_button: Button = $Control/DebugPanel/AddXpSmallButton
 @onready var debug_add_xp_big_button: Button = $Control/DebugPanel/AddXpBigButton
 @onready var debug_add_gold_small_button: Button = $Control/DebugPanel/AddGoldSmallButton
@@ -159,7 +160,10 @@ var _skill_node_widgets: Dictionary = {}
 @onready var debug_add_skill_point_button: Button = $Control/DebugPanel/AddSkillPointButton
 @onready var debug_max_skill_tree_button: Button = $Control/DebugPanel/MaxSkillTreeButton
 @onready var debug_reset_skill_tree_button: Button = $Control/DebugPanel/ResetSkillTreeButton
-@onready var debug_add_loop_button: Button = $Control/DebugPanel/AddLoopButton
+## Posune GameManager.survival_time dopředu o 60s - pro rychlé testování
+## časových milníků (schopnost/obchod/Elite checkpoint) bez skutečného
+## čekání. Nahrazuje dřívější AddLoopButton (kola už neexistují).
+@onready var debug_add_survival_time_button: Button = $Control/DebugPanel/AddSurvivalTimeButton
 ## Bulk přídavek bodů DOVEDNOSTI pro rychlé testování stromu bez grindění
 ## levelů - NEplete se s ForceAbilityDraftButton/AbilityAutoToggle níže, ty
 ## se týkají souběžného systému SCHOPNOSTÍ (náhodná nabídka).
@@ -212,7 +216,7 @@ var _last_ability_offer: Array = []
 
 
 func _ready() -> void:
-	GameManager.wave_started.connect(_on_wave_started)
+	GameManager.survival_time_changed.connect(_on_survival_time_changed)
 	GameManager.currency_changed.connect(_on_currency_changed)
 	GameManager.scrap_changed.connect(_on_scrap_changed)
 	GameManager.xp_changed.connect(_on_xp_changed)
@@ -221,7 +225,6 @@ func _ready() -> void:
 	GameManager.skill_ranks_changed.connect(_on_skill_ranks_changed)
 	GameManager.ability_draft_ready.connect(_on_ability_draft_ready)
 	GameManager.ability_inventory_changed.connect(_on_ability_inventory_changed)
-	GameManager.loop_changed.connect(_on_loop_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
 	GameManager.shop_offer_changed.connect(_on_shop_offer_changed)
 	GameManager.shop_auto_open_requested.connect(_on_shop_auto_open_requested)
@@ -231,7 +234,6 @@ func _ready() -> void:
 	shop_panel.hide()
 	skill_tree_panel.hide()
 	ability_draft_panel.hide()
-	wave_cleared_label.hide()
 
 	_setup_shop_cards()
 	_build_shop_stash_ui()
@@ -242,7 +244,6 @@ func _ready() -> void:
 
 	shop_close_button.pressed.connect(_on_shop_close_pressed)
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
-	wave_cleared_timer.timeout.connect(func(): wave_cleared_label.hide())
 
 	game_over_continue_button.pressed.connect(_restart_game)
 	game_over_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
@@ -276,7 +277,7 @@ func connect_player(player: Node2D) -> void:
 
 
 ## Zavolá Main na sebe - Debug panel potřebuje volat main.gd's
-## debug_skip_wave()/debug_spawn_elite() (main.gd vlastní frontu spawnování).
+## debug_kill_all_enemies()/debug_spawn_elite() (main.gd vlastní spawnování).
 func connect_main(main: Node) -> void:
 	main_ref = main
 
@@ -300,12 +301,8 @@ func _update_hp_regen_label(current_hp: float, max_hp: float) -> void:
 		hp_regen_label.show()
 
 
-func _on_wave_started(wave_number: int) -> void:
-	wave_label.text = "Vlna %d" % wave_number
-
-
-func _on_loop_changed(new_loop: int) -> void:
-	loop_label.text = "Kolo %d" % new_loop
+func _on_survival_time_changed(new_time: float) -> void:
+	survival_time_label.text = "Čas: %s" % GameManager.format_survival_time(new_time)
 
 
 func _on_currency_changed(new_amount: int) -> void:
@@ -628,7 +625,7 @@ func _create_ability_stack_slot(index: int, label_text: String, tooltip_text: St
 ## GameManager přežívá restart scény a HUD se s jeho stavem musí srovnat sám -
 ## signály při resetu už proběhly dřív, než se HUD stihl připojit.
 func _refresh_progression() -> void:
-	loop_label.text = "Kolo %d" % GameManager.loop_count
+	_on_survival_time_changed(GameManager.survival_time)
 	level_label.text = str(GameManager.player_level)
 	gold_label.text = "Zlato: %d" % GameManager.currency
 	scrap_label.text = "Šrot: %d" % GameManager.scrap
@@ -858,12 +855,6 @@ func _refresh_shop_slots() -> void:
 			slot.tooltip_text = ""
 
 
-func show_wave_cleared_message(wave_number: int) -> void:
-	wave_cleared_label.text = "Vlna %d splněna!" % wave_number
-	wave_cleared_label.show()
-	wave_cleared_timer.start()
-
-
 ## Obchod hru pozastaví přes get_tree().paused. HUD má process_mode ALWAYS,
 ## takže jeho UI dál reaguje. Pauza je zatím záměrná, ale počítá se s tím, že
 ## se může zrušit - pak stačí vypustit řádky s `paused` (viz CLAUDE.md).
@@ -872,12 +863,12 @@ func _on_shop_close_pressed() -> void:
 	get_tree().paused = false
 
 
-func show_game_over(wave_reached: int, currency: int) -> void:
+func show_game_over(survival_time: float, currency: int) -> void:
 	_close_shop()
 	_close_skill_tree_panel()
 	_close_ability_draft_panel()
-	game_over_label.text = "Game Over!\nDosažená vlna: %d\nÚroveň: %d\nZlato: %d" % [
-		wave_reached, GameManager.player_level, currency
+	game_over_label.text = "Game Over!\nPřežitý čas: %s\nÚroveň: %d\nZlato: %d" % [
+		GameManager.format_survival_time(survival_time), GameManager.player_level, currency
 	]
 	game_over_panel.show()
 	_start_end_screen_countdown(game_over_countdown_label, "Restart za")
@@ -958,7 +949,7 @@ func _setup_debug_panel() -> void:
 
 	debug_kill_button.pressed.connect(_on_debug_kill_pressed)
 	debug_invincible_toggle.toggled.connect(_on_debug_invincible_toggled)
-	debug_skip_wave_button.pressed.connect(_on_debug_skip_wave_pressed)
+	debug_kill_all_enemies_button.pressed.connect(_on_debug_kill_all_enemies_pressed)
 	debug_add_xp_small_button.pressed.connect(func(): GameManager.add_xp(100))
 	debug_add_xp_big_button.pressed.connect(func(): GameManager.add_xp(500))
 	debug_add_gold_small_button.pressed.connect(func(): GameManager.debug_add_currency(100))
@@ -966,7 +957,7 @@ func _setup_debug_panel() -> void:
 	debug_add_skill_point_button.pressed.connect(func(): GameManager.debug_add_skill_point())
 	debug_max_skill_tree_button.pressed.connect(func(): GameManager.debug_max_skill_tree())
 	debug_reset_skill_tree_button.pressed.connect(func(): GameManager.debug_reset_skill_tree())
-	debug_add_loop_button.pressed.connect(func(): GameManager.debug_add_loop())
+	debug_add_survival_time_button.pressed.connect(func(): GameManager.debug_add_survival_time(60.0))
 	debug_spawn_elite_button.pressed.connect(_on_debug_spawn_elite_pressed)
 	debug_spawn_ranged_button.pressed.connect(_on_debug_spawn_ranged_pressed)
 	debug_spawn_sniper_button.pressed.connect(_on_debug_spawn_sniper_pressed)
@@ -1030,9 +1021,9 @@ func _update_debug_free_reroll_label(enabled: bool) -> void:
 	debug_free_reroll_toggle.text = "Free reroll: %s" % ("Zapnuto" if enabled else "Vypnuto")
 
 
-func _on_debug_skip_wave_pressed() -> void:
+func _on_debug_kill_all_enemies_pressed() -> void:
 	if main_ref != null:
-		main_ref.debug_skip_wave()
+		main_ref.debug_kill_all_enemies()
 
 
 func _on_debug_spawn_elite_pressed() -> void:

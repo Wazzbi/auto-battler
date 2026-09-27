@@ -37,12 +37,16 @@ parent's `_ready()` *after* its children's, so resetting in `_ready()` would let
 Game Over auto-restart (`reload_current_scene()`), since `GameManager` is an autoload and survives
 the reload.
 
-**`scenes/main.gd`** owns wave spawning only (enemy count/timing per wave, spawn position). It does
-not own wave progression or rewards — those events come back from `GameManager` via signals
-(`wave_started`, `wave_cleared`, `game_over_triggered`, `game_won_triggered`). Enemy count per wave
-uses a square-root curve (`enemies_base_count + sqrt(wave_number - 1) * difficulty_growth`) so
+**`scenes/main.gd`** owns continuous enemy spawning only (target count/timing/position). It does
+not own progression or rewards — those events come back from `GameManager` via signals
+(`game_over_triggered`, `game_won_triggered`). **STALE (top-down pivot Fáze 6, 2026-09-27): there
+is no more "wave" concept at all** — `wave_started`/`wave_cleared` signals and discrete waves/loops
+were removed entirely in favor of a continuous, `GameManager.survival_time`-driven target enemy
+count; see "Kontinuální spawn/obtížnost" further below for the full replacement. Enemy count uses a
+square-root curve against elapsed time (`enemies_base_count + sqrt(survival_time /
+seconds_per_wave_equivalent) * difficulty_growth`, same shape as the old wave-number version) so
 difficulty ramps gradually, and `max_concurrent_enemies` caps how many can be alive at once
-regardless of how many are left to spawn.
+regardless of how many the target curve currently calls for.
 
 **Design goal for future wave/enemy-count tuning: optimize for a growing on-screen enemy density,
 bullet-hell-style "overwhelm" tension — not just total kill count or flat stat scaling.** The
@@ -176,23 +180,30 @@ player's, which is exactly why `sniper_enemy_chance` (0.15) is set lower than `r
 (0.3) — snipers are~~
 meant to read as a rarer, more dangerous variant, not a routine replacement for the base enemy.
 
-**Ranged/sniper chance ramps in over the first few waves of loop 1** (`main.gd`'s
-`variant_ramp_start_wave`/`variant_ramp_full_wave`, `_variant_chance_multiplier()`): before wave 3
-neither variant can spawn at all; between wave 3 and wave 7 their chance grows linearly from 0 up to
-the full `ranged_enemy_chance`/`sniper_enemy_chance`; from wave 7 on it's the full configured value.
-This was a data-backed fix, not a guess — a headless simulation (real `main.tscn`/`player.gd`/
+**STALE (2026-09-27, top-down pivot Fáze 6): the ranged/sniper ramp is now TIME-based, not
+wave-based, and applies for the WHOLE run, not just "loop 1".** `main.gd`'s `variant_ramp_start_wave`/
+`variant_ramp_full_wave` (int, wave numbers) became `variant_ramp_start_time`/`variant_ramp_full_time`
+(float, seconds of `GameManager.survival_time`) — before `variant_ramp_start_time` (first-pass
+guess: 30s) neither variant can spawn at all; between start and `variant_ramp_full_time` (first-pass
+guess: 90s) their chance grows linearly from 0 to the full `ranged_enemy_chance`/`sniper_enemy_chance`;
+after that it's the full configured value, same shape as before, just against a continuous clock.
+**The old "only applies in loop 1" exception is GONE** — without discrete loops there's nothing
+analogous to guard against (the old exception existed only because a loop reset `current_wave` but
+not player progression; a continuous run has no such reset point at all), so the ramp now simply
+always applies for the first `variant_ramp_full_time` seconds of any run. The *numbers* below (from
+the original wave-based headless simulation that justified the ramp's existence) have NOT been
+re-validated against the new time-based version — they're kept for historical context on *why* a
+ramp exists at all, not as evidence the new seconds-based thresholds are correctly tuned:
+
+~~This was a data-backed fix, not a guess — a headless simulation (real `main.tscn`/`player.gd`/
 `enemy.gd`, sped up via `Engine.time_scale`, "Auto" draft picking so it plays like a no-strategy
 player) showed **0/10 runs surviving even wave 1-4** with both variants active from wave 1 at their
 full chance, versus **4/10 runs clearing both of the first two loops** (20 waves) when ranged/sniper
 were disabled entirely — the dominant killer was ranged/sniper landing free, unavoidable damage from
 outside the player's own `attack_range` before the player had *any* item or level yet, not raw enemy
 count. Re-running the same simulation after adding the ramp pushed the average death wave from ~2.3
-to ~4.1 — a real improvement, but still short of reliably clearing 20 waves, so the ramp alone is a
-partial fix, not a finished balance pass (see the loop-1-only caveat below for why it isn't applied
-more broadly). **The ramp only applies in `loop_count == 1`** — from loop 2 onward both chances are
-always full — because by loop 2 the player has already been through the ramp once and carries level/
-item progression forward (see "Both player progression AND position/HP persist across loops" above),
-so softening the opening again would just make the endless mode easier over time instead of harder.
+to ~4.1 — a real improvement, but still short of reliably clearing 20 waves, so the ramp alone was a
+partial fix, not a finished balance pass.~~
 
 **Enemy projectiles are their own script, never the player's** (`scenes/enemies/enemy_projectile.gd`,
 instantiated by `enemy.gd`'s `_shoot_projectile()`) — this satisfies a constraint flagged before any
@@ -231,14 +242,17 @@ would push `hp` further negative and call `_die()` again, double-decrementing
 wave 1 while old wave-10 enemies were still alive and on screen. Found via the `enemies_alive`
 counter going to -1 after a deliberate double-hit in a headless test, not via a visible symptom.
 
-**Level01 is boundless — there is no level-end marker.** `player.gd` still supports finding one
-(`level_end_x` looks up a node in the `level_end` group via
-`get_tree().get_first_node_in_group("level_end")` at `_ready()`, capping forward movement at
-`global_position.x = min(..., level_end_x)`), but `level_01.tscn` deliberately has no `LevelEnd`
-node anymore, so `level_end_x` stays at its default `INF` and the player always keeps walking
-right. This machinery is kept (not deleted) specifically so a *future*, genuinely finite
-planet/level can reuse it — add a `Marker2D` in the `level_end` group to any new level scene to cap
-movement there again. `ground.gd`'s `total_width` export is gone for the same reason — see below.
+**Level01 is boundless — there is no level-end marker, and the X-cap machinery is now DORMANT, not
+just unused.** `player.gd` still looks up a `level_end` group node (`level_end_x` via
+`get_tree().get_first_node_in_group("level_end")` at `_ready()`), but since the top-down pivot's
+Fáze 1 removed the old X-only "move-when-clear" walk that used to read `level_end_x` every frame,
+NOTHING reads this field anymore even when it's set — `level_01.tscn` also still has no `LevelEnd`
+node, so it's doubly moot today. Kept deliberately (not deleted) as a *concept marker* for a future
+finite planet/level, but a single X coordinate is the wrong SHAPE for capping movement in a
+freely-2D-movable top-down game anyway (a real bounded arena would need a `Rect2`/radius, not one X
+value) — so don't assume re-adding a `LevelEnd` `Marker2D` alone would do anything today; the
+capping *logic* itself would need to be rebuilt for 2D first. `ground.gd`'s `total_width` export is
+gone for the same original reason (boundless level) — see below.
 
 **Ground renders infinitely in 2D, tracking the camera** (`ground.gd`) — top-down pivot
 2026-09-27, Fáze 5: instead of drawing a fixed set of tiles up front, `_process()` calls
@@ -266,25 +280,83 @@ a clear "up" with nothing to draw above the floor. A full 2D top-down ground has
 the checkerboard grid itself is now the entire visible ground in every direction, so those three
 exports and their `_draw()` code were deleted outright rather than adapted.
 
-**The game loops instead of ending at `GameManager.FINAL_WAVE`**: clearing wave 10
-(`FINAL_WAVE`) doesn't call `trigger_win()` anymore — `_on_wave_cleared()` calls
-`_start_new_loop()` instead, which increments `loop_count`, resets `current_wave` to 0, and calls
-`start_next_wave()` to jump straight back into wave 1. **Both player progression AND position/HP
-persist across loops** — level, XP, item ranks, currency, world position, and current HP
-are all untouched by a loop transition (there is no `reset_game()` call anywhere in this path, and
-`player.gd` no longer reacts to `loop_changed` at all). Since the level is boundless, the player
-just keeps walking forward through loop after loop rather than restarting from the spawn point.
-Newly spawned enemies get more HP per loop via `GameManager.get_enemy_hp_multiplier()`
-(`1.0 + (loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP`, currently +50%/loop) — `main.gd`'s
-`_spawn_enemy()` applies it to `enemy.max_hp` *before* `add_child()`, since `enemy.gd`'s `_ready()`
-sets `hp = max_hp` synchronously on entering the tree. **This is deliberately the simplest possible
-version** (linear, HP-only scaling) to prototype whether repeated 10-wave loops are fun at all
-before investing in more planets/levels or a richer scaling system (new enemy types, other stats,
-per-loop modifiers, etc.) — see the brainstorm this came from. `GameManager.State.WON` and
-`VictoryPanel` still exist and work exactly as before, but are currently unreachable through normal
-play (nothing calls `trigger_win()`); they're intentionally kept for a real future ending (e.g.
-after the last planet). Only a true Game Over (`reset_game()`) resets `loop_count` back to 1 and
-teleports the player back to spawn (via the normal scene reload, not anything loop-specific).
+**Difficulty and spawning are now fully CONTINUOUS, driven by elapsed survival time** (top-down
+pivot 2026-09-27, Fáze 6 — the last and largest phase of the pivot, see `C:\Users\david\.claude\
+plans\validated-jumping-fairy.md`). **Waves and loops are GONE entirely** — `current_wave`,
+`loop_count`, `FINAL_WAVE`, `ENEMY_HP_GROWTH_PER_LOOP`, the `wave_started`/`wave_cleared`/
+`loop_changed` signals, `start_next_wave()`/`_start_new_loop()`/`_on_wave_cleared()`,
+`debug_force_wave_clear()`/`debug_add_loop()` — all deleted, not deprecated. There is no discrete
+"wave" concept anywhere in the codebase anymore.
+
+`GameManager.survival_time: float` is the single new driver — it accumulates in `GameManager`'s own
+`_process(delta)` whenever `state == State.PLAYING` (same guard pattern player.gd already used for
+HP regen), emits `survival_time_changed`, and resets to 0 only on a true Game Over (`reset_game()`).
+Three independent systems key off it now, each replacing a wave/loop-triggered equivalent 1:1 in
+*mechanism* (same downstream logic, only the trigger changed):
+- **Enemy HP scaling**: `get_enemy_hp_multiplier()` = `1.0 + (survival_time / 60.0) *
+  ENEMY_HP_GROWTH_PER_MINUTE` (continuous-in-time, replaces the old stepped
+  `1.0 + (loop_count - 1) * ENEMY_HP_GROWTH_PER_LOOP`) — `main.gd`'s `_spawn_around_player()` applies
+  it to `enemy.max_hp` *before* `add_child()`, exactly as before (unchanged call site).
+- **Schopnosti (random draft) offers**: an internal `_ability_offer_timer` accumulator fires
+  `pending_ability_drafts += 1` / `_try_offer_next_ability_draft()` every `ABILITY_OFFER_INTERVAL_
+  SECONDS` (first-pass guess: 45s) — replaces the old "every wave clear" trigger, same downstream
+  offer/resolve machinery untouched.
+- **Periodic shop**: an internal `_shop_open_timer` accumulator calls `_open_periodic_shop()` every
+  `SHOP_OPEN_INTERVAL_SECONDS` (first-pass guess: 240s/4min) — replaces "every loop transition
+  (wave-10 clear)". The `_shop_open_deferred`/`_try_open_pending_shop()` collision-avoidance
+  machinery (shop must not auto-open while a schopnosti offer is pending) is UNCHANGED in shape —
+  it's just resolving a coincidence between two independent timers now instead of a guaranteed
+  same-instant collision at wave 10.
+- **Elite enemies**: `main.gd`'s `elite_checkpoints_seconds: Array[float]` (first-pass guess: every
+  3 minutes) replaces "only on `wave_number == FINAL_WAVE`" — `_check_elite_checkpoints()` (called
+  every `_process()` tick) queues `elite_count_per_checkpoint` Elites into the same
+  `elites_left_to_spawn` field once `survival_time` crosses each unconsumed checkpoint, using a
+  `while` loop (not `if`) so a single very-fast frame (e.g. `Engine.time_scale` 10x in the Debug
+  panel) can't skip past a checkpoint without queuing it.
+
+**Enemy spawning itself is target-count-based, not queue-based**: `main.gd` no longer has an
+`enemies_left_to_spawn` counter to drain to zero. `_get_target_concurrent_count()` computes, every
+frame, how many enemies *should* be alive right now — `enemies_base_count + floor(sqrt(survival_time
+/ seconds_per_wave_equivalent) * difficulty_growth)` — the exact same square-root SHAPE as the old
+`enemies_base_count + sqrt(wave_number - 1) * difficulty_growth` curve (deliberately preserved to
+keep the already-reasoned-about "gradual, not spiky" density goal — see the bullet-hell design note
+in Architecture above), just plotted against continuous time instead of an integer wave number via
+`seconds_per_wave_equivalent` (first-pass guess: 20s ≈ one old wave). `_process()` spawns one enemy
+per `spawn_timer` tick whenever `enemies_alive < min(target_concurrent, max_concurrent_enemies)` OR
+an Elite is queued — no more "wave" to run out of; the target simply keeps climbing as
+`survival_time` grows, forever.
+
+**Player progression AND position/HP were already untouched across the old loop boundary, and still
+are now that there's no boundary at all** — level, XP, item ranks, currency, world position, and
+current HP simply keep accumulating for the whole run, nothing resets except on a true Game Over.
+Since the level is boundless (see below) and there's no loop transition to even define, the player
+just keeps walking and fighting continuously for as long as they survive. `GameManager.State.WON`
+and `VictoryPanel` still exist and work exactly as before, but remain unreachable through normal
+play (nothing calls `trigger_win()`) — intentionally kept for a real future ending (e.g. after a
+planned finite planet/level, see `level_end_x` below).
+
+**Debug panel**: `debug_skip_wave()` → `debug_kill_all_enemies()` (`main.gd`) — "skip wave" has no
+meaning without waves, so it's now just "kill everything alive right now" (still routes through
+real `take_damage()` for reward/XP, same as before), no more `debug_force_wave_clear()` companion
+call needed since there's no wave-clear state to force. `debug_add_loop()` →
+`debug_add_survival_time(seconds: float)` (`GameManager`) — jumps `survival_time` forward directly,
+for manually testing the three time-based milestones above without waiting for real time to pass.
+HUD's `AddLoopButton`/`SkipWaveButton` were renamed to `AddSurvivalTimeButton`/`KillAllEnemiesButton`
+to match (see "HUD layout" below for the renamed top-right label too).
+
+**Verified with headless tests at both layers**: a pure-logic test (fresh `GameManager` instance, no
+autoloads) confirmed `survival_time` accumulates only in `State.PLAYING`, each of the three
+time-based triggers fires exactly once when its interval is crossed, `get_enemy_hp_multiplier()`
+grows continuously, and `format_survival_time()` formats correctly; a scene-level test (real
+`main.tscn` + `hud.tscn`) confirmed `_get_target_concurrent_count()` grows with `survival_time`,
+Elite checkpoints queue exactly once per crossing (not per frame), the ranged/sniper ramp responds
+to time instead of wave number, the HUD's survival-timer label updates from the signal, and
+`debug_kill_all_enemies()` actually kills real enemy instances. **Not yet balance-tuned** — every
+"first-pass guess" number above (`ABILITY_OFFER_INTERVAL_SECONDS`, `SHOP_OPEN_INTERVAL_SECONDS`,
+`ENEMY_HP_GROWTH_PER_MINUTE`, `seconds_per_wave_equivalent`, `elite_checkpoints_seconds`,
+`variant_ramp_start_time`/`variant_ramp_full_time`) is a structural placeholder, not a value derived
+from playtesting or simulation — expect all of them to need revisiting once the continuous game is
+actually played for a while, same as every other tunable in this project historically has.
 
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
@@ -296,20 +368,22 @@ without touching this getter. The HUD shows it as a small green `+X.X/s` label
 is already full (`_update_hp_regen_label()` in `hud.gd`) so it doesn't clutter the bar when it isn't
 doing anything.
 
-**HUD "Kolo" vs. "Úroveň"**: the top-right `LoopLabel` ("Kolo N") is the loop counter; it's
-deliberately *not* called "Úroveň" even though that's the literal translation, because "Úroveň" is
-already used for the player's XP-based character level (the badge over the portrait, top-left —
-see "HUD layout" below). Reusing the same word for two different counters on screen at once would
-be confusing — rename both consistently if this ever needs to change.
+**STALE — "Kolo" vs. "Úroveň" no longer applies (2026-09-27, Fáze 6).** `LoopLabel` is deleted;
+there's no loop counter anymore. The top-right corner now shows a single `SurvivalTimeLabel`
+("Čas: mm:ss", see "Kontinuální spawn/obtížnost" above) where `WaveLabel` used to sit — see "HUD
+layout" below for its exact position. "Úroveň" (the player's XP-based character level, badge over
+the portrait) is unaffected and still the only thing called that.
 
-**Elite enemy (final wave only)**: `scenes/enemies/elite_enemy.tscn` reuses `enemy.gd` (it's fully
+**Elite enemy (time checkpoints, not "final wave")**: `scenes/enemies/elite_enemy.tscn` reuses `enemy.gd` (it's fully
 data-driven via `@export` vars, so no new script was needed) with `speed` halved, `max_hp` tripled,
 and the `Polygon2D` visual scaled 3x — `melee_range` was also bumped (60 → 100) so the much bigger
 sprite doesn't visually overlap the player before it stops to attack. `main.gd`'s
-`elite_count_final_wave` (default 1) controls how many spawn; `_on_wave_started()` only queues
-Elites when `wave_number == GameManager.FINAL_WAVE`, and `_spawn_enemy()` always drains the Elite
-queue before falling back to normal enemies, so the Elite(s) appear first in wave 10, with regular
-enemies filling out the rest of the wave's usual sqrt-curve count.
+`elite_count_per_checkpoint` (default 1) controls how many spawn per checkpoint; `_check_elite_
+checkpoints()` queues them once `GameManager.survival_time` crosses each unconsumed entry of
+`elite_checkpoints_seconds` (top-down pivot Fáze 6 — replaces the old "only on `wave_number ==
+FINAL_WAVE`" gating), and `_spawn_enemy()` always drains the Elite queue before falling back to
+normal/variant enemies, so Elite(s) appear first once a checkpoint is crossed, mixed in among the
+continuously-spawning regular enemies rather than concentrated into one specific wave.
 
 **Scaling a visual around its own center sinks it into the ground** — this bit the Elite once
 already: `Polygon2D.scale` scales the shape around the *node's own local origin*, which coincides
@@ -628,7 +702,7 @@ exist anymore, so the reset was narrowed accordingly, not kept "just in case."
   integer shot count); at `trigger_values[rank - 1]`, resets to 0 and (for `effect ==
   "aoe_strike"`) calls `_trigger_aoe_strike()`, which deals `effect_params.damage` to **every alive
   enemy** (`get_tree().get_nodes_in_group("enemies")`) through their normal `take_damage()` — same
-  reasoning as `debug_skip_wave()` in `main.gd`: routing through the real method keeps reward/XP and
+  reasoning as `debug_kill_all_enemies()` in `main.gd`: routing through the real method keeps reward/XP and
   the double-kill-safe `_is_dead` guard intact, no shortcut around them — then spawns a visual via
   `orbital_strike_effect_scene` (a `PackedScene` export reusing `impact_effect.gd`'s script with a
   bigger radius/different color set directly in `orbital_strike_effect.tscn`, no new script needed).
@@ -735,33 +809,31 @@ want the game to keep running while the shop is open, so the pause lives only in
 nothing else depends on it.
 
 **Shop opens periodically, not any time** (`GameManager.shop_available`,
-`shop_auto_open_requested` signal, `_open_periodic_shop()`/`_start_new_loop()`): the shop unlocks
-and shows a fresh offer automatically — panel pops open and pauses, no click needed — the moment
-wave 10 is cleared and a new loop starts, reusing the existing loop-boundary code path rather than
-adding new event plumbing. This resolved a long-standing open design question (shop available any
-time vs. gated to a specific moment) via a Bazaar-inspired redesign brainstorm. `shop_available`
-turns true the first time this fires in a run and stays true for the rest of that run (kept as
-run-scoped state, reset in `reset_game()` — a new run has to clear wave 10 again, same as it has to
-re-collect levels/items). **The manual `ShopButton` was removed 2026-09-09** (user asked to move the
-gold counter to the top bar and declutter `BottomBar`) — auto-open via
-`_on_shop_auto_open_requested()` is now the *only* way the panel appears. Known, accepted trade-off:
-if the player closes the panel (`_on_shop_close_pressed()`) before spending/rerolling everything
-they want, there is no way to reopen that same offer until the next wave-10 clear generates a new
-one — `shop_offer` itself isn't cleared by closing, so the unspent offer is still sitting in
-`GameManager` state, just with no UI path back to it this loop. Revisit if this turns out to be a
-real player frustration, not just a theoretical gap.
+`shop_auto_open_requested` signal, `_open_periodic_shop()`): the shop unlocks and shows a fresh
+offer automatically — panel pops open and pauses, no click needed — every `SHOP_OPEN_INTERVAL_
+SECONDS` of `GameManager.survival_time` (top-down pivot Fáze 6, 2026-09-27 — see "Kontinuální
+spawn/obtížnost" above; this section originally said "the moment wave 10 is cleared," from when
+the game had discrete waves/loops — that trigger point no longer exists). This resolved a
+long-standing open design question (shop available any time vs. gated to a specific moment) via a
+Bazaar-inspired redesign brainstorm — that underlying design intent (periodic, not always-on)
+carried through the pivot unchanged, only the trigger mechanism changed. `shop_available` turns
+true the first time this fires in a run and stays true for the rest of that run (run-scoped state,
+reset in `reset_game()`). **The manual `ShopButton` was removed 2026-09-09** (user asked to move
+the gold counter to the top bar and declutter `BottomBar`) — auto-open via
+`_on_shop_auto_open_requested()` is still the *only* way the panel appears. Known, accepted
+trade-off, unchanged by the pivot: if the player closes the panel before spending/rerolling
+everything they want, there is no way to reopen that same offer until the next periodic trigger
+generates a new one.
 
-**Shop auto-open no longer needs to defer for anything (2026-09-26)** — it briefly did
-(`GameManager._shop_open_deferred`/`_try_open_pending_shop()`, added 2026-09-09, both since
-removed): if the killing blow on wave 10's last enemy granted enough XP to level up, that level-up
-used to *synchronously* pop the old `AbilityDraftPanel` (inside `enemy_defeated()` → `add_xp()` →
-`_level_up()`, before `enemy_defeated()` even got to notice the wave was clear a few lines later),
-which could collide with `ShopPanel` trying to auto-open on the very same frame. That collision is
-now structurally impossible: a level-up no longer opens or pauses anything by itself (see
-"Schopnosti" above — it just adds a point and lights up the portrait badge), so
-`_open_periodic_shop()` can call `shop_auto_open_requested.emit()` directly and unconditionally.
-**`SkillTreePanel` no longer force-opens automatically at all** (removed 2026-09-26, see the
-correction under "Schopnosti (dovednostní strom)" above) — it can never collide with the shop.
+**`_shop_open_deferred`/`_try_open_pending_shop()` still exist and still do the same job** —
+deferring the shop's auto-open while a schopnosti offer is pending, so `AbilityDraftPanel` and
+`ShopPanel` never stack on top of each other. This mechanism has flip-flopped between "needed" and
+"removed" a few times across this project's history as the schopnosti/dovednosti/wave systems were
+reworked (see the git history of this section if curious) — as of the Fáze 6 pivot it's back to
+"needed," now guarding against two independent `GameManager._process()` timers coincidentally
+firing close together rather than a guaranteed same-instant wave-10 collision. `SkillTreePanel`
+never force-opens automatically at all (removed 2026-09-26, unrelated to this pivot) — it can never
+collide with the shop.
 
 **The offer is `SHOP_OFFER_SIZE` (4) random items out of the full 7-item pool, not all 7 at once**
 (`GameManager.shop_offer`, `_generate_shop_offer()`) — picked via `SHOP_ITEM_ORDER.duplicate();
@@ -778,7 +850,7 @@ value captured at setup.
 
 **Reroll costs `SHOP_REROLL_BASE_COST` (20) for the first reroll, `+SHOP_REROLL_COST_STEP` (15) for
 each further reroll within the same offer** (20, 35, 50, ...) — `shop_reroll_count` resets to 0
-only when a *new* offer is generated (wave-10 unlock or a completed reroll), so closing and
+only when a *new* offer is generated (periodic shop-timer unlock or a completed reroll), so closing and
 reopening the shop does **not** reset the price ramp; the ramp exists specifically to stop
 infinite-free-rerolling for a perfect draw. `GameManager.debug_free_reroll` (Debug panel's
 "Free reroll" toggle) makes `get_shop_reroll_cost()` always return 0 for fast manual testing — like
@@ -927,15 +999,17 @@ reuse the *real* code paths rather than shortcutting past them:
 - **Nesmrtelnost** sets `player.debug_invincible`, checked in `take_damage()` right after the
   existing `state != PLAYING` guard — resets to `false` automatically on any scene reload since it
   lives on the player instance, not `GameManager`.
-- **Přeskočit vlnu** (`main.gd`'s `debug_skip_wave()`) kills every currently-alive enemy through
-  their normal `take_damage()` (so they still grant currency/XP and go through the
-  double-kill-safe `_is_dead` guard from `enemy.gd`) rather than just clearing counters directly.
-  It only calls `GameManager.debug_force_wave_clear()` — which itself refuses to act unless
-  `enemies_alive`/`enemies_remaining_to_spawn` are already both zero — to cover the edge case where
-  no enemy was alive to begin with (so no death naturally triggered the wave-clear check).
+- **Zabít všechny nepřátele** (`main.gd`'s `debug_kill_all_enemies()`, renamed from
+  `debug_skip_wave()` in the top-down pivot Fáze 6 — "skip wave" stopped meaning anything once
+  waves were removed entirely) kills every currently-alive enemy through their normal
+  `take_damage()` (so they still grant currency/XP and go through the double-kill-safe `_is_dead`
+  guard from `enemy.gd`) rather than just clearing counters directly. No companion
+  "force-clear"-style call needed anymore — the continuous spawner (see "Kontinuální spawn/
+  obtížnost" above) just notices `enemies_alive` dropped and refills toward its time-based target
+  on its own next tick.
 - **Spawnout Elite** / **Spawnout dálkového** / **Spawnout snipera** all share
   `_spawn_around_player()` (renamed from `_spawn_at_edge()` in the top-down pivot, see below) with
-  the normal wave spawner so a debug-spawned enemy gets the same HP-multiplier-before-`add_child()`
+  the normal continuous spawner so a debug-spawned enemy gets the same HP-multiplier-before-`add_child()`
   treatment as one spawned by
   the real wave queue.
 - **Rychlost** cycles `Engine.time_scale` through `1x/2x/5x/10x` — this is global engine state, so
@@ -997,9 +1071,10 @@ schopnosti — it runs ALONGSIDE the original random-draft schopnosti system, wh
 restored after user feedback ("chtěl jsem schopnosti zachovat, ne nahradit").** Everywhere above
 that says the draft/rarity/merge system, `owned_abilities`, `AbilityDraftPanel`,
 `rarity_icon.gd`/`upgrade_icon.gd`, etc. were "removed" — they were NOT; they were undone within
-the same day and are live again, unchanged in mechanics, with one change: **schopnosti's offer now
-triggers after the intro landing (as ORIGINAL, unwaved) AND after EVERY wave clear
-(`_on_wave_cleared()`), not after every level-up.** `_level_up()` only grants dovednosti points now.
+the same day and are live again, unchanged in mechanics, with one change: schopnosti's offer now
+triggers after the intro landing (as ORIGINAL) AND periodically thereafter (see "STALE" note below
+for what that periodic trigger became after the top-down pivot's Fáze 6), not after every level-up.
+`_level_up()` only grants dovednosti points now.
 
 **Both systems read/write the SAME `ABILITIES` catalog and their contributions to
 `get_stat_bonus()` ADD TOGETHER** — a player can have "Jádro síly" at dovednostní stupeň 2/3
@@ -1022,16 +1097,14 @@ start). `player.gd`'s `_on_landed()` still calls `begin_intro_ability_draft()` (
 intro step now), and `resolve_ability_draft()`'s tail calls `finish_intro()` **directly** once that
 offer resolves — `begin_intro_skill_tree()` no longer exists at all.
 
-**Wave-10 shop-vs-draft collision is back too, same shape as the original 2026-09-09 fix, just a
-guaranteed collision now instead of an occasional one**: `_on_wave_cleared()` ALWAYS generates an
-ability-draft offer synchronously before checking `current_wave >= FINAL_WAVE`, so on every single
-10th-wave clear a schopnosti offer and a shop auto-open both fire in the same call. `_open_periodic_
-shop()` → `_try_open_pending_shop()` defers (`_shop_open_deferred`) if `pending_ability_drafts > 0`,
-and `resolve_ability_draft()` retries it at its own tail — restored verbatim from before the
-skill-tree rework, just with the trigger reason changed from "level-up happened to coincide" to
-"every wave-10 clear, always". **Verified with a scene-level headless test**: forcing wave 10 to
-clear shows the ability draft, confirms the shop stays hidden + `_shop_open_deferred == true` while
-it's pending, then confirms the shop auto-opens the instant the draft resolves.
+**STALE (2026-09-27, top-down pivot Fáze 6): "wave 10" doesn't exist anymore — see "Kontinuální
+spawn/obtížnost" further below for the current shape of this collision.** The mechanism itself
+(`_shop_open_deferred`/`_try_open_pending_shop()`, deferring the shop's auto-open while a
+schopnosti offer is pending, retried at the tail of `resolve_ability_draft()`) is UNCHANGED in
+shape and still exists — only the reason a collision can happen changed, from "guaranteed, every
+10th wave clear" to "two independent timers (`_ability_offer_timer`/`_shop_open_timer` in
+`GameManager._process()`) coincidentally firing close together," which is rarer but structurally
+identical to handle.
 
 **STALE (2026-09-26, later the same day): `_refresh_abilities()` no longer shows dovednosti at
 all.** It briefly showed both sources (dovednosti entries first, then schopnosti) right after
@@ -1069,13 +1142,13 @@ DebugPanel's new height fitting inside the window.
 ## Key tunables when adjusting gameplay
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
-- `scenes/camera_follow.gd` — `camera_left_margin`, `follow_speed` (camera lag/responsiveness)
-- `scenes/main.gd` — enemies per wave, spawn interval/margin, `max_concurrent_enemies`, `elite_count_final_wave`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_wave`/`variant_ramp_full_wave` (loop-1-only ramp for when ranged/sniper start appearing)
+- `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
+- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
-- `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) is the one that matters most — it must stay above the player's base `attack_range` (400) for the "protected artillery" behavior described above to hold
+- `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) vs. the player's base `attack_range` (400) no longer produces the old "protected artillery" behavior (that was an emergent side effect of movement logic removed in the top-down pivot's Fáze 1 — see the STALE note under "Sniper enemies" above), so this relationship is currently just flavor, not a load-bearing mechanic
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
-- `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); add a `Marker2D` in the `level_end` group here (or in a new level scene) to reintroduce a movement cap
-- `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `FINAL_WAVE` (which wave triggers a new loop), `ENEMY_HP_GROWTH_PER_LOOP` (difficulty ramp between loops), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
+- `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); the X-cap machinery this would feed is dormant (see "Level01 is boundless" above), so adding one alone won't do anything today
+- `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window, now on both axes)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Schopnost slots live OUTSIDE BottomBar" above), `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (SkillTreePanel node grid sizing, see "Schopnosti" above)

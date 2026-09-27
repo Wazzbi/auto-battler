@@ -1,48 +1,70 @@
 extends Node2D
-## Řídí spawnování nepřátel po vlnách. Samotný postup vln a odměny řeší
-## GameManager - tady jen spawnujeme nepřátele a reagujeme na jeho signály.
+## Řídí KONTINUÁLNÍ spawnování nepřátel (top-down pivot 2026-09-27, Fáze 6 -
+## dřív po diskrétních vlnách/kolech, viz STALE poznámky u GameManager).
+## Neexistuje žádná "vlna" ani fronta k vyprázdnění - místo toho se každý
+## snímek porovnává GameManager.enemies_alive s cílovým počtem podle
+## GameManager.survival_time (_get_target_concurrent_count()) a chybějící
+## se doplňují přes spawn_timer/spawn_interval, stejně jako dřív v rámci
+## jedné vlny. Samotné odměny/progrese řeší GameManager - tady jen
+## spawnujeme nepřátele.
 
 @export var enemy_scene: PackedScene
 @export var elite_enemy_scene: PackedScene
 @export var ranged_enemy_scene: PackedScene
 ## Pravděpodobnost, že se dálkový nepřítel objeví místo normálního při
-## běžném spawnu z fronty vlny (Elite frontu neovlivňuje - ta má vlastní
-## pořadí, viz _spawn_enemy())
+## běžném spawnu (Elite se touhle logikou neřídí - ta má vlastní frontu,
+## viz _spawn_enemy())
 @export var ranged_enemy_chance: float = 0.3
 @export var sniper_enemy_scene: PackedScene
 ## Nižší než ranged_enemy_chance - sniper (dostřel přes hráčův attack_range)
 ## je vzácnější a nebezpečnější varianta, ne běžná náhrada za normálního nepřítele
 @export var sniper_enemy_chance: float = 0.15
-## Do téhle vlny (v 1. kole) se ranged/sniper nepřátelé vůbec neobjevují -
-## viz _variant_chance_multiplier(). Bez rozjezdu umírali noví hráči často
-## už ve vlně 1-2, dřív než stihli zabít jediného nepřítele (ranged/sniper
-## dávají poškození zdarma z bezpečné vzdálenosti, na kterou hráč na začátku
-## nemá dosah ani itemy).
-@export var variant_ramp_start_wave: int = 3
-## Od téhle vlny (v 1. kole) mají ranged_enemy_chance/sniper_enemy_chance
-## svou plnou nakonfigurovanou hodnotu - mezi start a full lineárně narůstá.
-@export var variant_ramp_full_wave: int = 7
+## Do téhle chvíle (sekundy reálného přežití od startu běhu) se ranged/sniper
+## nepřátelé vůbec neobjevují - viz _variant_chance_multiplier(). Bez
+## rozjezdu umírali noví hráči často už v první minutě, dřív než stihli
+## zabít jediného nepřítele (ranged/sniper dávají poškození zdarma z
+## bezpečné vzdálenosti, na kterou hráč na začátku nemá dosah ani itemy).
+## PRVNÍ ODHAD čísla (dřív to byly čísla vln 3/7, teď čas - nepřevedeno 1:1,
+## jen podle stejného DUCHU "pár prvních okamžiků žádné, pak rozjezd").
+@export var variant_ramp_start_time: float = 30.0
+## Od téhle chvíle mají ranged_enemy_chance/sniper_enemy_chance svou plnou
+## nakonfigurovanou hodnotu - mezi start a full lineárně narůstá. Platí VŽDY
+## (ne jen "první kolo" jako dřív - bez kol není vůči čemu tu výjimku dělat,
+## viz _variant_chance_multiplier()).
+@export var variant_ramp_full_time: float = 90.0
 @export var enemies_base_count: int = 4
 ## Násobitel odmocninové křivky obtížnosti - růst je postupný, ne skokový
 @export var difficulty_growth: float = 1.2
+## Kolik sekund reálného přežití odpovídá jedné "vlně" staré křivky
+## (enemies_base_count + sqrt((survival_time/seconds_per_wave_equivalent) *
+## difficulty_growth)) - PRVNÍ ODHAD, žádný přesný převod neexistuje (stará
+## dálka vlny závisela na tom, jak rychle hráč zabíjel).
+@export var seconds_per_wave_equivalent: float = 20.0
 @export var spawn_interval: float = 1.2
 ## Jak daleko za viditelným okrajem obrazovky (v libovolném směru od hráče,
 ## viz _spawn_around_player()) se nepřátelé spawnují
 @export var spawn_margin: float = 80.0
-## Kolik nepřátel smí být živých najednou - brání přehlcení hráče v pozdějších vlnách
+## Kolik nepřátel smí být živých najednou - brání přehlcení hráče
 @export var max_concurrent_enemies: int = 6
-## Kolik Elite nepřátel se přidá do poslední vlny (GameManager.FINAL_WAVE) navíc
-## k běžnému počtu - spawnou se první, zbytek vlny doplní normální nepřátelé
-@export var elite_count_final_wave: int = 1
+## Kolik Elite nepřátel se spawne na každém časovém checkpointu (viz
+## elite_checkpoints_seconds níže)
+@export var elite_count_per_checkpoint: int = 1
+## Časové značky (sekundy reálného přežití), na kterých se spawnou Elite
+## nepřátelé - nahrazuje dřívější "jen na 10. vlně". PRVNÍ ODHAD (každé 3
+## minuty), needoladěné hraním.
+@export var elite_checkpoints_seconds: Array[float] = [180.0, 360.0, 540.0, 720.0, 900.0]
 
 @onready var player: Node2D = $Player
 @onready var camera: Camera2D = $Camera2D
 @onready var hud: CanvasLayer = $HUD
 
 var spawn_timer: float = 0.0
-var enemies_left_to_spawn: int = 0
-## Elite nepřátelé čekající na spawn - nenulové jen ve finální vlně (viz _on_wave_started)
+## Elite nepřátelé čekající na spawn - naplní se, jakmile survival_time
+## překročí další nekonzumovaný checkpoint (viz _check_elite_checkpoints()).
 var elites_left_to_spawn: int = 0
+## Kolik prvků elite_checkpoints_seconds už bylo spotřebováno - INDEX
+## do pole, ne časová hodnota (viz _check_elite_checkpoints()).
+var _elite_checkpoints_consumed: int = 0
 
 
 ## Reset musí proběhnout v _enter_tree(), ne v _ready() - _ready() rodiče se volá
@@ -53,8 +75,6 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
-	GameManager.wave_started.connect(_on_wave_started)
-	GameManager.wave_cleared.connect(_on_wave_cleared)
 	GameManager.game_over_triggered.connect(_on_game_over)
 	GameManager.game_won_triggered.connect(_on_game_won)
 
@@ -66,29 +86,58 @@ func _ready() -> void:
 	camera.set_target(player)
 	player.landed.connect(camera.shake)
 
-	GameManager.start_next_wave()
-
 
 func _process(delta: float) -> void:
 	if GameManager.state != GameManager.State.PLAYING:
 		return
 
-	var total_left_to_spawn: int = enemies_left_to_spawn + elites_left_to_spawn
-	if total_left_to_spawn > 0 and GameManager.enemies_alive < max_concurrent_enemies:
+	_check_elite_checkpoints()
+
+	var should_spawn: bool = (
+		elites_left_to_spawn > 0
+		or GameManager.enemies_alive < mini(_get_target_concurrent_count(), max_concurrent_enemies)
+	)
+	if should_spawn:
 		spawn_timer -= delta
 		if spawn_timer <= 0.0:
 			_spawn_enemy()
 			spawn_timer = spawn_interval
 
 
+## Odmocninová křivka obtížnosti proti UPLYNULÉMU ČASU místo čísla vlny (top-down
+## pivot Fáze 6) - stejný TVAR růstu jako dřív (postupný, ne skokový), jen jiná
+## osa X. Vrací, kolik nepřátel by mělo být živých najednou PRÁVĚ TEĎ (ne kolik
+## jich ještě zbývá spawnout - žádná fronta k vyprázdnění už neexistuje).
+func _get_target_concurrent_count() -> int:
+	var wave_equivalent: float = GameManager.survival_time / seconds_per_wave_equivalent
+	return enemies_base_count + int(floor(sqrt(wave_equivalent) * difficulty_growth))
+
+
+## Jakmile survival_time překročí další nekonzumovaný prvek
+## elite_checkpoints_seconds, přidá elite_count_per_checkpoint Elite nepřátel
+## do fronty (spawnou se přednostně, viz _spawn_enemy()). Kontroluje jen
+## JEDEN checkpoint za snímek přes _elite_checkpoints_consumed jako index -
+## i kdyby hra běžela extrémně rychle (Engine.time_scale v Debug panelu),
+## checkpointy se spotřebují postupně, ne všechny najednou.
+func _check_elite_checkpoints() -> void:
+	if elite_enemy_scene == null:
+		return
+	while (
+		_elite_checkpoints_consumed < elite_checkpoints_seconds.size()
+		and GameManager.survival_time >= elite_checkpoints_seconds[_elite_checkpoints_consumed]
+	):
+		elites_left_to_spawn += elite_count_per_checkpoint
+		_elite_checkpoints_consumed += 1
+
+
 func _spawn_enemy() -> void:
-	# Elite se ve finální vlně spawnou jako první, teprve pak normální nepřátelé.
+	# Elite se spawnou přednostně, jakmile je fronta neprázdná (viz
+	# _check_elite_checkpoints()), teprve pak normální/variantní nepřátelé.
 	var scene_to_spawn: PackedScene = enemy_scene
 	if elites_left_to_spawn > 0:
 		scene_to_spawn = elite_enemy_scene
 		elites_left_to_spawn -= 1
 	else:
-		enemies_left_to_spawn -= 1
 		# Jeden společný hod rozhoduje mezi variantami - nezávislé hody by se
 		# mohly obě "trefit" najednou a bez smyslu upřednostnit tu poslední
 		# zkontrolovanou podmínku.
@@ -102,7 +151,6 @@ func _spawn_enemy() -> void:
 			scene_to_spawn = ranged_enemy_scene
 
 	_spawn_around_player(scene_to_spawn)
-	GameManager.enemies_remaining_to_spawn = enemies_left_to_spawn + elites_left_to_spawn
 
 
 ## Vytvoří a umístí nepřítele na náhodné místo na kruhu kolem hráče, těsně
@@ -132,38 +180,20 @@ func _spawn_around_player(scene: PackedScene) -> Node2D:
 
 
 ## Násobitel 0-1 pro ranged_enemy_chance/sniper_enemy_chance - lineárně roste
-## od variant_ramp_start_wave (0) do variant_ramp_full_wave (1). Platí JEN
-## v 1. kole (loop_count == 1) - od 2. kola dál je vždy plný, protože hráč
-## už jednou rozjezdem prošel a má z předchozího kola úroveň i itemy, takže
-## další "měkký start" by jen zbytečně zjednodušil endless škálování.
+## od variant_ramp_start_time (0) do variant_ramp_full_time (1) sekund
+## reálného přežití. Platí VŽDY teď (dřív jen "1. kolo" - bez kol není vůči
+## čemu tu výjimku dělat, viz vars výše).
 func _variant_chance_multiplier() -> float:
-	if GameManager.loop_count > 1:
-		return 1.0
-	if GameManager.current_wave < variant_ramp_start_wave:
+	if GameManager.survival_time < variant_ramp_start_time:
 		return 0.0
-	if GameManager.current_wave >= variant_ramp_full_wave:
+	if GameManager.survival_time >= variant_ramp_full_time:
 		return 1.0
-	var span: int = variant_ramp_full_wave - variant_ramp_start_wave
-	return float(GameManager.current_wave - variant_ramp_start_wave) / float(span)
-
-
-func _on_wave_started(wave_number: int) -> void:
-	# Odmocninová křivka obtížnosti - roste postupně, ne lineárně/skokově.
-	# Wave 1 = 4, wave 5 ≈ 6, wave 10 ≈ 7, wave 20 ≈ 9 nepřátel.
-	enemies_left_to_spawn = enemies_base_count + int(floor(sqrt(wave_number - 1) * difficulty_growth))
-	elites_left_to_spawn = elite_count_final_wave if (
-		wave_number == GameManager.FINAL_WAVE and elite_enemy_scene != null
-	) else 0
-	GameManager.enemies_remaining_to_spawn = enemies_left_to_spawn + elites_left_to_spawn
-	spawn_timer = 0.0
-
-
-func _on_wave_cleared(wave_number: int) -> void:
-	hud.show_wave_cleared_message(wave_number)
+	var span: float = variant_ramp_full_time - variant_ramp_start_time
+	return (GameManager.survival_time - variant_ramp_start_time) / span
 
 
 func _on_game_over() -> void:
-	hud.show_game_over(GameManager.current_wave, GameManager.currency)
+	hud.show_game_over(GameManager.survival_time, GameManager.currency)
 
 
 func _on_game_won() -> void:
@@ -173,23 +203,15 @@ func _on_game_won() -> void:
 # --- Debug panel ---------------------------------------------------------
 
 ## DEBUG: okamžitě dobije všechny živé nepřátele (přes jejich normální
-## take_damage(), aby dostali odměnu/XP stejnou cestou jako v běžné hře) a
-## vyprázdní frontu zbytku vlny. Pokud v tu chvíli náhodou nikdo naživu
-## nebyl (např. mezi vlnami), smrt posledního nepřítele wave-clear sama
-## nevyvolá - o to se pak postará GameManager.debug_force_wave_clear().
-func debug_skip_wave() -> void:
-	var had_enemies_alive: bool = GameManager.enemies_alive > 0
-
-	enemies_left_to_spawn = 0
+## take_damage(), aby dostali odměnu/XP stejnou cestou jako v běžné hře).
+## Nahrazuje dřívější debug_skip_wave() - bez vln nemá "přeskočit vlnu"
+## smysl, tohle je čistě "vyčisti obrazovku" pro rychlé testování; nový
+## spawn okamžitě doplní chybějící počet podle _get_target_concurrent_count().
+func debug_kill_all_enemies() -> void:
 	elites_left_to_spawn = 0
-	GameManager.enemies_remaining_to_spawn = 0
-
 	for enemy in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(enemy):
 			enemy.take_damage(999999.0)
-
-	if not had_enemies_alive:
-		GameManager.debug_force_wave_clear()
 
 
 ## DEBUG: spawne jednoho Elite nepřítele na vyžádání, mimo běžnou frontu vln
