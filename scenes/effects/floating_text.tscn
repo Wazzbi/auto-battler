@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/effects/floating_text.gd" id="1_floating_text_script"]
+
+[node name="FloatingText" type="Node2D"]
+script = ExtResource("1_floating_text_script")
+
+[node name="Label" type="Label" parent="."]
+offset_left = -80.0
+offset_top = -10.0
+offset_right = 80.0
+offset_bottom = 14.0
+theme_override_font_sizes/font_size = 15
+horizontal_alignment = 1

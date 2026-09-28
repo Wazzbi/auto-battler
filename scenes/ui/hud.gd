@@ -64,6 +64,11 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 ## _update_dash_cooldown_bar() níže) - prázdný hned po použití, plný, když je
 ## poskok připravený.
 @onready var dash_cooldown_bar: ProgressBar = $Control/DashCooldownBar
+## Kartička dočasného bonusu rychlosti ze speed_pickup.gd (viz "Sebratelné
+## předměty" v CLAUDE.md) - nad DashCooldownBar, skrytá dokud
+## player_ref.get_speed_buff_ratio() není > 0 (viz _update_speed_buff_card()).
+@onready var speed_buff_label: Label = $Control/SpeedBuffLabel
+@onready var speed_buff_bar: ProgressBar = $Control/SpeedBuffBar
 
 @onready var shop_panel: Panel = $Control/ShopPanel
 @onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
@@ -266,6 +271,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_dash_cooldown_bar()
+	_update_speed_buff_card()
 
 	if not _end_screen_countdown_active:
 		return
@@ -285,6 +291,24 @@ func _update_dash_cooldown_bar() -> void:
 	if player_ref == null:
 		return
 	dash_cooldown_bar.value = player_ref.get_dash_cooldown_ratio() * 100.0
+
+
+## Stejný "pollovat každý snímek" důvod jako _update_dash_cooldown_bar() výše -
+## na rozdíl od dash ale bar UBÝVÁ (viz get_speed_buff_ratio()), a
+## popisek/bar se schovává úplně, dokud žádný bonus neběží (stejný show/hide
+## idiom jako _update_hp_regen_label()).
+func _update_speed_buff_card() -> void:
+	if player_ref == null:
+		return
+	var ratio: float = player_ref.get_speed_buff_ratio()
+	if ratio <= 0.0:
+		speed_buff_label.hide()
+		speed_buff_bar.hide()
+		return
+	speed_buff_label.show()
+	speed_buff_bar.show()
+	speed_buff_label.text = "Rychlost (+%d%%)" % int(round(player_ref.get_speed_buff_percent() * 100))
+	speed_buff_bar.value = ratio * 100.0
 
 
 ## Zavolá Main po vytvoření hráče, aby se HUD napojil na jeho signály a staty.

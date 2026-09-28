@@ -78,6 +78,16 @@ var cooldown_timer: float = 0.0
 ## Odpočítává od dash_cooldown k 0 - HUD (DashCooldownBar) z něj přímo čte
 ## přes get_dash_cooldown_ratio() na 0.0 (právě použito) - 1.0 (připraveno).
 var dash_cooldown_timer: float = 0.0
+## Dočasný bonus rychlosti pohybu ze speed_pickup.gd (viz "Sebratelné
+## předměty" v CLAUDE.md) - `_speed_buff_timer` odpočítává od
+## `_speed_buff_duration` k 0 (na rozdíl od dash_cooldown_timer NEplní se,
+## ale UBÝVÁ - HUD's SpeedBuffBar z toho počítá "kolik ještě zbývá", ne
+## "jak dobito"). Sebrání dalšího kusu při už aktivním bonusu ho jen
+## PŘEPÍŠE (viz apply_speed_buff()) - žádné sčítání procent, jen obnovení
+## plného trvání.
+var _speed_buff_bonus_percent: float = 0.0
+var _speed_buff_timer: float = 0.0
+var _speed_buff_duration: float = 0.0
 ## Směr posledního NENULOVÉHO pohybového vstupu - použije se jako směr
 ## poskoku, když hráč zrovna nedrží žádnou pohybovou klávesu (mezerník sám o
 ## sobě nic o směru neříká). Výchozí doprava, než se hráč poprvé pohne.
@@ -249,6 +259,48 @@ func get_crit_chance() -> float:
 	return base_crit_chance + GameManager.get_stat_bonus("crit_chance")
 
 
+## Na rozdíl od ostatních statů NEPROCHÁZÍ přes GameManager.get_stat_bonus() -
+## move_speed dodnes nemá žádný trvalý progression zdroj (schopnost/item), jen
+## tenhle jeden DOČASNÝ bonus ze speed_pickup.gd. Až/pokud přibude trvalý
+## zdroj rychlosti, patří sem stejný "base + GameManager.get_stat_bonus(...)"
+## vzorec jako u ostatních statů, s dočasným bonusem navíc.
+func get_move_speed() -> float:
+	if _speed_buff_timer > 0.0:
+		return move_speed * (1.0 + _speed_buff_bonus_percent)
+	return move_speed
+
+
+## Volá speed_pickup.gd při sebrání - PŘEPÍŠE (neskládá) předchozí bonus i
+## časovač, takže sebrání dalšího kusu během už aktivního efektu jen obnoví
+## plné trvání, nestacká se.
+func apply_speed_buff(percent: float, duration: float) -> void:
+	_speed_buff_bonus_percent = percent
+	_speed_buff_timer = duration
+	_speed_buff_duration = duration
+
+
+## 1.0 hned po sebrání - 0.0 po vypršení (na rozdíl od get_dash_cooldown_ratio()
+## NEplnící se, ale UBÝVAJÍCÍ bar - viz hud.gd's _update_speed_buff_card()).
+func get_speed_buff_ratio() -> float:
+	if _speed_buff_duration <= 0.0:
+		return 0.0
+	return _speed_buff_timer / _speed_buff_duration
+
+
+## Aktuálně aplikované procento bonusu - HUD z toho čte popisek karty
+## ("Rychlost (+N%)"), ať číslo zůstane jednozdrojové na speed_pickup.gd.
+func get_speed_buff_percent() -> float:
+	return _speed_buff_bonus_percent
+
+
+## Uzdraví hráče o `amount`, capne na max_hp - volá heal_pickup.gd. Stejný
+## clamp/signál jako pasivní HP regen v _process() níže, jen jako veřejná
+## jednorázová metoda.
+func heal(amount: float) -> void:
+	hp = minf(hp + amount, max_hp)
+	hp_changed.emit(hp, max_hp)
+
+
 func _on_level_changed(_new_level: int) -> void:
 	_apply_progression_changes()
 
@@ -299,11 +351,12 @@ func _process(delta: float) -> void:
 	# toho druhého - na rozdíl od staré "jdi jen když je čisto" logiky hráč
 	# může střílet A hýbat se zároveň (Vampire Survivors styl).
 	var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	global_position = _resolve_obstacle_collisions(global_position + input_dir * move_speed * delta)
+	global_position = _resolve_obstacle_collisions(global_position + input_dir * get_move_speed() * delta)
 	if input_dir != Vector2.ZERO:
 		_last_move_direction = input_dir.normalized()
 
 	dash_cooldown_timer = maxf(dash_cooldown_timer - delta, 0.0)
+	_speed_buff_timer = maxf(_speed_buff_timer - delta, 0.0)
 	if Input.is_action_just_pressed("dash"):
 		_try_dash()
 

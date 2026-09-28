@@ -279,6 +279,88 @@ of this PR is the MECHANISM (spawning, targeting, avoidance), not the visuals.
   would land inside an object lands exactly on its edge; a point near a corner — inside the
   circumscribing circle but outside the square — is confirmed unblocked, proving the collision
   shape is genuinely square, not a relabeled circle.
+
+**Sebratelné předměty (`scenes/world_objects/pickup_base.gd`, `heal_pickup.gd`/`speed_pickup.gd`)** —
+added 2026-09-28, explicit user request: diamond-shaped kosočtverce the player collects by simply
+walking into them (unlike destructible/indestructible objects above, which are obstacles the player
+is BLOCKED by — pickups must NOT join `"obstacles"`, or the player could never reach them). Two
+types today: a green heal pickup (+15 HP instantly, only consumed while `player.hp < player.max_hp`
+— at full HP it's a no-op and stays in the world) and a white speed pickup (+15% move speed for 30s,
+shown as a small depleting-bar card above the HUD's Dash cooldown bar). Both spawn via the same
+ring-spawn mechanism as every other world object (`main.gd`'s `_spawn_world_object()`/
+`_random_position_around_player()`, unchanged).
+
+- **Shared `pickup_base.gd`, not two duplicated scripts** — the two pickup types are near-identical
+  shells (find the player, check distance, check an eligibility condition, apply an effect, show a
+  floating text, self-destruct); only the effect/condition differ. `heal_pickup.gd`/`speed_pickup.gd`
+  both `extends "res://scenes/world_objects/pickup_base.gd"` and override `_can_be_collected()`/
+  `_apply_effect()` — same "share the common shell, vary the specifics via export/override" spirit as
+  `enemy.gd` being reused by Elite/ranged/sniper, just via script inheritance instead of data-only
+  `@export` overrides (needed here because the *effect*, not just numbers, genuinely differs).
+  `pickup_base.gd`'s own `_process()` gates on `GameManager.state != State.PLAYING` (the project-wide
+  convention, see Architecture above) and does a plain distance check against
+  `get_tree().get_first_node_in_group("player")` — same walk-into shape the now-deleted (STALE,
+  see "Lobby a meta-progrese" further below) `ability_pickup.gd` used, reused here since it's still
+  the right approach for a proximity pickup.
+- **Heal pickup's "won't collect at full HP" is a real gate, not just a display choice** —
+  `heal_pickup.gd`'s `_can_be_collected()` returns `player.hp < player.max_hp`; `pickup_base.gd`'s
+  `_process()` only calls `_apply_effect()`/`queue_free()` when that's true, so a full-HP player can
+  stand directly on top of a heal pickup indefinitely without consuming it — it simply waits until
+  actually needed. `player.gd` gained a new public `heal(amount)` (there was previously no HP-mutator
+  besides `take_damage()` and the passive per-frame regen) — same `minf(hp + x, max_hp)` clamp +
+  `hp_changed.emit(...)` as the existing regen code, just as a one-shot call. No new HUD wiring was
+  needed for this — `hud.gd`'s existing `_on_hp_changed()` (already listening to that same signal)
+  updates the HP bar automatically.
+- **Speed buff is the project's first TEMPORARY stat modifier** — every other stat bonus in this
+  codebase (schopnosti, shop items, `LEVEL_STAT_GROWTH`) is permanent for the run, resolved through
+  `GameManager.get_stat_bonus()`. `move_speed` itself has never gone through that system at all (it's
+  a raw `@export` on `player.gd`, read directly), so the buff lives entirely on `player.gd` instead:
+  `apply_speed_buff(percent, duration)` sets `_speed_buff_bonus_percent`/`_speed_buff_timer`/
+  `_speed_buff_duration`; `_speed_buff_timer` ticks DOWN every frame (`maxf(x - delta, 0.0)`, same
+  clamp shape as `dash_cooldown_timer`, just depleting instead of refilling); `get_move_speed()`
+  (new — `_process()`'s movement line now calls this instead of reading `move_speed` directly)
+  returns `move_speed * (1.0 + _speed_buff_bonus_percent)` while the timer is still running, plain
+  `move_speed` once it hits 0. **Collecting a second speed pickup while one is already active
+  REFRESHES it (overwrites bonus + resets the timer to full duration) — it does not stack.** Dash
+  (`dash_distance`) is deliberately untouched by this — it's an independent flat value, not derived
+  from `move_speed`, so the buff only affects continuous walking.
+- **HUD speed-buff card, positioned above the Dash bar per explicit user sketch** — `hud.tscn` gained
+  `SpeedBuffLabel`/`SpeedBuffBar` (both `visible = false` by default), direct `Control` children
+  positioned directly above `DashLabel`/`DashCooldownBar` in the same x-range. `hud.gd`'s
+  `_update_speed_buff_card()` polls `player_ref.get_speed_buff_ratio()` every frame (same "changes
+  continuously, no signal to hang off" reasoning as `_update_dash_cooldown_bar()`) and shows/hides
+  both nodes based on `ratio > 0` (same idiom as `_update_hp_regen_label()`) — **the bar DEPLETES**
+  (`ratio = _speed_buff_timer / _speed_buff_duration`, 1.0 right after collection down to 0.0 at
+  expiry), the opposite fill direction from the Dash bar's *filling* cooldown bar, per explicit user
+  spec ("bar ve kterém by postupně ubývalo"). The label's "+N%" text reads
+  `player_ref.get_speed_buff_percent()` rather than hardcoding "15%" in `hud.tscn`, so the balance
+  number stays single-sourced on `speed_pickup.gd`.
+- **Floating text effect (`scenes/effects/floating_text.gd`/`.tscn`, new)** — no floating-text
+  precedent existed anywhere in the project before this (confirmed via a full `Tween` grep); closest
+  shape was `impact_effect.gd`'s self-freeing tween. `floating_text.gd` mirrors that same shape
+  (`tween_property` in parallel for rise + fade → `tween.tween_callback(queue_free)`) but drives a
+  child `Label` instead of `_draw()`. Its `setup(text, color)` (not `_ready()`) starts the tween —
+  same reasoning as `projectile.gd`'s `setup()`: the caller (`pickup_base.gd`'s
+  `_spawn_floating_text()`) sets these AFTER `instantiate()`/`add_child()`, so `_ready()` timing can't
+  be relied on. Both pickup types set their own `floating_text_color` (matching their own polygon
+  color) so the text reads as visually tied to what was picked up.
+- **Spawn cap counts CURRENTLY-ALIVE pickups, not total-ever-spawned — a deliberate deviation from
+  the destructible/indestructible pattern just above, not an inconsistency.** `main.gd`'s
+  `max_destructibles`/`max_indestructibles` deliberately never free a slot on destruction (permanent
+  placeholders, one-way ratchet). Pickups are the opposite — meant to be consumed constantly and keep
+  reappearing all run — so `max_heal_pickups`/`max_speed_pickups` are checked against
+  `get_tree().get_nodes_in_group("heal_pickups"/"speed_pickups").size()` directly, no spawned-counter
+  var at all. Collecting a pickup frees its slot for a new one to spawn later.
+- **Verified with headless tests** (real `main.tscn`, `player.debug_invincible = true`): a heal
+  pickup below full HP restores `heal_amount` and self-destructs; one at full HP is confirmed left
+  untouched; a speed pickup measurably changes `get_move_speed()` by exactly +15% and
+  `get_speed_buff_ratio()` starts near 1.0; re-collecting mid-buff refreshes the ratio upward instead
+  of stacking the bonus; the ratio/speed both correctly return to baseline after `buff_duration`
+  elapses; `main.gd`'s timers populate `"heal_pickups"`/`"speed_pickups"` up to their live cap, and
+  freeing collected pickups lets new ones spawn past what a one-way ratchet would have allowed. Not
+  yet verified live/visually in the editor — do that before treating the HUD card's layout or the
+  floating text's readability as settled.
+
 **Projectile hit radius lives on the enemy, not the projectile**: `enemy.gd` exports `hit_radius`
 (20.0, matching its 18px `Polygon2D` half-width plus a small margin); `elite_enemy.tscn` overrides
 it to 58.0 to match its 3x-scaled 54px half-width. `projectile.gd` reads `target.hit_radius` (and
@@ -1671,7 +1753,8 @@ DebugPanel's new height fitting inside the window.
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown` (Poskok, see "Poskok (Dash)" above); `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
-- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin` (see "Statické objekty ve světě" above)
+- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin` (see "Statické objekty ve světě" above), `heal_pickup_spawn_interval`/`speed_pickup_spawn_interval`/`max_heal_pickups`/`max_speed_pickups` (see "Sebratelné předměty" above — these caps are LIVE-count, not total-ever-spawned, unlike the destructible/indestructible ones)
+- `scenes/world_objects/heal_pickup.tscn` / `speed_pickup.tscn` — `heal_amount` (heal pickup) / `speed_bonus_percent`/`buff_duration` (speed pickup), plus shared `pickup_radius`/`floating_text_color` from `pickup_base.gd` (see "Sebratelné předměty" above)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`, `obstacle_avoid_strength` (see "Statické objekty ve světě" above)
 - `scenes/world_objects/destructible_object.tscn` / `indestructible_object.tscn` — `max_hp`/`hit_radius`/`reward`/`scrap_reward` (destructible only), `avoid_radius` (enemy steering, circular)/`collision_half_size` (player blocking, square — matches the `Polygon2D` visual exactly) — see "Statické objekty ve světě" above
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)

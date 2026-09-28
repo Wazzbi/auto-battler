@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/world_objects/speed_pickup.gd" id="1_speed_pickup_script"]
+[ext_resource type="PackedScene" path="res://scenes/effects/floating_text.tscn" id="2_floating_text"]
+
+[node name="SpeedPickup" type="Node2D"]
+script = ExtResource("1_speed_pickup_script")
+floating_text_scene = ExtResource("2_floating_text")
+floating_text_color = Color(0.92, 0.92, 0.95, 1)
+
+[node name="Polygon2D" type="Polygon2D" parent="."]
+color = Color(0.92, 0.92, 0.95, 1)
+polygon = PackedVector2Array(0, -18, 18, 0, 0, 18, -18, 0)
