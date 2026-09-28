@@ -196,35 +196,47 @@ of this PR is the MECHANISM (spawning, targeting, avoidance), not the visuals.
   same day, explicit user request "aby hráč nemohl těmito statickými předměty procházet")** —
   genuinely different treatment than enemies, and deliberately so: the player is meant to feel a
   real obstacle underfoot, not gently curve past it like an AI does. Both object scripts got a
-  THIRD, independent radius — `collision_radius` (24.0 destructible, 28.0 indestructible) — kept
-  separate from `hit_radius` (projectile targeting) and `avoid_radius` (enemy steering), same
-  "one radius per concern" precedent as `hit_radius` vs. `melee_range` on `enemy.gd` itself (see
-  "Projectile hit radius lives on the enemy..." below). `player.gd`'s new
+  THIRD, independent value — `collision_half_size` — kept separate from `hit_radius` (projectile
+  targeting) and `avoid_radius` (enemy steering), same "one value per concern" precedent as
+  `hit_radius` vs. `melee_range` on `enemy.gd` itself (see "Projectile hit radius lives on the
+  enemy..." below).
+  **STALE (2026-09-28, a third pass the same day): the collision shape is a SQUARE matching the
+  object's own `Polygon2D`, not a circle** — explicit user follow-up ("je možné pro tyto statické
+  předměty změnit kolizní model z kruhu na jejich vlastní tvar čtverce?"). What was `collision_radius`
+  (a circle) is now `collision_half_size` (24.0 destructible, 28.0 indestructible — set to EXACTLY
+  half the `Polygon2D`'s width, `±22`/`±26`, no extra margin like `hit_radius`/`avoid_radius` have —
+  the whole point is that the solid feels exactly matches what's visually drawn). `player.gd`'s
   `_resolve_obstacle_collisions(pos) -> Vector2` takes a PROPOSED new position and, for every node
-  in `"obstacles"` whose `collision_radius` that position would fall inside, pushes it back out to
-  the exact edge of that circle (`obstacle.global_position + offset.normalized() *
-  collision_radius`) — simple circle-vs-point resolution, applied sequentially per obstacle, not a
-  real physics solver (fine for the sparse, non-overlapping placeholder objects this spawns; dense
-  clusters could resolve imperfectly). Wired into BOTH movement paths that change `global_position`:
-  the per-frame walk (`global_position = _resolve_obstacle_collisions(global_position + input_dir *
-  move_speed * delta)`) and `_try_dash()`'s instant jump (same wrapper around its destination) — a
-  dash that would have landed inside an object now lands clamped at its edge instead, so Poskok
-  can't be used to teleport through a wall. Destroying a destructible object frees it from
-  `"obstacles"` (`queue_free()` in `_die()`, unchanged) so it stops blocking immediately, same as it
-  already stopped being targetable/steered-around.
+  in `"obstacles"` whose axis-aligned square (`global_position ± collision_half_size` on both axes)
+  that position would fall inside, pushes it back out along whichever axis has the SMALLER
+  penetration (shortest way out — standard AABB point-clamp resolution, not a circle projection
+  anymore) — `signf()` on the local offset picks which side to push toward, with the same
+  zero-tie-break pattern (`is_zero_approx` → default `1.0`) used by `enemy.gd`'s tangential
+  avoidance. A HEADLESS TEST is what proves this is a real square and not a circle in disguise: a
+  point near a CORNER (inside the circle that would circumscribe the square, but outside the square
+  itself on both axes) is confirmed NOT blocked — a circular model would have wrongly blocked it.
+  Applied sequentially per obstacle, not a real physics solver (fine for the sparse, non-overlapping
+  placeholder objects this spawns; dense clusters could resolve imperfectly). Wired into BOTH
+  movement paths that change `global_position`: the per-frame walk (`global_position =
+  _resolve_obstacle_collisions(global_position + input_dir * move_speed * delta)`) and
+  `_try_dash()`'s instant jump (same wrapper around its destination) — a dash that would have landed
+  inside an object now lands clamped at its edge instead, so Poskok can't be used to teleport
+  through a wall. Destroying a destructible object frees it from `"obstacles"` (`queue_free()` in
+  `_die()`, unchanged) so it stops blocking immediately, same as it already stopped being
+  targetable/steered-around.
 - **Verified with headless tests** (real `main.tscn`): destructible objects join both
   `"obstacles"`/`"destructibles"`, indestructible joins only `"obstacles"`;
   `_find_nearest_targets()` picks up a nearby destructible when no enemy is in range and NEVER
   returns an indestructible one; simulated `take_damage()` reduces HP and destroys the object at
   0 HP; `_avoid_obstacles()` returns `desired_dir` unchanged with nothing nearby, and a measurably
   different (tangentially deflected, still normalized) direction with an obstacle directly ahead;
-  `main.gd`'s periodic timers actually populate `"destructibles"`/`"obstacles"` over simulated time.
-  **Follow-up test the same day**: `_resolve_obstacle_collisions()` pushes an inside-the-radius
-  position out to exactly `collision_radius` and leaves a far-away position untouched; a real,
-  continuous walk (`Input.action_press("move_right")` held for several simulated seconds) toward an
-  object actually stops at its edge instead of drifting inside; a dash whose unclamped destination
-  would land inside an object lands exactly on its edge instead.
-
+  `main.gd`'s periodic timers actually populate `"destructibles"`/`"obstacles"` over simulated time;
+  `_resolve_obstacle_collisions()` pushes an inside-the-square position to the nearest edge (X or Y,
+  whichever penetration is smaller) and leaves a far-away position untouched; a real, continuous
+  walk stops at an object's edge instead of drifting inside; a dash whose unclamped destination
+  would land inside an object lands exactly on its edge; a point near a corner — inside the
+  circumscribing circle but outside the square — is confirmed unblocked, proving the collision
+  shape is genuinely square, not a relabeled circle.
 **Projectile hit radius lives on the enemy, not the projectile**: `enemy.gd` exports `hit_radius`
 (20.0, matching its 18px `Polygon2D` half-width plus a small margin); `elite_enemy.tscn` overrides
 it to 58.0 to match its 3x-scaled 54px half-width. `projectile.gd` reads `target.hit_radius` (and
@@ -1619,7 +1631,7 @@ DebugPanel's new height fitting inside the window.
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
 - `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin` (see "Statické objekty ve světě" above)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`, `obstacle_avoid_strength` (see "Statické objekty ve světě" above)
-- `scenes/world_objects/destructible_object.tscn` / `indestructible_object.tscn` — `max_hp`/`hit_radius`/`reward`/`scrap_reward` (destructible only), `avoid_radius`/`collision_radius` (both — enemy steering vs. player blocking, two independent radii) — see "Statické objekty ve světě" above
+- `scenes/world_objects/destructible_object.tscn` / `indestructible_object.tscn` — `max_hp`/`hit_radius`/`reward`/`scrap_reward` (destructible only), `avoid_radius` (enemy steering, circular)/`collision_half_size` (player blocking, square — matches the `Polygon2D` visual exactly) — see "Statické objekty ve světě" above
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) vs. the player's base `attack_range` (400) no longer produces the old "protected artillery" behavior (that was an emergent side effect of movement logic removed in the top-down pivot's Fáze 1 — see the STALE note under "Sniper enemies" above), so this relationship is currently just flavor, not a load-bearing mechanic
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`

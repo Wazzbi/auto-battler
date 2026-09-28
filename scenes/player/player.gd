@@ -330,22 +330,35 @@ func get_dash_cooldown_ratio() -> float:
 ## "Statické objekty ve světě" v CLAUDE.md (explicit user request 2026-09-28,
 ## "aby hráč nemohl těmito statickými předměty procházet"). Volá se pro
 ## KAŽDOU navrhovanou novou pozici (běžný pohyb i dash) - pokud `pos` skončí
-## uvnitř `collision_radius` nějakého objektu ("obstacles" skupina), odsune ji
-## ven na okraj kruhu (jednoduché "circle vs point" vytlačení, žádná fyzika).
-## Aplikuje se postupně přes VŠECHNY blízké objekty, ne najednou vyřešené -
-## pro řídce rozmístěné placeholder objekty dostatečně přesné, u hustě
-## natěsnaných překážek by to nebylo dokonalé (menší priorita než skutečná
-## fyzika pro tenhle prototyp).
+## uvnitř ČTVERCOVÉ kolizní oblasti nějakého objektu ("obstacles" skupina,
+## `collision_half_size` = polovina strany čtverce, odpovídá skutečnému
+## vizuálu objektu - STEJNÝ tvar jako Polygon2D, ne kruhová aproximace, viz
+## 2026-09-28 follow-up "změnit kolizní model z kruhu na vlastní tvar
+## čtverce"), odsune ji ven na NEJBLIŽŠÍ hranu (osa s MENŠÍM průnikem = kratší
+## cesta ven - standardní AABB point-clamp vytlačení, žádná fyzika). Aplikuje
+## se postupně přes VŠECHNY blízké objekty, ne najednou vyřešené - pro řídce
+## rozmístěné placeholder objekty dostatečně přesné, u hustě natěsnaných
+## překážek by to nebylo dokonalé (menší priorita než skutečná fyzika pro
+## tenhle prototyp).
 func _resolve_obstacle_collisions(pos: Vector2) -> Vector2:
 	var resolved_pos: Vector2 = pos
 	for obstacle in get_tree().get_nodes_in_group("obstacles"):
 		if not is_instance_valid(obstacle):
 			continue
-		var collision_radius: float = obstacle.collision_radius
-		var offset: Vector2 = resolved_pos - obstacle.global_position
-		var dist: float = offset.length()
-		if dist < collision_radius and dist > 0.001:
-			resolved_pos = obstacle.global_position + offset.normalized() * collision_radius
+		var half_size: float = obstacle.collision_half_size
+		var local: Vector2 = resolved_pos - obstacle.global_position
+		if absf(local.x) >= half_size or absf(local.y) >= half_size:
+			continue
+
+		var penetration_x: float = half_size - absf(local.x)
+		var penetration_y: float = half_size - absf(local.y)
+		if penetration_x < penetration_y:
+			var sign_x: float = signf(local.x)
+			local.x = half_size * (sign_x if not is_zero_approx(sign_x) else 1.0)
+		else:
+			var sign_y: float = signf(local.y)
+			local.y = half_size * (sign_y if not is_zero_approx(sign_y) else 1.0)
+		resolved_pos = obstacle.global_position + local
 	return resolved_pos
 
 
