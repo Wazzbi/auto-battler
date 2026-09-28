@@ -65,6 +65,28 @@ extends Node2D
 ## (2026-09-27).
 @export var loop_duration_seconds: float = 180.0
 
+## Statické objekty ve světě (viz "Statické objekty ve světě" v CLAUDE.md,
+## 2026-09-28) - placeholdery pro budoucí smysluplnější objekty, náhodně
+## rozmisťované kolem hráče stejným ring-spawn mechanismem jako nepřátelé
+## (viz _random_position_around_player()). Zničitelné (hnědé) mají HP a hráč
+## je zničí běžnou střelbou; nezničitelné (šedé) jsou trvalé překážky. Obojí
+## učí nepřátele objekty obcházet (viz enemy.gd's _avoid_obstacles()).
+@export var destructible_object_scene: PackedScene
+@export var indestructible_object_scene: PackedScene
+@export var destructible_spawn_interval: float = 8.0
+## Vzácnější než destructible_spawn_interval - nezničitelné objekty jsou
+## trvalé záchytné body ve světě, ne běžná kulisa.
+@export var indestructible_spawn_interval: float = 15.0
+## Měkký strop na CELKOVÝ počet KDY spawnutých objektů za běh (ne aktuálně
+## živých) - zničení zničitelného objektu neuvolní nový slot, stejná
+## jednosměrná jednoduchost jako elites_left_to_spawn níže. PRVNÍ ODHAD,
+## needoladěné hraním.
+@export var max_destructibles: int = 40
+@export var max_indestructibles: int = 20
+## Stejný účel jako spawn_margin u nepřátel - jak daleko za viditelným
+## okrajem obrazovky se objekty spawnují.
+@export var object_spawn_margin: float = 60.0
+
 @onready var player: Node2D = $Player
 @onready var camera: Camera2D = $Camera2D
 @onready var hud: CanvasLayer = $HUD
@@ -76,6 +98,11 @@ var elites_left_to_spawn: int = 0
 ## Kolik prvků elite_checkpoints_seconds už bylo spotřebováno - INDEX
 ## do pole, ne časová hodnota (viz _check_elite_checkpoints()).
 var _elite_checkpoints_consumed: int = 0
+
+var _destructible_spawn_timer: float = 0.0
+var _indestructible_spawn_timer: float = 0.0
+var _destructibles_spawned: int = 0
+var _indestructibles_spawned: int = 0
 
 
 ## Reset musí proběhnout v _enter_tree(), ne v _ready() - _ready() rodiče se volá
@@ -114,6 +141,20 @@ func _process(delta: float) -> void:
 		if spawn_timer <= 0.0:
 			_spawn_enemy()
 			spawn_timer = spawn_interval
+
+	if destructible_object_scene != null and _destructibles_spawned < max_destructibles:
+		_destructible_spawn_timer -= delta
+		if _destructible_spawn_timer <= 0.0:
+			_spawn_world_object(destructible_object_scene)
+			_destructibles_spawned += 1
+			_destructible_spawn_timer = destructible_spawn_interval
+
+	if indestructible_object_scene != null and _indestructibles_spawned < max_indestructibles:
+		_indestructible_spawn_timer -= delta
+		if _indestructible_spawn_timer <= 0.0:
+			_spawn_world_object(indestructible_object_scene)
+			_indestructibles_spawned += 1
+			_indestructible_spawn_timer = indestructible_spawn_interval
 
 
 ## Odmocninová křivka obtížnosti proti UPLYNULÉMU ČASU místo čísla vlny (top-down
@@ -190,14 +231,36 @@ func _spawn_around_player(scene: PackedScene) -> Node2D:
 	# _ready(), který proběhne synchronně při vstupu do stromu.
 	enemy.max_hp *= GameManager.get_enemy_hp_multiplier()
 	add_child(enemy)
-
-	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
-	var min_radius: float = viewport_size.length() / 2.0 + spawn_margin
-	var angle: float = randf() * TAU
-	enemy.global_position = player.global_position + Vector2.RIGHT.rotated(angle) * min_radius
+	enemy.global_position = _random_position_around_player(spawn_margin)
 
 	GameManager.register_enemy_spawned()
 	return enemy
+
+
+## Vytvoří a umístí statický objekt (viz "Statické objekty ve světě" v
+## CLAUDE.md) na náhodné místo na kruhu kolem hráče - stejný ring-spawn jádro
+## jako _spawn_around_player(), jen bez HP škálování/GameManager.enemies_alive
+## účetnictví, které objekty vůbec nemají.
+func _spawn_world_object(scene: PackedScene) -> Node2D:
+	var world_object: Node2D = scene.instantiate()
+	add_child(world_object)
+	world_object.global_position = _random_position_around_player(object_spawn_margin)
+	return world_object
+
+
+## Náhodná pozice na kruhu kolem hráče, těsně mimo viditelnou obrazovku
+## (top-down pivot 2026-09-27, dřív vždy kousek za pravým okrajem kamery).
+## Poloměr = polovina DIAGONÁLY viewportu + margin - půl-šířka by nestačila,
+## protože v "rohových" úhlech (blízko nahoře/dole) by spawn bod pořád ležel
+## uvnitř viditelné oblasti; půl-diagonála zaručí spawn mimo obrazovku bez
+## ohledu na úhel. Sdílené jádro pro spawn nepřátel (_spawn_around_player()) i
+## statických objektů (_spawn_world_object()) - vytaženo zvlášť 2026-09-28,
+## ať obě spawn logiky používají identickou matematiku, jen s jiným marginem.
+func _random_position_around_player(margin: float) -> Vector2:
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+	var min_radius: float = viewport_size.length() / 2.0 + margin
+	var angle: float = randf() * TAU
+	return player.global_position + Vector2.RIGHT.rotated(angle) * min_radius
 
 
 ## Násobitel 0-1 pro ranged_enemy_chance/sniper_enemy_chance - lineárně roste

@@ -117,17 +117,88 @@ projectile hits all use `global_position.distance_to(...)` checks against export
 constants — there are no `Area2D`/`CollisionShape2D` hit layers. This is intentional for prototype
 simplicity per the README; if collision performance ever matters, this is the layer to revisit.
 
-**Enemies don't block each other**: each enemy moves **directly toward the player in 2D**
-(`global_position.move_toward(player_ref.global_position, speed * delta)` — top-down pivot
-2026-09-27, Fáze 4; used to be X-only, `global_position.x -= speed * delta`, so an enemy spawned
-above/below the player would never have approached vertically before this) and stops purely at its
-own `melee_range` (plus a random per-enemy jitter) — it never looks at other enemies' positions.
-This is deliberate, not an oversight: an earlier version made each enemy stop farther back if
-another enemy was already closer to the player (a "queueing" effect), but that broke down once
-enemies could have different speeds (a slow Elite would back up fast normal enemies behind it,
-stalling them). Visual overlap between enemies is an accepted trade-off — there's no collision
-layer to prevent it anyway (see "Combat resolution is distance-based" below). `melee_range_jitter`
-still exists purely so enemies of the *same* type don't all stop at the exact same pixel.
+**Enemies don't block each other**: each enemy moves **toward the player in 2D**, stops purely at
+its own `melee_range` (plus a random per-enemy jitter), and never looks at other enemies' positions
+— they can freely overlap each other. This is deliberate, not an oversight: an earlier version made
+each enemy stop farther back if another enemy was already closer to the player (a "queueing"
+effect), but that broke down once enemies could have different speeds (a slow Elite would back up
+fast normal enemies behind it, stalling them). `melee_range_jitter` still exists purely so enemies
+of the *same* type don't all stop at the exact same pixel.
+
+**STALE (2026-09-28): "directly toward the player" via `move_toward()` is no longer the whole
+story — see "Statické objekty ve světě" below.** Enemies now steer AROUND static world objects
+(`_avoid_obstacles()`), so the movement each frame is `direction_to(player) + tangential nudges
+from nearby obstacles`, not a raw `move_toward()` call. Enemies still never look at EACH OTHER's
+positions (that part is unchanged, still deliberate for the reasons above) — only at
+`"obstacles"`-group nodes, an entirely separate concern.
+
+**Statické objekty ve světě (`scenes/world_objects/`)** — added 2026-09-28, explicit user request:
+"chci... do světa uměli dát zničitelné statické objekty (hnědá barva) a nezničitelné statické
+objekty... naučit nepřátele jak tyto objekty obcházet." Two new procedural (no image assets, same
+`Polygon2D` philosophy as everything else) placeholder scenes, explicitly meant as stand-ins for
+"something more meaningful later" (resources, decoration, structures...) — the actual deliverable
+of this PR is the MECHANISM (spawning, targeting, avoidance), not the visuals.
+
+- **`destructible_object.gd`/`.tscn`** — brown square, `max_hp` (15.0), `hit_radius` (26.0, same
+  "matches the visual + small margin" convention as `enemy.gd`), `reward`/`scrap_reward` (both `0`
+  by default — no payout yet, just the mechanism; trivial to wire up later without touching
+  `_die()` again). `_ready()` adds it to TWO groups: `"obstacles"` (enemies steer around it, see
+  below) and `"destructibles"` (the player's auto-attack can target it, see below). `take_damage()`/
+  `_die()` mirror `enemy.gd`'s shape exactly, including the same `_is_dead` double-death guard
+  (multishot/rapid fire can land two hits on the same object in one frame).
+- **`indestructible_object.gd`/`.tscn`** — gray square, permanent landmark. Deliberately has NO
+  `take_damage()`/HP at all and joins ONLY `"obstacles"`, never `"destructibles"` — the player's
+  targeting literally can't see it (see below), so there's no risk of wasted shots on something
+  that can never die.
+- **Player targeting shares the auto-attack, doesn't invent a new one** (confirmed user decision,
+  the alternative — a separate destroy-on-touch/dash mechanism — was explicitly declined):
+  `player.gd`'s `_find_nearest_enemies()` was renamed `_find_nearest_targets()` and now scans
+  `"enemies"` UNION `"destructibles"`, sorted by distance together regardless of type — the nearest
+  thing in range gets shot first, whether it's an enemy or a crate. Zero changes needed in
+  `_shoot()`/`projectile.gd`: both already call `target.take_damage(damage)`/read
+  `target.hit_radius` generically (that generic interface already existed for enemy variants, see
+  "Projectile hit radius..." below — `destructible_object.gd` just happens to satisfy it too).
+- **Spawning reuses the enemy ring-spawn mechanism, not a new one**: `main.gd`'s old
+  `_spawn_around_player()` had its position math (spawn on a circle around the player, just outside
+  the camera view — half the viewport DIAGONAL + margin, see below) extracted into
+  `_random_position_around_player(margin)`, now shared by enemy spawning AND the new
+  `_spawn_world_object(scene)`. Two independent timers in `main.gd`'s `_process()`
+  (`destructible_spawn_interval` 8s, `indestructible_spawn_interval` 15s — rarer, since
+  indestructible objects are meant to read as permanent landmarks, not routine clutter) spawn one
+  object at a time, gated by `max_destructibles`/`max_indestructibles` (40/20). **The cap counts
+  TOTAL EVER SPAWNED this run, not currently-alive** — destroying a destructible object does NOT
+  free up a new spawn slot, same one-way-ratchet simplicity as `elites_left_to_spawn` elsewhere in
+  this file. No minimum-spacing check between objects (a deliberate simplification for this first
+  pass — occasional visual overlap is an accepted placeholder-quality trade-off, not a bug to fix
+  yet). Objects, once spawned, are never cleaned up/despawned except by destruction — same
+  "no object pooling, relies on runs being short" characteristic enemies already have.
+- **Enemy avoidance is TANGENTIAL steering, not radial repulsion, and NOT real pathfinding** —
+  explicit user decision: `NavigationServer2D`/navmesh baking was considered and declined in favor
+  of staying consistent with how the rest of this game resolves movement/combat (distance checks,
+  not physics — see "Combat resolution is distance-based" below). `enemy.gd`'s new
+  `_avoid_obstacles(desired_dir) -> Vector2` sums a steering contribution from every node in
+  `"obstacles"` within that object's own `avoid_radius`, and blends it into the enemy's desired
+  direction (normally a straight line to the player) with weight `obstacle_avoid_strength` (1.5).
+  **Why tangential, not the more obvious "push away from the obstacle's center" radial approach**:
+  a first implementation used radial repulsion and a headless test caught a real degenerate case —
+  an obstacle sitting EXACTLY on the straight line between an enemy and the player produces a
+  repulsion vector exactly ANTI-PARALLEL to `desired_dir`, which after `+desired_dir` and
+  `.normalize()` collapses right back onto the same line (the enemy would get slowed or pushed
+  straight backward, never sideways, i.e. never actually go AROUND anything in the single most
+  common blocking scenario). Fixed by projecting each obstacle's contribution onto the direction
+  PERPENDICULAR to `desired_dir` instead (`Vector2(-desired_dir.y, desired_dir.x)`), picking a side
+  via `perpendicular.dot(to_enemy)`'s sign — with a deterministic tie-break (`side == 0.0 → 1.0`) so
+  a perfectly-centered obstacle still produces a consistent sideways nudge instead of nothing. No
+  obstacles nearby → returns `desired_dir` completely unchanged (zero extra cost when nothing is
+  around). `O(enemies × obstacles)` per frame — fine at the planned scale (tens of objects, a
+  handful of concurrent enemies); would need spatial partitioning far beyond that.
+- **Verified with headless tests** (real `main.tscn`): destructible objects join both
+  `"obstacles"`/`"destructibles"`, indestructible joins only `"obstacles"`;
+  `_find_nearest_targets()` picks up a nearby destructible when no enemy is in range and NEVER
+  returns an indestructible one; simulated `take_damage()` reduces HP and destroys the object at
+  0 HP; `_avoid_obstacles()` returns `desired_dir` unchanged with nothing nearby, and a measurably
+  different (tangentially deflected, still normalized) direction with an obstacle directly ahead;
+  `main.gd`'s periodic timers actually populate `"destructibles"`/`"obstacles"` over simulated time.
 
 **Projectile hit radius lives on the enemy, not the projectile**: `enemy.gd` exports `hit_radius`
 (20.0, matching its 18px `Polygon2D` half-width plus a small margin); `elite_enemy.tscn` overrides
@@ -1514,8 +1585,9 @@ DebugPanel's new height fitting inside the window.
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown` (Poskok, see "Poskok (Dash)" above); `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
-- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above)
-- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`
+- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin` (see "Statické objekty ve světě" above)
+- `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`, `obstacle_avoid_strength` (see "Statické objekty ve světě" above)
+- `scenes/world_objects/destructible_object.tscn` / `indestructible_object.tscn` — `max_hp`/`hit_radius`/`reward`/`scrap_reward` (destructible only), `avoid_radius` (both) — see "Statické objekty ve světě" above
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) vs. the player's base `attack_range` (400) no longer produces the old "protected artillery" behavior (that was an emergent side effect of movement logic removed in the top-down pivot's Fáze 1 — see the STALE note under "Sniper enemies" above), so this relationship is currently just flavor, not a load-bearing mechanic
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`

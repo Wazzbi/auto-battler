@@ -31,6 +31,10 @@ extends Node2D
 ## vypadá, že se stane příliš brzy/pozdě vůči tomu, co je vidět na obrazovce -
 ## viz projectile.gd, které čte tuhle hodnotu místo vlastní pevné konstanty.
 @export var hit_radius: float = 20.0
+## Jak silně blízké statické objekty (viz "Statické objekty ve světě" v
+## CLAUDE.md, 2026-09-28) ovlivní směr pohybu vůči přímé cestě k hráči - viz
+## _avoid_obstacles(). Vyšší hodnota = ostřejší uhýbání kolem objektů.
+@export var obstacle_avoid_strength: float = 1.5
 
 ## Pokud je zapnuté, útok nedává kontaktní poškození přímo, ale vystřelí
 ## projektil (enemy_projectile.gd) směrem k hráči - viz _shoot_projectile().
@@ -72,7 +76,9 @@ func _process(delta: float) -> void:
 	var stop_distance: float = melee_range + melee_range_jitter
 
 	if distance > stop_distance:
-		global_position = global_position.move_toward(player_ref.global_position, speed * delta)
+		var desired_dir: Vector2 = global_position.direction_to(player_ref.global_position)
+		var move_dir: Vector2 = _avoid_obstacles(desired_dir)
+		global_position += move_dir * speed * delta
 	else:
 		attack_timer -= delta
 		if attack_timer <= 0.0:
@@ -81,6 +87,46 @@ func _process(delta: float) -> void:
 			else:
 				player_ref.take_damage(contact_damage)
 			attack_timer = attack_interval
+
+
+## Jednoduché odpuzení od blízkých statických objektů (viz "Statické objekty
+## ve světě" v CLAUDE.md, 2026-09-28) - NE skutečné pathfinding/navmesh
+## (explicit user rozhodnutí, konzistentní s tím, jak celá hra řeší boj/pohyb
+## přes distance checks, ne fyziku). **TANGENCIÁLNÍ, ne radiální odpuzení** -
+## místo "odstrč nepřítele od objektu pryč" (což by objekt PŘESNĚ na přímce
+## k hráči jen odstrčilo dozadu, ne kolem, protože zpětný vektor je rovnoběžný
+## s desired_dir a po normalizaci by výsledek dopadl na stejnou přímku) se pro
+## každý blízký objekt spočítá KOLMÝ směr na desired_dir a nepřítel se posune
+## podél NĚJ, na stranu, kde objekt zrovna leží (`side = perp.dot(to_enemy)`,
+## se stejnou stranou i při dokonale vystředěném objektu -
+## `side == 0.0 → side = 1.0` deterministický tie-break, ať nepřítel vždycky
+## uhne, ne že zůstane stát/couvat). Váhováno podle blízkosti (čím blíž, tím
+## silnější uhýbání), sečteno přes VŠECHNY objekty ve skupině "obstacles"
+## (destructible_object.gd/indestructible_object.gd) uvnitř jejich vlastního
+## `avoid_radius`, přičteno k `desired_dir` s váhou `obstacle_avoid_strength`.
+## Bez blízkých objektů vrátí `desired_dir` beze změny - nulové navíc náklady,
+## když nic není poblíž. O(nepřátel × objektů) na snímek - zanedbatelné při
+## plánovaných řádech (desítky objektů, jednotky souběžných nepřátel); při
+## výrazně větším počtu by bylo potřeba prostorové indexování.
+func _avoid_obstacles(desired_dir: Vector2) -> Vector2:
+	var steering: Vector2 = Vector2.ZERO
+	var perpendicular: Vector2 = Vector2(-desired_dir.y, desired_dir.x)
+
+	for obstacle in get_tree().get_nodes_in_group("obstacles"):
+		if not is_instance_valid(obstacle):
+			continue
+		var avoid_radius: float = obstacle.avoid_radius
+		var to_enemy: Vector2 = global_position - obstacle.global_position
+		var dist: float = to_enemy.length()
+		if dist < avoid_radius and dist > 0.001:
+			var side: float = perpendicular.dot(to_enemy)
+			if is_zero_approx(side):
+				side = 1.0
+			steering += perpendicular * signf(side) * (avoid_radius - dist) / avoid_radius
+
+	if steering == Vector2.ZERO:
+		return desired_dir
+	return (desired_dir + steering * obstacle_avoid_strength).normalized()
 
 
 ## Vystřelí projektil směrem k hráči - contact_damage se tu recykluje jako

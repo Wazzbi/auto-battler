@@ -297,7 +297,7 @@ func _process(delta: float) -> void:
 		_try_dash()
 
 	cooldown_timer -= delta
-	var targets := _find_nearest_enemies(get_target_count())
+	var targets := _find_nearest_targets(get_target_count())
 	if not targets.is_empty() and cooldown_timer <= 0.0:
 		for target in targets:
 			_shoot(target)
@@ -325,17 +325,27 @@ func get_dash_cooldown_ratio() -> float:
 	return 1.0 - dash_cooldown_timer / dash_cooldown
 
 
-## Vrátí až `count` nejbližších nepřátel v dosahu, seřazené od nejbližšího.
-func _find_nearest_enemies(count: int) -> Array:
+## Vrátí až `count` nejbližších CÍLŮ v dosahu, seřazené od nejbližšího -
+## SLOUČENÝ seznam nepřátel ("enemies" skupina) a zničitelných statických
+## objektů ("destructibles" skupina, viz "Statické objekty ve světě" v
+## CLAUDE.md, 2026-09-28) - řadí se dohromady podle vzdálenosti bez ohledu na
+## typ, takže hráč přirozeně odstřelí i blízký objekt, když zrovna nemá jiný
+## cíl. Nezničitelné objekty se do "destructibles" nikdy nezařadí (viz
+## indestructible_object.gd), takže se sem vůbec nedostanou. Přejmenováno z
+## dřívějšího _find_nearest_enemies() - stejné tělo, jen širší zdroj cílů.
+func _find_nearest_targets(count: int) -> Array:
 	var in_range: Array = []
 	var range_limit := get_attack_range()
 
-	for enemy in get_tree().get_nodes_in_group("enemies"):
-		if not is_instance_valid(enemy):
+	var candidates: Array = get_tree().get_nodes_in_group("enemies")
+	candidates.append_array(get_tree().get_nodes_in_group("destructibles"))
+
+	for candidate in candidates:
+		if not is_instance_valid(candidate):
 			continue
-		var dist: float = global_position.distance_to(enemy.global_position)
+		var dist: float = global_position.distance_to(candidate.global_position)
 		if dist <= range_limit:
-			in_range.append({"node": enemy, "dist": dist})
+			in_range.append({"node": candidate, "dist": dist})
 
 	in_range.sort_custom(func(a, b): return a["dist"] < b["dist"])
 
