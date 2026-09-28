@@ -14,6 +14,9 @@ bg_color = Color(0.25, 0.72, 0.33, 1)
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xp_fill"]
 bg_color = Color(0.85, 0.68, 0.24, 1)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dash_fill"]
+bg_color = Color(0.3, 0.62, 0.95, 1)
+
 [node name="HUD" type="CanvasLayer" unique_id=730099689]
 process_mode = 3
 script = ExtResource("1_hud_script")
@@ -115,6 +118,27 @@ offset_left = 20.0
 offset_top = 108.0
 offset_right = 208.0
 offset_bottom = 416.0
+
+[node name="DashLabel" type="Label" parent="Control"]
+layout_mode = 0
+offset_left = 510.0
+offset_top = 656.0
+offset_right = 770.0
+offset_bottom = 676.0
+theme_override_font_sizes/font_size = 13
+text = "Poskok (mezerník)"
+horizontal_alignment = 1
+
+[node name="DashCooldownBar" type="ProgressBar" parent="Control"]
+layout_mode = 0
+offset_left = 510.0
+offset_top = 680.0
+offset_right = 770.0
+offset_bottom = 700.0
+theme_override_styles/background = SubResource("StyleBoxFlat_bar_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_dash_fill")
+value = 100.0
+show_percentage = false
 
 [node name="SurvivalTimeLabel" type="Label" parent="Control" unique_id=439171733]
 layout_mode = 1

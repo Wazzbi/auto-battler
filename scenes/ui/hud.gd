@@ -58,6 +58,12 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var xp_label: Label = $Control/XPBar/XPLabel
 @onready var gold_label: Label = $Control/GoldLabel
 @onready var scrap_label: Label = $Control/ScrapLabel
+## Poskok (Dash) - dobíjecí bar dole uprostřed obrazovky (explicit user
+## request 2026-09-28, včetně skici rozložení). Plní se, jak dash_cooldown_
+## timer v player.gd dobíhá k 0 (viz get_dash_cooldown_ratio()/
+## _update_dash_cooldown_bar() níže) - prázdný hned po použití, plný, když je
+## poskok připravený.
+@onready var dash_cooldown_bar: ProgressBar = $Control/DashCooldownBar
 
 @onready var shop_panel: Panel = $Control/ShopPanel
 @onready var shop_close_button: Button = $Control/ShopPanel/CloseButton
@@ -259,6 +265,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_dash_cooldown_bar()
+
 	if not _end_screen_countdown_active:
 		return
 	_end_screen_countdown -= delta
@@ -267,6 +275,16 @@ func _process(delta: float) -> void:
 		_go_to_lobby()
 	else:
 		_update_end_screen_countdown_label()
+
+
+## Volá se KAŽDÝ snímek (ne jen na signál) - na rozdíl od ostatních statů
+## dash_cooldown_timer v player.gd tiká plynule i beze změny, kterou by šlo
+## zachytit signálem, takže bar potřebuje přímé pollování, stejný vzor jako
+## _update_hp_regen_label() dřív u regenerace HP.
+func _update_dash_cooldown_bar() -> void:
+	if player_ref == null:
+		return
+	dash_cooldown_bar.value = player_ref.get_dash_cooldown_ratio() * 100.0
 
 
 ## Zavolá Main po vytvoření hráče, aby se HUD napojil na jeho signály a staty.
