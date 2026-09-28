@@ -38,8 +38,6 @@ const SHOP_MINI_SLOT_WIDTH: float = 74.0
 const SHOP_MINI_SLOT_GAP: float = 6.0
 
 @onready var meta_level_label: Label = $MetaLevelLabel
-@onready var meta_xp_bar: ProgressBar = $MetaXPBar
-@onready var meta_xp_label: Label = $MetaXPBar/MetaXPLabel
 @onready var gold_label: Label = $GoldLabel
 
 @onready var dovednosti_tab_button: Button = $DovednostiTabButton
@@ -122,9 +120,6 @@ func _on_skill_ranks_changed() -> void:
 
 func _refresh_meta_ui() -> void:
 	meta_level_label.text = "Meta úroveň: %d" % GameManager.meta_level
-	meta_xp_bar.max_value = GameManager.meta_xp_for_next_level()
-	meta_xp_bar.value = GameManager.meta_xp
-	meta_xp_label.text = "%d / %d" % [GameManager.meta_xp, GameManager.meta_xp_for_next_level()]
 
 	var pending: int = GameManager.pending_skill_points
 	skill_points_badge.visible = pending > 0

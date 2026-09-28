@@ -458,22 +458,29 @@ odhad 180s/3min), obojí vede do lobby.
 - **Nová scéna `scenes/ui/lobby.tscn`/`lobby.gd`** - samostatná scéna (žádný `Player`/`Main`/kamera,
   čistě UI), na kterou `hud.gd`'s přejmenovaná `_go_to_lobby()` (dřív `_restart_game()`, stejný
   countdown/hover-pauza mechanismus, jen jiný cíl přechodu) přepne přes
-  `get_tree().change_scene_to_file(...)` po Game Over/Victory countdownu. Metu úroveň/XP bar (vlevo
-  nahoře), dovednostní strom (`_build_skill_tree_ui()`/`_refresh_skill_tree_ui()` PŘESUNUTY beze
-  změny logiky z dřívějšího `hud.gd` - `GameManager.SKILL_TREE_BRANCHES`/`invest_skill_point()` pod
-  tím se nezměnily), obchod (viz níže) a tlačítko "Další běh"
+  `get_tree().change_scene_to_file(...)` po Game Over/Victory countdownu. Meta úroveň (text, viz
+  STALE níže pro proč bez baru), dovednostní strom (`_build_skill_tree_ui()`/`_refresh_skill_tree_ui()`
+  PŘESUNUTY beze změny logiky z dřívějšího `hud.gd` - `GameManager.SKILL_TREE_BRANCHES`/
+  `invest_skill_point()` pod tím se nezměnily), obchod (viz níže) a tlačítko "Další běh"
   (`get_tree().change_scene_to_file("res://scenes/main.tscn")`, spustí `main.gd`'s `_enter_tree()` →
   `reset_game()` stejně jako dřívější restart).
 - **STALE (2026-09-28, o den později): lobby už NEMÁ souhrn běhu, a místo toho má taby Dovednosti/
   Obchod.** Explicit user request - obrazovka dřív nahoře ukazovala `GameManager.last_run_summary`
   ("Zemřel jsi."/"Smyčka dokončena!" + úroveň/zlato/meta-XP); `last_run_summary` se pořád plní
-  (`_finish_run()`), jen se v lobby už nezobrazuje. Layout je teď: vlevo nahoře meta úroveň/XP bar,
-  vpravo nahoře `GoldLabel` ("Zlato: N"), uprostřed nahoře dvě záložková tlačítka
-  `DovednostiTabButton`/`ObchodTabButton` (stejný bílá/`LOCKED_ITEM_MODULATE` vzor jako dřívější
-  CharacterPanel taby) přepínající `NodesContainer` (dovednostní strom) vs. `ShopTabContent`
-  (obchod, viz níže) - `_set_active_tab(show_dovednosti: bool)`. `DovednostiTabButton` nese malý
-  žlutý `SkillPointsBadge` s "+N" (`pending_skill_points`) - **na rozdíl od dřívějšího portrétového
-  odznáčku je tenhle skutečně akční**, protože v lobby (na rozdíl od běhu) investování reálně funguje.
+  (`_finish_run()`), jen se v lobby už nezobrazuje. Layout je teď: vlevo nahoře `MetaLevelLabel`
+  ("Meta úroveň: N", viz STALE níže - žádný progres bar vedle něj), vpravo nahoře `GoldLabel`
+  ("Zlato: N"), uprostřed nahoře dvě záložková tlačítka `DovednostiTabButton`/`ObchodTabButton`
+  (stejný bílá/`LOCKED_ITEM_MODULATE` vzor jako dřívější CharacterPanel taby) přepínající
+  `NodesContainer` (dovednostní strom) vs. `ShopTabContent` (obchod, viz níže) -
+  `_set_active_tab(show_dovednosti: bool)`. `DovednostiTabButton` nese malý žlutý `SkillPointsBadge`
+  s "+N" (`pending_skill_points`) - **na rozdíl od dřívějšího portrétového odznáčku je tenhle
+  skutečně akční**, protože v lobby (na rozdíl od běhu) investování reálně funguje.
+- **STALE (2026-09-28, ještě později): `MetaXPBar`/`MetaXPLabel` už v lobby vůbec nejsou.**
+  Explicit user request - progres bar k další META úrovni se přesunul z lobby do Game Over/Victory
+  panelu (`hud.tscn`/`hud.gd`, viz "Game Over / Victory auto-restart flow" níže), přímo pod text
+  "+N meta-XP" - ukazuje aktuální postup HNED v momentě, kdy hráč meta-XP vydělal, místo v lobby při
+  každé návštěvě. `lobby.gd`'s `_refresh_meta_ui()` teď aktualizuje jen `MetaLevelLabel`'s text,
+  žádný bar. `MetaLevelLabel` samotný v lobby zůstává (jen o úrovni, bez baru).
 - **`CharacterPanel` (klik na portrét, v běhu) ztratil záložky úplně** - `InventoryTabButton`/
   `SkillTreeTabButton`/`SkillTreeTabContent` smazány, zůstala jen dřívější Inventář sekce (staty +
   aktivní/sklad itemy), bez tab-bar navrch. `_on_portrait_pressed()` se zjednodušil na prosté
@@ -628,18 +635,30 @@ transitions `state` to `PLAYING` while `pending_skill_points` stays `0`, and rea
 with the *same* countdown mechanism — `_end_screen_countdown` ticks down via a manually decremented
 float in `_process` (not a `Timer` node), and `_active_countdown_label` points at whichever panel's
 `CountdownLabel` is currently showing (`show_game_over()`/`show_victory()` set it, along with a
-prefix string — "Restart za" vs. "Nová hra za" — since the two panels only differ in copy, not
-behavior). This works because the two panels are mutually exclusive: `GameManager.state` is either
-`GAME_OVER` or `WON`, never both, so there's never a question of *which* panel's countdown is
-running. Both panels' `mouse_entered`/`mouse_exited` connect to the same
-`_on_end_panel_mouse_entered`/`_exited` handlers (hovering pauses, moving off resumes), and both
-"Pokračovat" buttons connect to the same `_restart_game()`, which just calls
-`get_tree().reload_current_scene()` — `GameManager` is an autoload so it survives the reload
-untouched, and `main.gd`'s `_enter_tree()` calls `GameManager.reset_game()` on the way back up, so
-that's the only reset path; there's no separate "restart" signal or function on `GameManager`
-itself. **Mobile port note**: the pause-on-hover mechanic has no equivalent on touch (no hover
-state), so this will need a different interaction — e.g. pause while a finger is down, or drop the
-pause and just show the countdown — when a mobile port is attempted.
+prefix string — both **"Lobby za"** since "Lobby a meta-progrese" 2026-09-27 (STALE: used to be
+"Restart za" vs. "Nová hra za" — both panels lead to the same place now, see below). This works
+because the two panels are mutually exclusive: `GameManager.state` is either `GAME_OVER` or `WON`,
+never both, so there's never a question of *which* panel's countdown is running. Both panels'
+`mouse_entered`/`mouse_exited` connect to the same `_on_end_panel_mouse_entered`/`_exited` handlers
+(hovering pauses, moving off resumes), and both "Pokračovat" buttons connect to the same
+`_go_to_lobby()` (STALE: renamed from `_restart_game()`), which calls
+`get_tree().change_scene_to_file("res://scenes/ui/lobby.tscn")` instead of the old
+`reload_current_scene()` — `GameManager` is an autoload so it survives the scene change untouched,
+and `main.gd`'s `_enter_tree()` calls `GameManager.reset_game()` only once the player picks "Další
+běh" from the lobby and `main.tscn` loads again, so that's the only reset path; there's no separate
+"restart" signal or function on `GameManager` itself. **`MetaXPBar`/`MetaXPLabel` (2026-09-28)**:
+both panels also show a live META-XP progress bar, right below the "+N meta-XP" text line in
+`game_over_label`/`victory_label` — `show_game_over()`/`show_victory()` both call the shared
+`_update_meta_xp_bar(bar, label)`, reading `GameManager.meta_xp`/`meta_xp_for_next_level()`
+directly. This is safe to read at that exact point because `_finish_run()` (called from
+`trigger_game_over()`/`trigger_win()`, see "Lobby a meta-progrese" above) already ran and updated
+`meta_xp` *before* either signal handler reaches `show_game_over()`/`show_victory()` — the bar shows
+the post-gain state, not a stale pre-gain snapshot. Moved here FROM `scenes/ui/lobby.tscn` (explicit
+user request "vyjmout progres bar s XP v lobby a dát to pod meta-xp do end-game okénka") — the lobby
+itself now shows only `MetaLevelLabel` (a level number, no bar), see "Lobby a meta-progrese" above.
+**Mobile port note**: the pause-on-hover mechanic has no equivalent on touch (no hover state), so
+this will need a different interaction — e.g. pause while a finger is down, or drop the pause and
+just show the countdown — when a mobile port is attempted.
 
 **Visuals are all procedural** — colored `Polygon2D` shapes for characters, and `_draw()`-based
 rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact ring effect.
