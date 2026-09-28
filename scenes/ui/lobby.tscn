@@ -118,7 +118,7 @@ offset_top = 80.0
 offset_right = 1240.0
 offset_bottom = 670.0
 
-[node name="ShopCard0" type="Panel" parent="ShopTabContent"]
+[node name="ShopCard0" type="Button" parent="ShopTabContent"]
 layout_mode = 0
 offset_left = 0.0
 offset_top = 0.0
@@ -127,6 +127,7 @@ offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
 offset_right = 264.0
@@ -137,6 +138,7 @@ horizontal_alignment = 1
 
 [node name="RarityLabel" type="Label" parent="ShopTabContent/ShopCard0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
 offset_right = 264.0
@@ -147,6 +149,7 @@ horizontal_alignment = 1
 
 [node name="DescLabel" type="Label" parent="ShopTabContent/ShopCard0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
 offset_right = 264.0
@@ -158,6 +161,7 @@ autowrap_mode = 2
 
 [node name="CostLabel" type="Label" parent="ShopTabContent/ShopCard0"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
 offset_right = 264.0
@@ -166,16 +170,7 @@ theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
 horizontal_alignment = 1
 
-[node name="ActionButton" type="Button" parent="ShopTabContent/ShopCard0"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 158.0
-offset_right = 264.0
-offset_bottom = 186.0
-theme_override_font_sizes/font_size = 12
-text = "Koupit"
-
-[node name="ShopCard1" type="Panel" parent="ShopTabContent"]
+[node name="ShopCard1" type="Button" parent="ShopTabContent"]
 layout_mode = 0
 offset_left = 290.0
 offset_top = 0.0
@@ -184,6 +179,7 @@ offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
 offset_right = 264.0
@@ -194,6 +190,7 @@ horizontal_alignment = 1
 
 [node name="RarityLabel" type="Label" parent="ShopTabContent/ShopCard1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
 offset_right = 264.0
@@ -204,6 +201,7 @@ horizontal_alignment = 1
 
 [node name="DescLabel" type="Label" parent="ShopTabContent/ShopCard1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
 offset_right = 264.0
@@ -215,6 +213,7 @@ autowrap_mode = 2
 
 [node name="CostLabel" type="Label" parent="ShopTabContent/ShopCard1"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
 offset_right = 264.0
@@ -223,16 +222,7 @@ theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
 horizontal_alignment = 1
 
-[node name="ActionButton" type="Button" parent="ShopTabContent/ShopCard1"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 158.0
-offset_right = 264.0
-offset_bottom = 186.0
-theme_override_font_sizes/font_size = 12
-text = "Koupit"
-
-[node name="ShopCard2" type="Panel" parent="ShopTabContent"]
+[node name="ShopCard2" type="Button" parent="ShopTabContent"]
 layout_mode = 0
 offset_left = 580.0
 offset_top = 0.0
@@ -241,6 +231,7 @@ offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
 offset_right = 264.0
@@ -251,6 +242,7 @@ horizontal_alignment = 1
 
 [node name="RarityLabel" type="Label" parent="ShopTabContent/ShopCard2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
 offset_right = 264.0
@@ -261,6 +253,7 @@ horizontal_alignment = 1
 
 [node name="DescLabel" type="Label" parent="ShopTabContent/ShopCard2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
 offset_right = 264.0
@@ -272,6 +265,7 @@ autowrap_mode = 2
 
 [node name="CostLabel" type="Label" parent="ShopTabContent/ShopCard2"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
 offset_right = 264.0
@@ -280,16 +274,7 @@ theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
 horizontal_alignment = 1
 
-[node name="ActionButton" type="Button" parent="ShopTabContent/ShopCard2"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 158.0
-offset_right = 264.0
-offset_bottom = 186.0
-theme_override_font_sizes/font_size = 12
-text = "Koupit"
-
-[node name="ShopCard3" type="Panel" parent="ShopTabContent"]
+[node name="ShopCard3" type="Button" parent="ShopTabContent"]
 layout_mode = 0
 offset_left = 870.0
 offset_top = 0.0
@@ -298,6 +283,7 @@ offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard3"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
 offset_right = 264.0
@@ -308,6 +294,7 @@ horizontal_alignment = 1
 
 [node name="RarityLabel" type="Label" parent="ShopTabContent/ShopCard3"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
 offset_right = 264.0
@@ -318,6 +305,7 @@ horizontal_alignment = 1
 
 [node name="DescLabel" type="Label" parent="ShopTabContent/ShopCard3"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
 offset_right = 264.0
@@ -329,6 +317,7 @@ autowrap_mode = 2
 
 [node name="CostLabel" type="Label" parent="ShopTabContent/ShopCard3"]
 layout_mode = 0
+mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
 offset_right = 264.0
@@ -336,15 +325,6 @@ offset_bottom = 154.0
 theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
 horizontal_alignment = 1
-
-[node name="ActionButton" type="Button" parent="ShopTabContent/ShopCard3"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 158.0
-offset_right = 264.0
-offset_bottom = 186.0
-theme_override_font_sizes/font_size = 12
-text = "Koupit"
 
 [node name="RerollButton" type="Button" parent="ShopTabContent"]
 layout_mode = 0
