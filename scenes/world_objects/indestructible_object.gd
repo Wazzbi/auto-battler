@@ -10,6 +10,11 @@ extends Node2D
 ## výchozí hodnota než destructible_object.gd, ať trvalé objekty působí jako
 ## "pevnější" překážka.
 @export var avoid_radius: float = 65.0
+## Poloměr, který hráč fyzicky nemůže vejít - viz player.gd's
+## _resolve_obstacle_collisions() a destructible_object.gd's stejnojmenný
+## export pro plné zdůvodnění. Vyšší než destructible_object.gd's výchozí
+## hodnota, stejný "pevnější překážka" duch jako u avoid_radius výše.
+@export var collision_radius: float = 28.0
 
 
 func _ready() -> void:

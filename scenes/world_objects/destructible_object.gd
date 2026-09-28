@@ -18,6 +18,12 @@ extends Node2D
 ## enemy.gd's _avoid_obstacles(). Nezávislé na hit_radius (to je pro
 ## projektily hráče, tohle je pro pohyb nepřátel).
 @export var avoid_radius: float = 50.0
+## Poloměr, který hráč fyzicky nemůže vejít (viz player.gd's
+## _resolve_obstacle_collisions(), 2026-09-28 - "aby hráč nemohl těmito
+## statickými předměty procházet"). Vlastní hodnota nezávislá na hit_radius/
+## avoid_radius - odpovídá vizuálu + malá rezerva, stejná konvence jako
+## ostatní poloměry tady, jen pro jinou skupinu (hráč, ne projektily/nepřátelé).
+@export var collision_radius: float = 24.0
 ## Odměna za zničení - výchozí 0 (zatím čistý mechanismus, žádná odměna).
 ## Snadné později zapojit bez další úpravy _die().
 @export var reward: int = 0

@@ -288,7 +288,7 @@ func _process(delta: float) -> void:
 	# toho druhého - na rozdíl od staré "jdi jen když je čisto" logiky hráč
 	# může střílet A hýbat se zároveň (Vampire Survivors styl).
 	var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	global_position += input_dir * move_speed * delta
+	global_position = _resolve_obstacle_collisions(global_position + input_dir * move_speed * delta)
 	if input_dir != Vector2.ZERO:
 		_last_move_direction = input_dir.normalized()
 
@@ -313,7 +313,7 @@ func _try_dash() -> void:
 
 	var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var direction: Vector2 = input_dir.normalized() if input_dir != Vector2.ZERO else _last_move_direction
-	global_position += direction * dash_distance
+	global_position = _resolve_obstacle_collisions(global_position + direction * dash_distance)
 	dash_cooldown_timer = dash_cooldown
 
 
@@ -323,6 +323,30 @@ func _try_dash() -> void:
 ## schopnost připravená).
 func get_dash_cooldown_ratio() -> float:
 	return 1.0 - dash_cooldown_timer / dash_cooldown
+
+
+## Hráč (na rozdíl od nepřátel, viz enemy.gd's _avoid_obstacles()) statické
+## objekty NEOBCHÁZÍ, ale je jimi blokován - nemůže do nich vejít, viz
+## "Statické objekty ve světě" v CLAUDE.md (explicit user request 2026-09-28,
+## "aby hráč nemohl těmito statickými předměty procházet"). Volá se pro
+## KAŽDOU navrhovanou novou pozici (běžný pohyb i dash) - pokud `pos` skončí
+## uvnitř `collision_radius` nějakého objektu ("obstacles" skupina), odsune ji
+## ven na okraj kruhu (jednoduché "circle vs point" vytlačení, žádná fyzika).
+## Aplikuje se postupně přes VŠECHNY blízké objekty, ne najednou vyřešené -
+## pro řídce rozmístěné placeholder objekty dostatečně přesné, u hustě
+## natěsnaných překážek by to nebylo dokonalé (menší priorita než skutečná
+## fyzika pro tenhle prototyp).
+func _resolve_obstacle_collisions(pos: Vector2) -> Vector2:
+	var resolved_pos: Vector2 = pos
+	for obstacle in get_tree().get_nodes_in_group("obstacles"):
+		if not is_instance_valid(obstacle):
+			continue
+		var collision_radius: float = obstacle.collision_radius
+		var offset: Vector2 = resolved_pos - obstacle.global_position
+		var dist: float = offset.length()
+		if dist < collision_radius and dist > 0.001:
+			resolved_pos = obstacle.global_position + offset.normalized() * collision_radius
+	return resolved_pos
 
 
 ## Vrátí až `count` nejbližších CÍLŮ v dosahu, seřazené od nejbližšího -
