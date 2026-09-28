@@ -10,6 +10,11 @@ extends Node2D
 ## výchozí hodnota než destructible_object.gd, ať trvalé objekty působí jako
 ## "pevnější" překážka.
 @export var avoid_radius: float = 65.0
+## Polovina strany ČTVERCOVÉ kolizní oblasti, kterou hráč fyzicky nemůže
+## vejít - viz player.gd's _resolve_obstacle_collisions() a
+## destructible_object.gd's stejnojmenný export pro plné zdůvodnění.
+## Odpovídá PŘESNĚ polovině šířky vizuálu (Polygon2D's ±26 rohy níže).
+@export var collision_half_size: float = 26.0
 
 
 func _ready() -> void:
