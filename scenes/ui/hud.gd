@@ -127,10 +127,20 @@ const ABILITY_STACK_MAX_ROWS: int = 6
 
 @onready var game_over_panel: Panel = $Control/GameOverPanel
 @onready var game_over_label: Label = $Control/GameOverPanel/Label
+## Progres bar META XP (viz "Lobby a meta-progrese" v CLAUDE.md) - žije tady
+## místo v lobby (2026-09-28, explicit user request "vyjmout progres bar s
+## XP v lobby a dát to pod meta-xp do end-game okénka") - ukazuje AKTUÁLNÍ
+## meta_xp/meta_xp_for_next_level() PO připočtení tohohle běhu (_finish_run()
+## proběhne dřív, než tenhle panel vůbec zavolá show_game_over(), viz
+## GameManager.trigger_game_over()), takže bar rovnou vizualizuje čerstvý zisk.
+@onready var game_over_meta_xp_bar: ProgressBar = $Control/GameOverPanel/MetaXPBar
+@onready var game_over_meta_xp_label: Label = $Control/GameOverPanel/MetaXPBar/MetaXPLabel
 @onready var game_over_countdown_label: Label = $Control/GameOverPanel/CountdownLabel
 @onready var game_over_continue_button: Button = $Control/GameOverPanel/ContinueButton
 @onready var victory_panel: Panel = $Control/VictoryPanel
 @onready var victory_label: Label = $Control/VictoryPanel/Label
+@onready var victory_meta_xp_bar: ProgressBar = $Control/VictoryPanel/MetaXPBar
+@onready var victory_meta_xp_label: Label = $Control/VictoryPanel/MetaXPBar/MetaXPLabel
 @onready var victory_countdown_label: Label = $Control/VictoryPanel/CountdownLabel
 @onready var victory_continue_button: Button = $Control/VictoryPanel/ContinueButton
 
@@ -704,6 +714,7 @@ func show_game_over(survival_time: float, currency: int, meta_xp_gained: int) ->
 	game_over_label.text = "Game Over!\nPřežitý čas: %s\nÚroveň: %d\nZlato: %d\n+%d meta-XP" % [
 		GameManager.format_survival_time(survival_time), GameManager.player_level, currency, meta_xp_gained
 	]
+	_update_meta_xp_bar(game_over_meta_xp_bar, game_over_meta_xp_label)
 	game_over_panel.show()
 	_start_end_screen_countdown(game_over_countdown_label, "Lobby za")
 
@@ -715,8 +726,19 @@ func show_victory(currency: int, meta_xp_gained: int) -> void:
 	victory_label.text = "Smyčka dokončena!\nÚroveň: %d\nZlato: %d\n+%d meta-XP" % [
 		GameManager.player_level, currency, meta_xp_gained
 	]
+	_update_meta_xp_bar(victory_meta_xp_bar, victory_meta_xp_label)
 	victory_panel.show()
 	_start_end_screen_countdown(victory_countdown_label, "Lobby za")
+
+
+## Sdíleno mezi show_game_over()/show_victory() - GameManager.meta_xp je v
+## tuhle chvíli už PO připočtení aktuálního běhu (_finish_run() proběhl dřív,
+## viz trigger_game_over()/trigger_win()), takže bar rovnou ukazuje čerstvý
+## postup k další META úrovni, ne stav před ziskem.
+func _update_meta_xp_bar(bar: ProgressBar, label: Label) -> void:
+	bar.max_value = GameManager.meta_xp_for_next_level()
+	bar.value = GameManager.meta_xp
+	label.text = "%d / %d" % [GameManager.meta_xp, GameManager.meta_xp_for_next_level()]
 
 
 func _close_shop() -> void:

@@ -449,21 +449,41 @@ text = "Game Over!"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CountdownLabel" type="Label" parent="Control/GameOverPanel" unique_id=35545436]
+[node name="MetaXPBar" type="ProgressBar" parent="Control/GameOverPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 140.0
 offset_right = 380.0
-offset_bottom = 170.0
+offset_bottom = 158.0
+show_percentage = false
+
+[node name="MetaXPLabel" type="Label" parent="Control/GameOverPanel/MetaXPBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 11
+text = "0 / 40"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CountdownLabel" type="Label" parent="Control/GameOverPanel" unique_id=35545436]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 164.0
+offset_right = 380.0
+offset_bottom = 194.0
 text = "Restart za: 10 s"
 horizontal_alignment = 1
 
 [node name="ContinueButton" type="Button" parent="Control/GameOverPanel" unique_id=1943306772]
 layout_mode = 0
 offset_left = 130.0
-offset_top = 180.0
+offset_top = 202.0
 offset_right = 270.0
-offset_bottom = 220.0
+offset_bottom = 242.0
 text = "Pokračovat"
 
 [node name="VictoryPanel" type="Panel" parent="Control" unique_id=700294823]
@@ -484,21 +504,41 @@ text = "Level dokončen!"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CountdownLabel" type="Label" parent="Control/VictoryPanel" unique_id=1611986447]
+[node name="MetaXPBar" type="ProgressBar" parent="Control/VictoryPanel"]
 layout_mode = 0
 offset_left = 20.0
 offset_top = 140.0
 offset_right = 380.0
-offset_bottom = 170.0
+offset_bottom = 158.0
+show_percentage = false
+
+[node name="MetaXPLabel" type="Label" parent="Control/VictoryPanel/MetaXPBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 11
+text = "0 / 40"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CountdownLabel" type="Label" parent="Control/VictoryPanel" unique_id=1611986447]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 164.0
+offset_right = 380.0
+offset_bottom = 194.0
 text = "Nová hra za: 10 s"
 horizontal_alignment = 1
 
 [node name="ContinueButton" type="Button" parent="Control/VictoryPanel" unique_id=199531267]
 layout_mode = 0
 offset_left = 130.0
-offset_top = 180.0
+offset_top = 202.0
 offset_right = 270.0
-offset_bottom = 220.0
+offset_bottom = 242.0
 text = "Pokračovat"
 
 [node name="DebugPanel" type="Panel" parent="Control"]
