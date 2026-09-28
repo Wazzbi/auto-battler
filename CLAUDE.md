@@ -158,6 +158,30 @@ of this PR is the MECHANISM (spawning, targeting, avoidance), not the visuals.
   `_shoot()`/`projectile.gd`: both already call `target.take_damage(damage)`/read
   `target.hit_radius` generically (that generic interface already existed for enemy variants, see
   "Projectile hit radius..." below — `destructible_object.gd` just happens to satisfy it too).
+  **STALE detail (2026-09-28, later the same day): "nearest in range" is no longer sufficient by
+  itself — a candidate also needs a clear line of sight.** Explicit user request: an enemy standing
+  behind an indestructible object shouldn't get shot at all — the player should skip it and target
+  the next nearest VISIBLE thing instead, rather than firing blindly through a wall. `player.gd`'s
+  `_find_nearest_targets()` now also requires `_has_line_of_sight(candidate.global_position)` before
+  a candidate is added to `in_range` — a blocked candidate simply never enters the sorted list, so
+  the next-nearest visible one is picked up automatically with no separate "retarget" logic needed.
+  `_has_line_of_sight()` walks the `"obstacles"` group and skips any member that's also in
+  `"destructibles"` — **only indestructible objects block aim; destructible ones (crates) don't**,
+  explicit user scope ("jen vůči nezničitelným objektům") — a crate directly in the way doesn't stop
+  the player from shooting the enemy behind it (or the crate itself, still targetable either way).
+  The actual visibility check, `_segment_intersects_square()`, is a standard slab-method segment-vs-
+  AABB test against each indestructible object's `collision_half_size` square (same square shape
+  `_resolve_obstacle_collisions()` already uses for player-vs-object collision, just tested against
+  a line instead of a point) — no `Area2D`/raycast needed, consistent with this project's existing
+  "distance/geometry checks, not physics" approach to combat (see "Combat resolution is
+  distance-based" below). Cost is `O(candidates × indestructible objects)` per frame, on top of the
+  existing `O(candidates)` distance sort — fine at today's object counts, same ceiling reasoning as
+  `_avoid_obstacles()`'s own `O(enemies × obstacles)` below. **Verified with a headless test**: an
+  enemy placed directly behind an indestructible object within attack range is confirmed NOT
+  returned by `_find_nearest_targets()`; a second enemy behind a DESTRUCTIBLE object at the same
+  setup IS still returned (proving only indestructible objects block); moving the indestructible
+  object away makes the first enemy targetable again in the very next frame, proving the block is
+  live/recomputed, not cached.
 - **Spawning reuses the enemy ring-spawn mechanism, not a new one**: `main.gd`'s old
   `_spawn_around_player()` had its position math (spawn on a circle around the player, just outside
   the camera view — half the viewport DIAGONAL + margin, see below) extracted into
