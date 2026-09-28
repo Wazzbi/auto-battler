@@ -497,6 +497,19 @@ odhad 180s/3min), obojí vede do lobby.
   typicky když hráč zemře dřív než `SHOP_OPEN_INTERVAL_SECONDS` časovač poprvé vyprší) - existující
   nabídku z proběhlého běhu naopak nechá beze změny. `ShopEmptyLabel`/"obchod ještě nebyl otevřen"
   placeholder z předchozího dne je pryč, protože je teď nedosažitelný stav.
+- **STALE (2026-09-28, ještě později téhož dne): `ShopTabContent` teď ukazuje i aktivní/sklad
+  itemy, ne jen nabídku ke koupi.** Explicit user request - stejný obsah, jaký `CharacterPanel`/
+  `InventoryTabContent` ukazuje v běhu (`ActiveLabel`/`ActiveItemsContainer`,
+  `StashLabel`/`StashContainer`, mini-sloty s "Uskladnit"/"Aktivovat"/"Prodat" tlačítky), přidaný
+  POD nabídkové karty + reroll tlačítko (karty zmenšeny z 280 na 190px výšky, ať se všechno vejde do
+  `ShopTabContent`'s 590px). `lobby.gd`'s `_build_inventory_ui()`/`_create_inventory_mini_slot()`/
+  `_refresh_inventory_ui()`/`_fill_inventory_mini_slot()`/`_clear_inventory_mini_slot()`/
+  `_on_active_slot_stash_pressed()`/`_on_stash_slot_activate_pressed()`/`_on_stash_slot_sell_pressed()`
+  jsou **doslovná kopie** stejnojmenných funkcí v `hud.gd` (viz "CharacterPanel" výše) - žádná sdílená
+  scéna/skript mezi nimi (viz "known follow-up" o extrakci `ShopPanel` do vlastní `.tscn` níže, tenhle
+  duplicitní vzor je přesně ten důvod, proč by se to vyplatilo). `_refresh_shop_tab()` volá
+  `_refresh_inventory_ui()` na svém konci, takže oboje zůstává synchronní při každém přepnutí na
+  Obchod tab, nákupu, i změně zlata.
 - **Odstraněno jako mrtvý kód touhle změnou** (kill-count schopnosti systém z předchozí STALE sekce):
   `GameManager.enemies_killed`, `_ability_offers_granted_by_kills`, `_ability_kill_threshold()`,
   `_register_kill_toward_ability_pickup()`, signál `ability_pickup_dropped`, `request_ability_offer()`,

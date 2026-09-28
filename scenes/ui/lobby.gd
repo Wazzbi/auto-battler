@@ -28,6 +28,14 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 const SKILL_NODE_WIDTH: float = 170.0
 const SKILL_NODE_HEIGHT: float = 150.0
 const SKILL_NODE_GAP: float = 10.0
+## Šířka/mezera miniaturních slotů pro aktivní/sklad itemy - stejné hodnoty
+## a stejný _create_inventory_mini_slot() vzor jako dřívější hud.gd (viz
+## "CharacterPanel" v CLAUDE.md), teď duplikované sem, protože Obchod v
+## lobby ukazuje aktivní/sklad itemy vedle nabídky ke koupi (explicit user
+## request 2026-09-28 - "může shop v lobby ukazovat taky UI s aktivními
+## předměty hráče a stash jako u ingame shopu?").
+const SHOP_MINI_SLOT_WIDTH: float = 74.0
+const SHOP_MINI_SLOT_GAP: float = 6.0
 
 @onready var meta_level_label: Label = $MetaLevelLabel
 @onready var meta_xp_bar: ProgressBar = $MetaXPBar
@@ -48,6 +56,10 @@ const SKILL_NODE_GAP: float = 10.0
 	$ShopTabContent/ShopCard3,
 ]
 @onready var shop_reroll_button: Button = $ShopTabContent/RerollButton
+@onready var inventory_active_label: Label = $ShopTabContent/ActiveLabel
+@onready var inventory_active_container: Control = $ShopTabContent/ActiveItemsContainer
+@onready var inventory_stash_label: Label = $ShopTabContent/StashLabel
+@onready var inventory_stash_container: Control = $ShopTabContent/StashContainer
 
 @onready var next_run_button: Button = $NextRunButton
 
@@ -55,6 +67,10 @@ const SKILL_NODE_GAP: float = 10.0
 ## "button"}} - postaveno jednou v _ready(), znovu použito při každém
 ## _refresh_skill_tree_ui() (žádné přestavování stromu za běhu).
 var _skill_node_widgets: Dictionary = {}
+## Stejný princip jako u dovednostního stromu - Dictionary {"panel", "label",
+## "buttons": Array} na slot, postaveno jednou v _build_inventory_ui().
+var _active_slot_widgets: Array = []
+var _stash_slot_widgets: Array = []
 
 
 func _ready() -> void:
@@ -70,6 +86,7 @@ func _ready() -> void:
 	next_run_button.pressed.connect(_on_next_run_pressed)
 	_setup_shop_cards()
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
+	_build_inventory_ui()
 
 	_ensure_shop_offer()
 	_build_skill_tree_ui()
@@ -294,6 +311,119 @@ func _refresh_shop_tab() -> void:
 
 	shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
 	shop_reroll_button.disabled = not GameManager.can_reroll_shop()
+
+	_refresh_inventory_ui()
+
+
+## Vytvoří 6 aktivních + 9 sklad miniaturních slotů PROCEDURÁLNĚ - přesunuto
+## beze změny logiky z dřívějšího hud.gd's _build_inventory_ui() (viz
+## "CharacterPanel" v CLAUDE.md pro historii, "Lobby a meta-progrese" pro
+## proč obchod teď žije tady). Volá se jednou v _ready().
+func _build_inventory_ui() -> void:
+	for i in GameManager.SHOP_ACTIVE_SLOTS:
+		var widget: Dictionary = _create_inventory_mini_slot(inventory_active_container, i, ["Uskladnit"])
+		widget["buttons"][0].pressed.connect(_on_active_slot_stash_pressed.bind(i))
+		_active_slot_widgets.append(widget)
+
+	for i in GameManager.SHOP_STASH_SLOTS:
+		var widget: Dictionary = _create_inventory_mini_slot(inventory_stash_container, i, ["Aktivovat", "Prodat"])
+		widget["buttons"][0].pressed.connect(_on_stash_slot_activate_pressed.bind(i))
+		widget["buttons"][1].pressed.connect(_on_stash_slot_sell_pressed.bind(i))
+		_stash_slot_widgets.append(widget)
+
+
+## Jeden miniaturní slot: Panel s Labelem (2 řádky - krátký název + rarita)
+## a N tlačítky pod sebou - identické tělo jako dřívější hud.gd's
+## _create_inventory_mini_slot().
+func _create_inventory_mini_slot(parent: Control, index: int, button_texts: Array) -> Dictionary:
+	var panel := Panel.new()
+	panel.position = Vector2(index * (SHOP_MINI_SLOT_WIDTH + SHOP_MINI_SLOT_GAP), 0.0)
+	panel.size = Vector2(SHOP_MINI_SLOT_WIDTH, 28.0 + button_texts.size() * 18.0)
+	parent.add_child(panel)
+
+	var label := Label.new()
+	label.position = Vector2(2.0, 2.0)
+	label.size = Vector2(SHOP_MINI_SLOT_WIDTH - 4.0, 24.0)
+	label.add_theme_font_size_override("font_size", 8)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(label)
+
+	var buttons: Array = []
+	for bi in button_texts.size():
+		var button := Button.new()
+		button.position = Vector2(2.0, 28.0 + bi * 18.0)
+		button.size = Vector2(SHOP_MINI_SLOT_WIDTH - 4.0, 16.0)
+		button.add_theme_font_size_override("font_size", 7)
+		button.text = button_texts[bi]
+		panel.add_child(button)
+		buttons.append(button)
+
+	return {"panel": panel, "label": label, "buttons": buttons}
+
+
+func _on_active_slot_stash_pressed(index: int) -> void:
+	GameManager.move_shop_item_to_stash(index)
+
+
+func _on_stash_slot_activate_pressed(index: int) -> void:
+	GameManager.move_shop_item_to_active(index)
+
+
+func _on_stash_slot_sell_pressed(index: int) -> void:
+	GameManager.sell_shop_item("stash", index)
+
+
+## Překreslí aktivní/sklad miniaturní sloty a hlavičky "(N/6)"/"(N/9)" -
+## volá se z _refresh_shop_tab(), takže zůstává čerstvé pokaždé, když se
+## Obchod tab otevře nebo se cokoliv v nabídce/inventáři změní.
+func _refresh_inventory_ui() -> void:
+	inventory_active_label.text = "Aktivní itemy (%d/%d)" % [
+		GameManager.active_shop_items.size(), GameManager.SHOP_ACTIVE_SLOTS
+	]
+	inventory_stash_label.text = "Sklad (%d/%d)" % [
+		GameManager.stash_shop_items.size(), GameManager.SHOP_STASH_SLOTS
+	]
+
+	for i in _active_slot_widgets.size():
+		var widget: Dictionary = _active_slot_widgets[i]
+		if i < GameManager.active_shop_items.size():
+			var entry: Dictionary = GameManager.active_shop_items[i]
+			_fill_inventory_mini_slot(widget, entry)
+			widget["buttons"][0].disabled = false
+		else:
+			_clear_inventory_mini_slot(widget)
+			widget["buttons"][0].disabled = true
+
+	for i in _stash_slot_widgets.size():
+		var widget: Dictionary = _stash_slot_widgets[i]
+		if i < GameManager.stash_shop_items.size():
+			var entry: Dictionary = GameManager.stash_shop_items[i]
+			_fill_inventory_mini_slot(widget, entry)
+			widget["buttons"][0].disabled = GameManager.active_shop_items.size() >= GameManager.SHOP_ACTIVE_SLOTS
+			widget["buttons"][1].disabled = false
+		else:
+			_clear_inventory_mini_slot(widget)
+			widget["buttons"][0].disabled = true
+			widget["buttons"][1].disabled = true
+
+
+func _fill_inventory_mini_slot(widget: Dictionary, entry: Dictionary) -> void:
+	var definition: Dictionary = GameManager.SHOP_ITEMS[entry["item_id"]]
+	var label: Label = widget["label"]
+	label.text = "%s\n%s" % [definition["short_name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]]]
+	widget["panel"].modulate = Color.WHITE
+	label.tooltip_text = "%s (%s)\n%s" % [
+		definition["name"], GameManager.SHOP_RARITY_NAMES[entry["rarity"]],
+		GameManager.get_shop_item_desc(entry["item_id"], entry["rarity"])
+	]
+
+
+func _clear_inventory_mini_slot(widget: Dictionary) -> void:
+	widget["label"].text = "-"
+	widget["label"].tooltip_text = ""
+	widget["panel"].modulate = LOCKED_ITEM_MODULATE
 
 
 ## Spustí main.tscn znovu - main.gd's _enter_tree() zavolá GameManager.
