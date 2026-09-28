@@ -135,12 +135,18 @@ const ABILITY_STACK_MAX_ROWS: int = 6
 ## GameManager.trigger_game_over()), takže bar rovnou vizualizuje čerstvý zisk.
 @onready var game_over_meta_xp_bar: ProgressBar = $Control/GameOverPanel/MetaXPBar
 @onready var game_over_meta_xp_label: Label = $Control/GameOverPanel/MetaXPBar/MetaXPLabel
+## Ukazuje "+N úroveň" pod barem, dokud animace (viz _animate_meta_xp_gain())
+## prochází aspoň jedním META level-upem - schované, dokud animace nedojde
+## na první přeplnění baru. Čistě vizuální, viz doc komentář u
+## _animate_meta_xp_gain().
+@onready var game_over_level_up_label: Label = $Control/GameOverPanel/LevelUpLabel
 @onready var game_over_countdown_label: Label = $Control/GameOverPanel/CountdownLabel
 @onready var game_over_continue_button: Button = $Control/GameOverPanel/ContinueButton
 @onready var victory_panel: Panel = $Control/VictoryPanel
 @onready var victory_label: Label = $Control/VictoryPanel/Label
 @onready var victory_meta_xp_bar: ProgressBar = $Control/VictoryPanel/MetaXPBar
 @onready var victory_meta_xp_label: Label = $Control/VictoryPanel/MetaXPBar/MetaXPLabel
+@onready var victory_level_up_label: Label = $Control/VictoryPanel/LevelUpLabel
 @onready var victory_countdown_label: Label = $Control/VictoryPanel/CountdownLabel
 @onready var victory_continue_button: Button = $Control/VictoryPanel/ContinueButton
 
@@ -714,9 +720,9 @@ func show_game_over(survival_time: float, currency: int, meta_xp_gained: int) ->
 	game_over_label.text = "Game Over!\nPřežitý čas: %s\nÚroveň: %d\nZlato: %d\n+%d meta-XP" % [
 		GameManager.format_survival_time(survival_time), GameManager.player_level, currency, meta_xp_gained
 	]
-	_update_meta_xp_bar(game_over_meta_xp_bar, game_over_meta_xp_label)
 	game_over_panel.show()
 	_start_end_screen_countdown(game_over_countdown_label, "Lobby za")
+	_animate_meta_xp_gain(game_over_meta_xp_bar, game_over_meta_xp_label, game_over_level_up_label)
 
 
 func show_victory(currency: int, meta_xp_gained: int) -> void:
@@ -726,19 +732,79 @@ func show_victory(currency: int, meta_xp_gained: int) -> void:
 	victory_label.text = "Smyčka dokončena!\nÚroveň: %d\nZlato: %d\n+%d meta-XP" % [
 		GameManager.player_level, currency, meta_xp_gained
 	]
-	_update_meta_xp_bar(victory_meta_xp_bar, victory_meta_xp_label)
 	victory_panel.show()
 	_start_end_screen_countdown(victory_countdown_label, "Lobby za")
+	_animate_meta_xp_gain(victory_meta_xp_bar, victory_meta_xp_label, victory_level_up_label)
 
 
-## Sdíleno mezi show_game_over()/show_victory() - GameManager.meta_xp je v
-## tuhle chvíli už PO připočtení aktuálního běhu (_finish_run() proběhl dřív,
-## viz trigger_game_over()/trigger_win()), takže bar rovnou ukazuje čerstvý
-## postup k další META úrovni, ne stav před ziskem.
-func _update_meta_xp_bar(bar: ProgressBar, label: Label) -> void:
-	bar.max_value = GameManager.meta_xp_for_next_level()
-	bar.value = GameManager.meta_xp
-	label.text = "%d / %d" % [GameManager.meta_xp, GameManager.meta_xp_for_next_level()]
+const META_XP_BAR_SEGMENT_DURATION: float = 0.6
+const META_XP_BAR_LEVEL_UP_PAUSE: float = 0.25
+
+## Animuje META XP bar od stavu PŘED tímhle během (GameManager.last_run_
+## summary's meta_level_before/meta_xp_before) k aktuálnímu, už FINÁLNÍMU
+## stavu (GameManager.meta_level/meta_xp - _finish_run() ho nastavil dřív,
+## viz trigger_game_over()/trigger_win() v game_manager.gd, dřív než tahle
+## funkce vůbec doběhla zavolat show_game_over()/show_victory()). Explicit
+## user request 2026-09-28 - čistě vizuální dohánění: skutečný herní stav
+## (meta_level/meta_xp/pending_skill_points) je hotový hned, tahle coroutine
+## jen kreslí, JAK se k němu došlo. Pokud hráč klikne "Pokračovat" (→
+## _go_to_lobby()) nebo countdown doběhne dřív, než animace skončí, na nic to
+## nemá vliv - lobby čte rovnou finální GameManager stav, ne nic z týhle
+## animace. Přeteče-li bar víckrát (víc META level-upů z jednoho běhu), pod
+## barem se objeví "+N úroveň", kde N postupně roste s každým přeplněním.
+## `is_instance_valid(bar)` kontrola po každém `await` bezpečně ukončí
+## animaci, kdyby mezitím scéna zmizela (change_scene_to_file), místo pádu na
+## přístupu ke smazanému uzlu.
+func _animate_meta_xp_gain(bar: ProgressBar, label: Label, level_up_label: Label) -> void:
+	level_up_label.hide()
+	level_up_label.text = ""
+
+	var summary: Dictionary = GameManager.last_run_summary
+	var level: int = summary.get("meta_level_before", GameManager.meta_level)
+	var xp: int = summary.get("meta_xp_before", GameManager.meta_xp)
+	var final_xp: int = GameManager.meta_xp
+	var levels_gained: int = GameManager.meta_level - level
+
+	bar.max_value = GameManager.meta_xp_for_next_level(level)
+	bar.value = xp
+	label.text = "%d / %d" % [xp, int(bar.max_value)]
+
+	for i in levels_gained:
+		await _tween_meta_xp_bar(bar, label, GameManager.meta_xp_for_next_level(level))
+		if not is_instance_valid(bar):
+			return
+
+		level += 1
+		level_up_label.text = "+%d úroveň" % (i + 1)
+		level_up_label.show()
+
+		bar.value = 0
+		bar.max_value = GameManager.meta_xp_for_next_level(level)
+		label.text = "0 / %d" % int(bar.max_value)
+
+		await get_tree().create_timer(META_XP_BAR_LEVEL_UP_PAUSE).timeout
+		if not is_instance_valid(bar):
+			return
+
+	await _tween_meta_xp_bar(bar, label, final_xp)
+
+
+## Jeden segment animace - plynule převede bar.value (a text labelu s ním) z
+## AKTUÁLNÍ hodnoty na `target`; bar.max_value beze změny, o tu se stará
+## volající (_animate_meta_xp_gain()), protože se mezi segmenty mění (jiná
+## META úroveň = jiný práh). tween_method() místo tween_property() na
+## bar.value, ať se text labelu překreslí při KAŽDÉM kroku tweenu, ne jen na
+## jeho konci.
+func _tween_meta_xp_bar(bar: ProgressBar, label: Label, target: int) -> void:
+	var max_value: int = int(bar.max_value)
+	var tween := create_tween()
+	tween.tween_method(
+		func(v: float):
+			bar.value = v
+			label.text = "%d / %d" % [int(round(v)), max_value],
+		bar.value, float(target), META_XP_BAR_SEGMENT_DURATION
+	)
+	await tween.finished
 
 
 func _close_shop() -> void:

@@ -749,8 +749,13 @@ func add_xp(amount: int) -> void:
 
 ## Kolik META-XP je potřeba na další META úroveň - sdílí stejnou křivku jako
 ## xp_for_next_level() (první odhad, může se doladit nezávisle později).
-func meta_xp_for_next_level() -> int:
-	return XP_BASE + (meta_level - 1) * XP_PER_LEVEL_GROWTH
+## `level` je nepovinný (default = aktuální meta_level) - end-game animace
+## (viz hud.gd's _animate_meta_xp_gain()) ho používá s konkrétní PROŠLOU
+## úrovní, aby dopočítala práh pro KAŽDÝ mezistupeň animace, ne jen ten
+## aktuální.
+func meta_xp_for_next_level(level: int = 0) -> int:
+	var target_level: int = level if level > 0 else meta_level
+	return XP_BASE + (target_level - 1) * XP_PER_LEVEL_GROWTH
 
 
 ## Přidá META-XP (voláno jen z _finish_run() na konci běhu, ne za běhu) a
@@ -1416,6 +1421,13 @@ func _finish_run(reason: String) -> void:
 		"level": player_level,
 		"currency": currency,
 		"meta_xp_gained": _run_xp_earned,
+		# Stav PŘED připočtením - end-game XP bar animace (hud.gd's
+		# _animate_meta_xp_gain()) z něj animuje NAHORU ke skutečnému stavu
+		# (meta_level/meta_xp), aby hráč viděl "líný" přírůstek, ne rovnou
+		# hotový výsledek. Samotný stav je ale už finální, viz add_meta_xp()
+		# níže - animace je čistě vizuální dohánění.
+		"meta_level_before": meta_level,
+		"meta_xp_before": meta_xp,
 	}
 	add_meta_xp(_run_xp_earned)
 
