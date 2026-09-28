@@ -395,6 +395,11 @@ func _resolve_obstacle_collisions(pos: Vector2) -> Vector2:
 ## cíl. Nezničitelné objekty se do "destructibles" nikdy nezařadí (viz
 ## indestructible_object.gd), takže se sem vůbec nedostanou. Přejmenováno z
 ## dřívějšího _find_nearest_enemies() - stejné tělo, jen širší zdroj cílů.
+## Kandidát, ke kterému nemá hráč přímou viditelnost (viz _has_line_of_sight()
+## níže - úsečka hráč→cíl je zakrytá nezničitelným objektem), se do `in_range`
+## vůbec nedostane, takže se řazením podle vzdálenosti automaticky "propadne"
+## na dalšího nejbližšího VIDITELNÉHO kandidáta, žádná speciální náhradní
+## logika není potřeba.
 func _find_nearest_targets(count: int) -> Array:
 	var in_range: Array = []
 	var range_limit := get_attack_range()
@@ -406,7 +411,7 @@ func _find_nearest_targets(count: int) -> Array:
 		if not is_instance_valid(candidate):
 			continue
 		var dist: float = global_position.distance_to(candidate.global_position)
-		if dist <= range_limit:
+		if dist <= range_limit and _has_line_of_sight(candidate.global_position):
 			in_range.append({"node": candidate, "dist": dist})
 
 	in_range.sort_custom(func(a, b): return a["dist"] < b["dist"])
@@ -415,6 +420,58 @@ func _find_nearest_targets(count: int) -> Array:
 	for i in range(min(count, in_range.size())):
 		result.append(in_range[i]["node"])
 	return result
+
+
+## True, pokud úsečka od hráče k `target_pos` neprotíná žádný NEZNIČITELNÝ
+## statický objekt - zničitelné objekty ("destructibles" skupina) záměrně
+## viditelnost nezakrývají, hráč tak nemůže "vidět skrz" jen tu jednu
+## kategorii, na kterou nikdy nemůže zaútočit (viz explicit user request -
+## cíl za nezničitelným objektem se má přeskočit, za zničitelným ne). Prochází
+## celou "obstacles" skupinu a filtruje `is_in_group("destructibles")` místo
+## vlastní druhé skupiny jen pro nezničitelné - obě existující scény už tenhle
+## rozdíl jednoznačně nesou, není potřeba nic nového zavádět.
+func _has_line_of_sight(target_pos: Vector2) -> bool:
+	for obstacle in get_tree().get_nodes_in_group("obstacles"):
+		if not is_instance_valid(obstacle):
+			continue
+		if obstacle.is_in_group("destructibles"):
+			continue
+		if _segment_intersects_square(global_position, target_pos, obstacle.global_position, obstacle.collision_half_size):
+			return false
+	return true
+
+
+## Segment-vs-AABB test (slab method) - `from`/`to` je úsečka hráč→cíl,
+## `center`/`half_size` je čtvercová kolizní oblast objektu (stejný tvar jako
+## _resolve_obstacle_collisions() výše používá pro hráčovu vlastní kolizi,
+## jen tady se testuje průnik s úsečkou, ne s bodem). Promítá úsečku na obě
+## osy zvlášť jako parametrický interval [t_min, t_max] podél `from`→`to` a
+## postupně ho zužuje o průnik s objektovým boxem na dané ose - pokud interval
+## zůstane neprázdný (t_min <= t_max) po obou osách, úsečka box protíná.
+func _segment_intersects_square(from: Vector2, to: Vector2, center: Vector2, half_size: float) -> bool:
+	var box_min: Vector2 = center - Vector2(half_size, half_size)
+	var box_max: Vector2 = center + Vector2(half_size, half_size)
+	var dir: Vector2 = to - from
+	var t_min: float = 0.0
+	var t_max: float = 1.0
+
+	for axis in range(2):
+		if is_zero_approx(dir[axis]):
+			if from[axis] < box_min[axis] or from[axis] > box_max[axis]:
+				return false
+			continue
+		var t1: float = (box_min[axis] - from[axis]) / dir[axis]
+		var t2: float = (box_max[axis] - from[axis]) / dir[axis]
+		if t1 > t2:
+			var tmp: float = t1
+			t1 = t2
+			t2 = tmp
+		t_min = maxf(t_min, t1)
+		t_max = minf(t_max, t2)
+		if t_min > t_max:
+			return false
+
+	return true
 
 
 func _shoot(target: Node2D) -> void:
