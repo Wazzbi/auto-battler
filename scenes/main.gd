@@ -87,6 +87,20 @@ extends Node2D
 ## okrajem obrazovky se objekty spawnují.
 @export var object_spawn_margin: float = 60.0
 
+## Sebratelné předměty (kosočtverce, viz "Sebratelné předměty" v CLAUDE.md) -
+## spawnují se stejným ring-spawn mechanismem jako výše, ale strop
+## (max_heal_pickups/max_speed_pickups) se NA ROZDÍL od destructible/
+## indestructible objektů kontroluje proti AKTUÁLNĚ ŽIVÉMU počtu
+## ("heal_pickups"/"speed_pickups" skupiny), ne proti celkovému součtu za
+## běh - sebrání kosočtverce uvolní slot pro další, protože jde o průběžně
+## spotřebovávaný zdroj, ne trvalý placeholder.
+@export var heal_pickup_scene: PackedScene
+@export var speed_pickup_scene: PackedScene
+@export var heal_pickup_spawn_interval: float = 10.0
+@export var speed_pickup_spawn_interval: float = 18.0
+@export var max_heal_pickups: int = 5
+@export var max_speed_pickups: int = 3
+
 @onready var player: Node2D = $Player
 @onready var camera: Camera2D = $Camera2D
 @onready var hud: CanvasLayer = $HUD
@@ -103,6 +117,9 @@ var _destructible_spawn_timer: float = 0.0
 var _indestructible_spawn_timer: float = 0.0
 var _destructibles_spawned: int = 0
 var _indestructibles_spawned: int = 0
+
+var _heal_pickup_spawn_timer: float = 0.0
+var _speed_pickup_spawn_timer: float = 0.0
 
 
 ## Reset musí proběhnout v _enter_tree(), ne v _ready() - _ready() rodiče se volá
@@ -155,6 +172,18 @@ func _process(delta: float) -> void:
 			_spawn_world_object(indestructible_object_scene)
 			_indestructibles_spawned += 1
 			_indestructible_spawn_timer = indestructible_spawn_interval
+
+	if heal_pickup_scene != null and get_tree().get_nodes_in_group("heal_pickups").size() < max_heal_pickups:
+		_heal_pickup_spawn_timer -= delta
+		if _heal_pickup_spawn_timer <= 0.0:
+			_spawn_world_object(heal_pickup_scene)
+			_heal_pickup_spawn_timer = heal_pickup_spawn_interval
+
+	if speed_pickup_scene != null and get_tree().get_nodes_in_group("speed_pickups").size() < max_speed_pickups:
+		_speed_pickup_spawn_timer -= delta
+		if _speed_pickup_spawn_timer <= 0.0:
+			_spawn_world_object(speed_pickup_scene)
+			_speed_pickup_spawn_timer = speed_pickup_spawn_interval
 
 
 ## Odmocninová křivka obtížnosti proti UPLYNULÉMU ČASU místo čísla vlny (top-down

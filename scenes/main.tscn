@@ -11,6 +11,8 @@
 [ext_resource type="PackedScene" path="res://scenes/enemies/sniper_enemy.tscn" id="9_sniper_enemy"]
 [ext_resource type="PackedScene" path="res://scenes/world_objects/destructible_object.tscn" id="10_destructible_object"]
 [ext_resource type="PackedScene" path="res://scenes/world_objects/indestructible_object.tscn" id="11_indestructible_object"]
+[ext_resource type="PackedScene" path="res://scenes/world_objects/heal_pickup.tscn" id="12_heal_pickup"]
+[ext_resource type="PackedScene" path="res://scenes/world_objects/speed_pickup.tscn" id="13_speed_pickup"]
 
 [node name="Main" type="Node2D" unique_id=1752286728]
 script = ExtResource("1_main_script")
@@ -20,6 +22,8 @@ ranged_enemy_scene = ExtResource("8_ranged_enemy")
 sniper_enemy_scene = ExtResource("9_sniper_enemy")
 destructible_object_scene = ExtResource("10_destructible_object")
 indestructible_object_scene = ExtResource("11_indestructible_object")
+heal_pickup_scene = ExtResource("12_heal_pickup")
+speed_pickup_scene = ExtResource("13_speed_pickup")
 
 [node name="Level01" parent="." unique_id=75340192 instance=ExtResource("2_level")]
 
