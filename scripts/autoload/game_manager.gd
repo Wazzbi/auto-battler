@@ -772,25 +772,9 @@ func add_meta_xp(amount: int) -> void:
 		skill_points_changed.emit(pending_skill_points)
 
 
-## Zavolá hráč po dopadu úvodní "drop-in" animace (viz player.gd's
-## _on_landed()) - vyžádá první nabídku SCHOPNOSTI (náhodný draft) stejným
-## mechanismem jako konec vlny (pending_ability_drafts/
-## _try_offer_next_ability_draft()). Tohle je JEDINÝ intro krok - dovednostní
-## strom (skill_ranks/pending_skill_points) už se do intra vůbec nezapojuje
-## (2026-09-26 zpětná vazba - první bod schopnosti má hráč dostat až na
-## úrovni 2 jako běžný level-up, ne vynuceně před začátkem hry, viz
-## _level_up() a "Dovednostní strom" v CLAUDE.md). Hra zůstává ve State.INTRO
-## přes tenhle krok (pohyb hráče, spawn nepřátel atd. pořád nic nedělají, viz
-## jejich `state != State.PLAYING` guardy) - resolve_ability_draft() zavolá
-## finish_intro() přímo, jakmile se tahle nabídka vyřídí.
-func begin_intro_ability_draft() -> void:
-	pending_ability_drafts += 1
-	_try_offer_next_ability_draft()
-
-
 ## Run-scoped level-up nabízí SCHOPNOST (náhodný draft) přímo, na KAŽDÉ úrovni
-## - žádný interval/ramp, stejně jako begin_intro_ability_draft() výše (a jako
-## celý tenhle systém fungoval PŘED 2026-09-27 ranním kill-count/kosočtverec
+## - žádný interval/ramp, stejně jako celý tenhle systém fungoval PŘED
+## 2026-09-27 ranním kill-count/kosočtverec
 ## experimentem - "Lobby a meta-progrese" ho vrací zpátky na XP/úroveň, ať
 ## nabídka pořád sleduje, co hráč DĚLÁ /zabíjí a levelu je z XP zabíjení/, jen
 ## přes jinou metriku). Dovednostní strom (pending_skill_points/skill_ranks)
@@ -899,11 +883,6 @@ func resolve_ability_draft(offer_index: int) -> bool:
 	# fronta schopností doopravdy doběhla do prázdna.
 	if _shop_open_deferred:
 		_try_open_pending_shop()
-	# Úvodní nabídka schopnosti (viz begin_intro_ability_draft()) je JEDINÝ
-	# intro krok - jakmile fronta doběhne do prázdna, hra může rovnou naběhnout
-	# (dovednostní strom se do intra už nezapojuje, viz begin_intro_ability_draft()).
-	if state == State.INTRO and pending_ability_drafts <= 0:
-		finish_intro()
 	return true
 
 
@@ -1378,11 +1357,12 @@ func sell_shop_item(collection_name: String, index: int) -> bool:
 	return true
 
 
-## Přepne hru ze State.INTRO do State.PLAYING. Volá resolve_ability_draft(),
-## jakmile se úvodní nabídka SCHOPNOSTI (jediný intro krok, viz player.gd's
-## _on_landed() → begin_intro_ability_draft()) vyřídí - dovednostní strom se
-## do intra od 2026-09-26 už nezapojuje (první bod schopnosti přijde
-## normálně na úrovni 2 přes _level_up(), stejně jako každý další).
+## Přepne hru ze State.INTRO do State.PLAYING. STALE (2026-09-28): dřív ho
+## volal resolve_ability_draft(), jakmile se vyřídila JEDINÁ vynucená úvodní
+## nabídka SCHOPNOSTI - ta byla zrušená (explicit user request), takže teď
+## volá přímo player.gd's `_on_landed()`, jakmile doběhnou kosmetické reakce
+## na dopad (otřes kamery, squash tween, dopadový prstenec). Dovednostní
+## strom se do intra nezapojuje vůbec (od 2026-09-26) ani teď.
 func finish_intro() -> void:
 	if state == State.INTRO:
 		state = State.PLAYING

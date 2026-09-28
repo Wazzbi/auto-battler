@@ -139,17 +139,15 @@ func _play_drop_in_animation() -> void:
 	tween.tween_callback(_on_landed)
 
 
-## Po dopadu se hra NEROZBĚHNE rovnou - proběhne JEDEN intro krok, úvodní
-## nabídka SCHOPNOSTI (náhodný draft, viz GameManager.begin_intro_ability_
-## draft()/resolve_ability_draft()). Dovednostní strom se do intra od
-## 2026-09-26 vůbec nezapojuje (zpětná vazba - první bod schopnosti má hráč
-## dostat až na úrovni 2 jako běžný level-up, ne vynuceně před začátkem hry) -
-## resolve_ability_draft() zavolá GameManager.finish_intro() přímo, jakmile
-## se tahle nabídka vyřídí, takže se SkillTreePanel na začátku hry vůbec
-## neukáže. Panel se ale neukáže/nepozastaví HNED ani pro tenhle jeden krok -
-## nejdřív musí doběhnout dopadový prstenec, otřes kamery i squash tween (viz
-## níže), jinak by ta pauza tyhle kosmetické reakce na dopad "usekla" v
-## půlce (nahlášeno 2026-09-25).
+## STALE (2026-09-28, explicit user request "dej pryč ten první výběr
+## schopnosti co je po dopadu hráče do hry"): po dopadu už NEPROBÍHÁ žádný
+## intro krok - `GameManager.finish_intro()` se volá přímo, hra naběhne do
+## State.PLAYING hned, jakmile doběhnou kosmetické reakce na dopad (viz
+## níže). Dřív tu byla jedna vynucená úvodní nabídka SCHOPNOSTI
+## (`GameManager.begin_intro_ability_draft()`/`resolve_ability_draft()`,
+## smazáno spolu s touhle změnou) - první schopnost teď hráč dostane úplně
+## stejně jako každou další, přes běžný run-scoped level-up
+## (`GameManager._level_up()`), ne vynuceně před začátkem hry.
 func _on_landed() -> void:
 	var impact_effect: Node2D = _spawn_impact_effect()
 	landed.emit()
@@ -162,7 +160,7 @@ func _on_landed() -> void:
 	if impact_effect != null:
 		await get_tree().create_timer(impact_effect.duration).timeout
 
-	GameManager.begin_intro_ability_draft()
+	GameManager.finish_intro()
 
 
 func _spawn_impact_effect() -> Node2D:
