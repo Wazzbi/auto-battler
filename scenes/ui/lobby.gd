@@ -119,7 +119,7 @@ func _on_skill_ranks_changed() -> void:
 
 
 func _refresh_meta_ui() -> void:
-	meta_level_label.text = "Meta úroveň: %d" % GameManager.meta_level
+	meta_level_label.text = "Úroveň: %d" % GameManager.meta_level
 
 	var pending: int = GameManager.pending_skill_points
 	skill_points_badge.visible = pending > 0

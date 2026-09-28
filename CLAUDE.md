@@ -468,7 +468,8 @@ odhad 180s/3min), obojí vede do lobby.
   Obchod.** Explicit user request - obrazovka dřív nahoře ukazovala `GameManager.last_run_summary`
   ("Zemřel jsi."/"Smyčka dokončena!" + úroveň/zlato/meta-XP); `last_run_summary` se pořád plní
   (`_finish_run()`), jen se v lobby už nezobrazuje. Layout je teď: vlevo nahoře `MetaLevelLabel`
-  ("Meta úroveň: N", viz STALE níže - žádný progres bar vedle něj), vpravo nahoře `GoldLabel`
+  ("Úroveň: N" - STALE detail: text zkrácen z "Meta úroveň: N" na jen "Úroveň: N" 2026-09-28,
+  explicit user request, žádný progres bar vedle něj - viz STALE níže), vpravo nahoře `GoldLabel`
   ("Zlato: N"), uprostřed nahoře dvě záložková tlačítka `DovednostiTabButton`/`ObchodTabButton`
   (stejný bílá/`LOCKED_ITEM_MODULATE` vzor jako dřívější CharacterPanel taby) přepínající
   `NodesContainer` (dovednostní strom) vs. `ShopTabContent` (obchod, viz níže) -
@@ -477,10 +478,11 @@ odhad 180s/3min), obojí vede do lobby.
   skutečně akční**, protože v lobby (na rozdíl od běhu) investování reálně funguje.
 - **STALE (2026-09-28, ještě později): `MetaXPBar`/`MetaXPLabel` už v lobby vůbec nejsou.**
   Explicit user request - progres bar k další META úrovni se přesunul z lobby do Game Over/Victory
-  panelu (`hud.tscn`/`hud.gd`, viz "Game Over / Victory auto-restart flow" níže), přímo pod text
-  "+N meta-XP" - ukazuje aktuální postup HNED v momentě, kdy hráč meta-XP vydělal, místo v lobby při
-  každé návštěvě. `lobby.gd`'s `_refresh_meta_ui()` teď aktualizuje jen `MetaLevelLabel`'s text,
-  žádný bar. `MetaLevelLabel` samotný v lobby zůstává (jen o úrovni, bez baru).
+  panelu (`hud.tscn`/`hud.gd`, viz "Game Over / Victory auto-restart flow" níže, kde je i ANIMOVANÝ -
+  2026-09-28, ještě později téhož dne), přímo pod text "+N meta-XP" - ukazuje aktuální postup HNED v
+  momentě, kdy hráč meta-XP vydělal, místo v lobby při každé návštěvě. `lobby.gd`'s
+  `_refresh_meta_ui()` teď aktualizuje jen `MetaLevelLabel`'s text, žádný bar. `MetaLevelLabel`
+  samotný v lobby zůstává (jen o úrovni, bez baru).
 - **`CharacterPanel` (klik na portrét, v běhu) ztratil záložky úplně** - `InventoryTabButton`/
   `SkillTreeTabButton`/`SkillTreeTabContent` smazány, zůstala jen dřívější Inventář sekce (staty +
   aktivní/sklad itemy), bez tab-bar navrch. `_on_portrait_pressed()` se zjednodušil na prosté
@@ -647,15 +649,49 @@ never both, so there's never a question of *which* panel's countdown is running.
 and `main.gd`'s `_enter_tree()` calls `GameManager.reset_game()` only once the player picks "Další
 běh" from the lobby and `main.tscn` loads again, so that's the only reset path; there's no separate
 "restart" signal or function on `GameManager` itself. **`MetaXPBar`/`MetaXPLabel` (2026-09-28)**:
-both panels also show a live META-XP progress bar, right below the "+N meta-XP" text line in
-`game_over_label`/`victory_label` — `show_game_over()`/`show_victory()` both call the shared
-`_update_meta_xp_bar(bar, label)`, reading `GameManager.meta_xp`/`meta_xp_for_next_level()`
-directly. This is safe to read at that exact point because `_finish_run()` (called from
-`trigger_game_over()`/`trigger_win()`, see "Lobby a meta-progrese" above) already ran and updated
-`meta_xp` *before* either signal handler reaches `show_game_over()`/`show_victory()` — the bar shows
-the post-gain state, not a stale pre-gain snapshot. Moved here FROM `scenes/ui/lobby.tscn` (explicit
-user request "vyjmout progres bar s XP v lobby a dát to pod meta-xp do end-game okénka") — the lobby
-itself now shows only `MetaLevelLabel` (a level number, no bar), see "Lobby a meta-progrese" above.
+both panels also show a META-XP progress bar, right below the "+N meta-XP" text line in
+`game_over_label`/`victory_label`. Moved here FROM `scenes/ui/lobby.tscn` (explicit user request
+"vyjmout progres bar s XP v lobby a dát to pod meta-xp do end-game okénka") — the lobby itself now
+shows only `MetaLevelLabel` (a level number, no bar), see "Lobby a meta-progrese" above.
+
+**The bar is ANIMATED, not just set directly (2026-09-28, later the same day, explicit user
+request)** — `show_game_over()`/`show_victory()` both fire-and-forget (no `await` at the call site)
+`_animate_meta_xp_gain(bar, label, level_up_label)`, a coroutine that visually replays the META-XP
+gain from where it stood BEFORE this run to where it stands now. The underlying game state
+(`GameManager.meta_level`/`meta_xp`/`pending_skill_points`) is already fully resolved and correct
+the instant `_finish_run()` ran (see "Lobby a meta-progrese" above, called from
+`trigger_game_over()`/`trigger_win()` *before* either signal handler even reaches
+`show_game_over()`/`show_victory()`) — **the animation is purely cosmetic catch-up, never a source
+of truth**. This is the entire reason it's safe for the player to skip: clicking "Pokračovat" (→
+`_go_to_lobby()`) or letting the countdown expire mid-animation changes nothing, because the lobby
+reads `GameManager.meta_level`/`pending_skill_points` directly, never anything from the animation.
+- `_finish_run()` (`game_manager.gd`) records `"meta_level_before"`/`"meta_xp_before"` into
+  `last_run_summary` *before* calling `add_meta_xp()` — the only reason the animation can replay
+  from the pre-gain starting point after the real state has already moved on.
+- `_animate_meta_xp_gain()` computes `levels_gained = GameManager.meta_level - meta_level_before`.
+  If 0 (no META level-up from this run), it's a single `_tween_meta_xp_bar()` call from
+  `meta_xp_before` straight to the final `meta_xp` — no level-up text ever shown. If more than 0, it
+  loops `levels_gained` times: tween the bar to a full fill (that level's threshold, from
+  `GameManager.meta_xp_for_next_level(level)` — a NEW optional `level` parameter added for exactly
+  this, see its doc comment), then reveal/increment `level_up_label` ("+N úroveň", N growing by one
+  each pass — this is the "if the bar fills up more than once, the number grows" behavior), reset
+  the bar to 0 with the next level's max, pause briefly (`META_XP_BAR_LEVEL_UP_PAUSE`, 0.25s), and
+  continue. A final `_tween_meta_xp_bar()` call after the loop covers the last, partial segment.
+- `_tween_meta_xp_bar(bar, label, target)` is the one-segment primitive — `create_tween().
+  tween_method(...)` over `bar.value` (not `tween_property()`, specifically so the callback can also
+  rewrite `label.text` on every interpolation step, not just at the end) across
+  `META_XP_BAR_SEGMENT_DURATION` (0.6s), then `await`s `tween.finished`.
+- **`is_instance_valid(bar)` checked after every `await`** (both in the level-up loop and implicitly
+  by the coroutine just never resuming meaningfully once torn down) — if the player already
+  navigated away (`change_scene_to_file` frees the whole HUD subtree `bar`/`label` live in), the
+  coroutine bails out cleanly instead of erroring on a freed node. Verified with a headless test that
+  deliberately freed the viewport mid-animation and confirmed no error was printed.
+- **Verified with headless tests**: a 3-META-level-up gain (250 run-XP against the `XP_BASE=40`/
+  `XP_PER_LEVEL_GROWTH=40` curve, crossing thresholds at 40/80/120) ends with the bar at the correct
+  final value/max and `level_up_label.text == "+3 úroveň"`; a sub-threshold gain (no level-up) ends
+  with the bar directly at the final value and `level_up_label` never shown; a run that triggers the
+  animation and then has its scene freed mid-flight produces no error.
+
 **Mobile port note**: the pause-on-hover mechanic has no equivalent on touch (no hover state), so
 this will need a different interaction — e.g. pause while a finger is down, or drop the pause and
 just show the countdown — when a mobile port is attempted.
