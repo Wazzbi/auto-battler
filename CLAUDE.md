@@ -458,22 +458,45 @@ odhad 180s/3min), obojí vede do lobby.
 - **Nová scéna `scenes/ui/lobby.tscn`/`lobby.gd`** - samostatná scéna (žádný `Player`/`Main`/kamera,
   čistě UI), na kterou `hud.gd`'s přejmenovaná `_go_to_lobby()` (dřív `_restart_game()`, stejný
   countdown/hover-pauza mechanismus, jen jiný cíl přechodu) přepne přes
-  `get_tree().change_scene_to_file(...)` po Game Over/Victory countdownu. Obsahuje souhrn běhu (z
-  `GameManager.last_run_summary`), metu úroveň/XP bar + odznáček `pending_skill_points`, dovednostní
-  strom (`_build_skill_tree_ui()`/`_refresh_skill_tree_ui()` PŘESUNUTY beze změny logiky z
-  dřívějšího `hud.gd` - `GameManager.SKILL_TREE_BRANCHES`/`invest_skill_point()` pod tím se nezměnily)
-  a tlačítko "Další běh" (`get_tree().change_scene_to_file("res://scenes/main.tscn")`, spustí
-  `main.gd`'s `_enter_tree()` → `reset_game()` stejně jako dřívější restart).
+  `get_tree().change_scene_to_file(...)` po Game Over/Victory countdownu. Metu úroveň/XP bar (vlevo
+  nahoře), dovednostní strom (`_build_skill_tree_ui()`/`_refresh_skill_tree_ui()` PŘESUNUTY beze
+  změny logiky z dřívějšího `hud.gd` - `GameManager.SKILL_TREE_BRANCHES`/`invest_skill_point()` pod
+  tím se nezměnily), obchod (viz níže) a tlačítko "Další běh"
+  (`get_tree().change_scene_to_file("res://scenes/main.tscn")`, spustí `main.gd`'s `_enter_tree()` →
+  `reset_game()` stejně jako dřívější restart).
+- **STALE (2026-09-28, o den později): lobby už NEMÁ souhrn běhu, a místo toho má taby Dovednosti/
+  Obchod.** Explicit user request - obrazovka dřív nahoře ukazovala `GameManager.last_run_summary`
+  ("Zemřel jsi."/"Smyčka dokončena!" + úroveň/zlato/meta-XP); `last_run_summary` se pořád plní
+  (`_finish_run()`), jen se v lobby už nezobrazuje. Layout je teď: vlevo nahoře meta úroveň/XP bar,
+  vpravo nahoře `GoldLabel` ("Zlato: N"), uprostřed nahoře dvě záložková tlačítka
+  `DovednostiTabButton`/`ObchodTabButton` (stejný bílá/`LOCKED_ITEM_MODULATE` vzor jako dřívější
+  CharacterPanel taby) přepínající `NodesContainer` (dovednostní strom) vs. `ShopTabContent`
+  (obchod, viz níže) - `_set_active_tab(show_dovednosti: bool)`. `DovednostiTabButton` nese malý
+  žlutý `SkillPointsBadge` s "+N" (`pending_skill_points`) - **na rozdíl od dřívějšího portrétového
+  odznáčku je tenhle skutečně akční**, protože v lobby (na rozdíl od běhu) investování reálně funguje.
 - **`CharacterPanel` (klik na portrét, v běhu) ztratil záložky úplně** - `InventoryTabButton`/
   `SkillTreeTabButton`/`SkillTreeTabContent` smazány, zůstala jen dřívější Inventář sekce (staty +
   aktivní/sklad itemy), bez tab-bar navrch. `_on_portrait_pressed()` se zjednodušil na prosté
   otevření panelu - žádná "výchozí záložka podle pending_skill_points" logika (ta dovednostní vazba
-  teď nemá v běhu kam vést). Žlutý odznáček na portrétu ZŮSTÁVÁ jako passivní indikátor "máš co
-  investovat, až budeš v lobby" - jen už neovlivňuje, co klik na portrét udělá.
-- **Obchod zůstává BEZE ZMĚNY mechanismu** (periodicky v běhu na časovači, jen kratší interval, viz
-  výše) - explicit user rozhodnutí, jeho dostupnost i z lobby je vědomě odložena do samostatného
-  follow-up PR (viz `project_shop_world_object`-adjacent poznámka v paměti), aby tahle změna zůstala
-  recenzovatelná a netáhla zbytečně další riziko najednou.
+  teď nemá v běhu kam vést). **STALE (2026-09-28): žlutý odznáček na portrétu je PRYČ úplně**, ne jen
+  passivní - `Control/SkillPointBadge`/`SkillPointLabel` smazány z `hud.tscn`, `hud.gd`'s
+  `_on_skill_points_changed()` (a připojení na `GameManager.skill_points_changed`) smazáno taky.
+  Explicit user request/zdůvodnění: hráč nemůže body dovednosti přidávat BĚHEM hry vůbec (jsou META,
+  viz "Lobby a meta-progrese" výše), takže i čistě informativní odznáček na portrétu byl matoucí -
+  signalizoval něco, na co portrét v běhu žádnou akcí nereaguje.
+- **STALE (2026-09-28): obchod v lobby už NENÍ odložený do follow-up PR - je tam VŽDY dostupný.**
+  Předchozí den zůstal obchod v běhu beze změny mechanismu (periodicky na časovači) a jeho ruční
+  dostupnost z lobby byla vědomě odložená; explicit user request o den později ji dodal rovnou.
+  `ShopTabContent` (obchod tab) znovupoužívá stejná run-scoped data jako `ShopPanel` v běhu
+  (`GameManager.shop_offer`/`buy_shop_item()`/`reroll_shop()`/`can_buy_shop_item()` beze změny) přes
+  4 `ShopCard0..3` + `RerollButton`, stejný vzor jako dřívější `hud.gd`'s `_setup_shop_cards()`/
+  `_refresh_shop_panel()` (kód zvlášť v `lobby.gd`, ne sdílený - viz "known follow-up" o extrakci do
+  vlastní scény níže). **"Vždy dostupný" konkrétně znamená**: `lobby.gd`'s `_ensure_shop_offer()`
+  (volané z `_ready()`) rovnou nastaví `GameManager.shop_available = true` a zavolá
+  `_generate_shop_offer()`, POKUD aktuální běh obchod ještě neotevřel (`shop_available == false`,
+  typicky když hráč zemře dřív než `SHOP_OPEN_INTERVAL_SECONDS` časovač poprvé vyprší) - existující
+  nabídku z proběhlého běhu naopak nechá beze změny. `ShopEmptyLabel`/"obchod ještě nebyl otevřen"
+  placeholder z předchozího dne je pryč, protože je teď nedosažitelný stav.
 - **Odstraněno jako mrtvý kód touhle změnou** (kill-count schopnosti systém z předchozí STALE sekce):
   `GameManager.enemies_killed`, `_ability_offers_granted_by_kills`, `_ability_kill_threshold()`,
   `_register_kill_toward_ability_pickup()`, signál `ability_pickup_dropped`, `request_ability_offer()`,
@@ -487,11 +510,15 @@ odhad 180s/3min), obojí vede do lobby.
   NEsmaže `meta_level`/`meta_xp`/`pending_skill_points`/`skill_ranks`; scéna-level test (real
   `main.tscn`) potvrdil, že `_check_loop_completion()` skutečně zavolá `trigger_win()` při přechodu
   `loop_duration_seconds` a že `CharacterPanel` už nemá `SkillTreeTabContent`; samostatný scéna-level
-  test `lobby.tscn` potvrdil, že postaví přesně 1 uzel na každou schopnost ve
-  `SKILL_TREE_BRANCHES`, že zobrazí správný souhrn běhu, a že klik na uzel skutečně investuje bod a
-  překreslí UI. Živě v editoru zatím NEodzkoušeno - hlavně dvě věci k ověření: celý cyklus běh →
-  smrt/checkpoint → lobby → investice → "Další běh" → nový běh s vyššími staty, a vizuální rozložení
-  `lobby.tscn` (žádné hand-authored offsety zatím ověřené okem, jen výpočtem v testu).
+  test `lobby.tscn` potvrdil, že postaví přesně 1 uzel na každou schopnost ve `SKILL_TREE_BRANCHES` a
+  že klik na uzel skutečně investuje bod a překreslí UI. **Doplněno 2026-09-28** po dnech-po úpravách
+  (souhrn pryč, taby, portrét bez odznáčku, obchod vždy dostupný): další scéna-level test potvrdil, že
+  `hud.tscn` už nemá `SkillPointBadge` uzel a `main.tscn` pořád naběhne bez chyby, a že čerstvý
+  `reset_game()` (tedy `shop_available == false`) po instanciaci `lobby.tscn` skončí s
+  `shop_available == true` a plnou `SHOP_OFFER_SIZE`-položkovou nabídkou hned od prvního snímku, i
+  bez jediného volání `_open_periodic_shop()`. Živě v editoru zatím NEodzkoušeno - hlavně celý cyklus
+  běh → smrt/checkpoint → lobby → investice/nákup → "Další běh" → nový běh s vyššími staty, a vizuální
+  rozložení `lobby.tscn` (žádné hand-authored offsety zatím ověřené okem, jen výpočtem v testu).
 
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
@@ -762,6 +789,17 @@ split either (schopnosti still have no purchase-slot pressure, same as before). 
 node unlocked, rank < max_rank), then decrements the point and increments the rank atomically,
 emitting both `skill_points_changed`/`skill_ranks_changed` — unchanged regardless of WHERE (lobby,
 now) it's called from.
+
+**STALE (2026-09-28, "Lobby a meta-progrese" above): the portrait badge described in this whole
+paragraph is GONE** — `SkillPointBadge`/`SkillPointLabel` were deleted from `hud.tscn`, and
+`hud.gd`'s `_on_skill_points_changed()` (along with its `GameManager.skill_points_changed`
+connection) was deleted too. Explicit user reasoning: the badge signaled "you have a point to
+spend," but points are META now and can't be spent by clicking the in-run portrait at all (only in
+the lobby, which has its own, actually-actionable badge on the `DovednostiTabButton`) — a
+non-actionable badge in the run was just confusing. `Control/Portrait` stays a `Button` (still opens
+`CharacterPanel`), just with no `modulate`/badge reaction to `pending_skill_points` anymore. Kept
+below for historical context on the badge-adjacent `mouse_filter` pattern, which is still relevant
+for `LevelBadge`/`LevelLabel`:
 
 **The portrét is a clickable `Button` that turns yellow with a "+N" badge whenever points are
 pending** (explicit user spec) — `Control/Portrait` changed type from `ColorRect` to `Button`

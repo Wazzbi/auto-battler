@@ -51,28 +51,6 @@ text = "1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="SkillPointBadge" type="ColorRect" parent="Control"]
-visible = false
-layout_mode = 0
-mouse_filter = 2
-offset_left = 70.0
-offset_top = 12.0
-offset_right = 104.0
-offset_bottom = 46.0
-color = Color(0.85, 0.65, 0.15, 1)
-
-[node name="SkillPointLabel" type="Label" parent="Control/SkillPointBadge"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.1, 0.08, 0.02, 1)
-theme_override_font_sizes/font_size = 13
-text = "+1"
-horizontal_alignment = 1
-vertical_alignment = 1
-
 [node name="HPBar" type="ProgressBar" parent="Control" unique_id=1511595178]
 layout_mode = 0
 offset_left = 118.0

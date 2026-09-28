@@ -355,16 +355,6 @@ offset_bottom = 336.0
 theme_override_font_sizes/font_size = 14
 text = "Přehodit (20)"
 
-[node name="ShopEmptyLabel" type="Label" parent="ShopTabContent"]
-layout_mode = 0
-offset_left = 0.0
-offset_top = 120.0
-offset_right = 1200.0
-offset_bottom = 160.0
-theme_override_font_sizes/font_size = 14
-text = "Obchod ještě nebyl otevřen v tomto běhu."
-horizontal_alignment = 1
-
 [node name="NextRunButton" type="Button" parent="."]
 layout_mode = 0
 offset_left = 540.0

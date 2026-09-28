@@ -42,15 +42,16 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var stat_armor: Label = $Control/CharacterPanel/InventoryTabContent/StatArmor
 @onready var stat_crit: Label = $Control/CharacterPanel/InventoryTabContent/StatCrit
 @onready var level_label: Label = $Control/LevelBadge/LevelLabel
-## Portrét je klikatelné tlačítko (viz "CharacterPanel" v CLAUDE.md) -
-## zbarví se žlutě, když čekají body schopnosti (_on_skill_points_changed()),
-## klik otevře CharacterPanel (Inventář/Dovednosti záložky). LevelBadge/
-## LevelLabel zůstávají samostatné sourozenecké uzly (ne děti Portrait),
-## překryté přes jeho roh - proto mají v hud.tscn mouse_filter = 2 (IGNORE),
-## ať klik na jejich malou plochu pořád propadne dolů na tlačítko Portrait.
+## Portrét je klikatelné tlačítko (viz "CharacterPanel" v CLAUDE.md) - klik
+## otevře CharacterPanel (Inventář). STALE (2026-09-28): dřív se žlutě
+## zbarvoval a nesl odznáček "+N" čekajících bodů dovednosti - odstraněno,
+## protože body dovednosti jsou od "Lobby a meta-progrese" META a hráč je
+## stejně nemůže během běhu utratit (portrét v běhu na ně nijak nereaguje),
+## takže odznáček jen matl. LevelBadge/LevelLabel zůstávají samostatné
+## sourozenecké uzly (ne děti Portrait), překryté přes jeho roh - proto mají
+## v hud.tscn mouse_filter = 2 (IGNORE), ať klik na jejich malou plochu pořád
+## propadne dolů na tlačítko Portrait.
 @onready var portrait_button: Button = $Control/Portrait
-@onready var skill_point_badge: ColorRect = $Control/SkillPointBadge
-@onready var skill_point_label: Label = $Control/SkillPointBadge/SkillPointLabel
 @onready var hp_bar: ProgressBar = $Control/HPBar
 @onready var hp_label: Label = $Control/HPBar/HPLabel
 @onready var hp_regen_label: Label = $Control/HPBar/RegenLabel
@@ -208,7 +209,6 @@ func _ready() -> void:
 	GameManager.scrap_changed.connect(_on_scrap_changed)
 	GameManager.xp_changed.connect(_on_xp_changed)
 	GameManager.level_changed.connect(_on_level_changed)
-	GameManager.skill_points_changed.connect(_on_skill_points_changed)
 	GameManager.ability_draft_ready.connect(_on_ability_draft_ready)
 	GameManager.ability_inventory_changed.connect(_on_ability_inventory_changed)
 	GameManager.shop_inventory_changed.connect(_on_shop_inventory_changed)
@@ -313,7 +313,7 @@ func _on_level_changed(new_level: int) -> void:
 
 ## Klik na portrét vždy otevře CharacterPanel (jen Inventář - staty + aktivní/
 ## sklad itemy). Dovednostní strom už tu není (přesunut do lobby, viz doc
-## komentář nad hud.gd) - žlutý odznáček zůstává čistě informativní.
+## komentář nad hud.gd).
 func _on_portrait_pressed() -> void:
 	_refresh_inventory_ui()
 	character_panel.show()
@@ -323,16 +323,6 @@ func _on_portrait_pressed() -> void:
 func _on_character_panel_close_pressed() -> void:
 	character_panel.hide()
 	get_tree().paused = false
-
-
-## Reaguje na KAŽDOU změnu počtu čekajících META bodů dovednosti (meta
-## level-up i investování v lobby) - jen přebarví portrét a odznáček jako
-## passivní upozornění ("máš co investovat, až budeš v lobby"); klik na
-## portrét v běhu už žádnou investici neřeší (viz _on_portrait_pressed()).
-func _on_skill_points_changed(new_amount: int) -> void:
-	skill_point_badge.visible = new_amount > 0
-	skill_point_label.text = "+%d" % new_amount
-	portrait_button.modulate = Color(1.0, 0.85, 0.2) if new_amount > 0 else Color.WHITE
 
 
 ## Když hráč zapne Auto výběr zatímco AbilityDraftPanel zrovna čeká na jeho
@@ -495,7 +485,6 @@ func _refresh_progression() -> void:
 	gold_label.text = "Zlato: %d" % GameManager.currency
 	scrap_label.text = "Šrot: %d" % GameManager.scrap
 	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())
-	_on_skill_points_changed(GameManager.pending_skill_points)
 	_refresh_abilities()
 	_refresh_inventory_ui()
 	_refresh_stat_labels()

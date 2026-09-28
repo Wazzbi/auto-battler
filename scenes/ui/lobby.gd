@@ -2,14 +2,18 @@ extends Control
 ## Klidná obrazovka MEZI běhy (viz "Lobby a meta-progrese" v CLAUDE.md,
 ## 2026-09-27) - TRVALý dovednostní strom (přesunuto beze změny logiky z
 ## dřívějšího hud.gd/CharacterPanel - jen se přesunula obrazovka, ne
-## GameManager.SKILL_TREE_BRANCHES/invest_skill_point() pod tím), obchod
+## GameManager.SKILL_TREE_BRANCHES/invest_skill_point() pod tím) a obchod
 ## (druhý tab, reuse GameManager.shop_offer/buy_shop_item()/reroll_shop() -
-## stejná run-scoped nabídka, kterou v běhu otvírá periodický časovač, tady
-## jen navíc přístupná manuálně než se run-scoped stav při "Další běh" smaže)
-## a tlačítko na spuštění dalšího běhu. GameManager je autoload a scénu
-## přežije beze změny - meta_level/meta_xp/skill_ranks i run-scoped
-## currency/shop_offer JSOU tu dostupné okamžitě po přechodu z hud.gd's
-## _go_to_lobby().
+## stejná run-scoped data, jaká v běhu otvírá periodický časovač) a tlačítko
+## na spuštění dalšího běhu. GameManager je autoload a scénu přežije beze
+## změny - meta_level/meta_xp/skill_ranks i run-scoped currency/shop_offer
+## JSOU tu dostupné okamžitě po přechodu z hud.gd's _go_to_lobby().
+##
+## **Obchod je v lobby VŽDY dostupný** (2026-09-28, explicit user request) -
+## na rozdíl od v běhu (kde čeká na SHOP_OPEN_INTERVAL_SECONDS), `_ready()`
+## zavolá `_ensure_shop_offer()`, které nabídku rovnou vygeneruje, pokud
+## aktuální běh ještě žádnou neotevřel (typicky když hráč zemře brzy). Pokud
+## nabídka z proběhlého běhu už existuje, necháme ji beze změny.
 ##
 ## STALE (2026-09-27, později téhož dne): dřív tu byl navrch souhrn právě
 ## skončeného běhu (`last_run_summary` - "Zemřel jsi."/"Smyčka dokončena!" +
@@ -44,7 +48,6 @@ const SKILL_NODE_GAP: float = 10.0
 	$ShopTabContent/ShopCard3,
 ]
 @onready var shop_reroll_button: Button = $ShopTabContent/RerollButton
-@onready var shop_empty_label: Label = $ShopTabContent/ShopEmptyLabel
 
 @onready var next_run_button: Button = $NextRunButton
 
@@ -68,10 +71,23 @@ func _ready() -> void:
 	_setup_shop_cards()
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
 
+	_ensure_shop_offer()
 	_build_skill_tree_ui()
 	_refresh_meta_ui()
 	_on_currency_changed(GameManager.currency)
 	_set_active_tab(true)
+
+
+## Obchod je v lobby VŽDY dostupný (explicit user request 2026-09-28) -
+## na rozdíl od v běhu, kde se odemyká až periodickým časovačem
+## (SHOP_OPEN_INTERVAL_SECONDS). Pokud aktuální běh obchod ještě neotevřel
+## (nebo právě začínáme v lobby s čerstvým GameManagerem), rovnou mu
+## vygenerujeme nabídku stejným mechanismem, jaký by jinak spustil časovač -
+## existující nabídku z proběhlého běhu naopak necháme beze změny.
+func _ensure_shop_offer() -> void:
+	if not GameManager.shop_available or GameManager.shop_offer.is_empty():
+		GameManager.shop_available = true
+		GameManager._generate_shop_offer()
 
 
 func _on_meta_level_changed(_new_level: int) -> void:
@@ -250,19 +266,14 @@ func _on_shop_reroll_pressed() -> void:
 	GameManager.reroll_shop()
 
 
-## Obchod je pořád run-scoped (GameManager.shop_available/shop_offer se
-## resetují v reset_game()) - dokud se v aktuálním běhu ještě neotevřel
-## periodický časovač, není co nabízet. ShopEmptyLabel to řekne přímo místo
-## tichého prázdného tabu.
+## Obchod je v lobby vždy dostupný (viz _ensure_shop_offer()), takže tahle
+## funkce se na rozdíl od dřívější verze nemusí ptát, jestli vůbec něco
+## nabídnout - GameManager.shop_offer má vždy SHOP_OFFER_SIZE položek.
 func _refresh_shop_tab() -> void:
-	var has_offer: bool = GameManager.shop_available and not GameManager.shop_offer.is_empty()
-	shop_empty_label.visible = not has_offer
-	shop_reroll_button.visible = has_offer
-
 	for i in shop_cards.size():
 		var card: Panel = shop_cards[i]
 
-		if not has_offer or i >= GameManager.shop_offer.size():
+		if i >= GameManager.shop_offer.size():
 			card.hide()
 			continue
 		card.show()
@@ -281,9 +292,8 @@ func _refresh_shop_tab() -> void:
 		action_button.text = "Koupit"
 		action_button.disabled = not GameManager.can_buy_shop_item(i)
 
-	if has_offer:
-		shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
-		shop_reroll_button.disabled = not GameManager.can_reroll_shop()
+	shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
+	shop_reroll_button.disabled = not GameManager.can_reroll_shop()
 
 
 ## Spustí main.tscn znovu - main.gd's _enter_tree() zavolá GameManager.
