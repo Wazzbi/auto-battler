@@ -48,6 +48,16 @@ signal landed
 ## roste přes schopnosti/itemy (viz get_crit_chance()).
 const CRIT_DAMAGE_MULTIPLIER: float = 2.0
 @export var move_speed: float = 60.0 # px/s volného 2D pohybu podle vstupu (viz _process())
+## Poskok (Dash) - okamžitý přesun o `dash_distance` pixelů ve směru pohybu,
+## aktivace mezerníkem (viz project.godot's "dash" input action). Explicit
+## user request 2026-09-28, včetně skici dobíjecího baru v HUD (viz
+## hud.tscn's DashLabel/DashCooldownBar, hud.gd's _update_dash_cooldown_bar()).
+## Okamžitý posun (ne tween) - jednodušší, žádná kolize s per-frame pohybem
+## v _process() níže, a hra beztak nemá žádné kolizní vrstvy (viz "Combat
+## resolution is distance-based" v CLAUDE.md), takže "prokliknutí" skrz
+## nepřítele není o nic problematičtější než normální pohyb.
+@export var dash_distance: float = 150.0
+@export var dash_cooldown: float = 5.0
 @export var projectile_scene: PackedScene
 @export var impact_effect_scene: PackedScene
 ## Vizuál pro schopnost "Orbitální bombardování" (trigger "time_elapsed",
@@ -65,6 +75,13 @@ const CRIT_DAMAGE_MULTIPLIER: float = 2.0
 var max_hp: float
 var hp: float
 var cooldown_timer: float = 0.0
+## Odpočítává od dash_cooldown k 0 - HUD (DashCooldownBar) z něj přímo čte
+## přes get_dash_cooldown_ratio() na 0.0 (právě použito) - 1.0 (připraveno).
+var dash_cooldown_timer: float = 0.0
+## Směr posledního NENULOVÉHO pohybového vstupu - použije se jako směr
+## poskoku, když hráč zrovna nedrží žádnou pohybovou klávesu (mezerník sám o
+## sobě nic o směru neříká). Výchozí doprava, než se hráč poprvé pohne.
+var _last_move_direction: Vector2 = Vector2.RIGHT
 ## X pozice konce levelu - najde se automaticky přes uzel ve skupině "level_end".
 ## DORMANTNÍ od top-down pivotu (2026-09-27): žádný kód už tuhle hodnotu
 ## nečte (volný 2D pohyb nemá jednoosý strop), ale pole i vyhledání v
@@ -272,6 +289,12 @@ func _process(delta: float) -> void:
 	# může střílet A hýbat se zároveň (Vampire Survivors styl).
 	var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	global_position += input_dir * move_speed * delta
+	if input_dir != Vector2.ZERO:
+		_last_move_direction = input_dir.normalized()
+
+	dash_cooldown_timer = maxf(dash_cooldown_timer - delta, 0.0)
+	if Input.is_action_just_pressed("dash"):
+		_try_dash()
 
 	cooldown_timer -= delta
 	var targets := _find_nearest_enemies(get_target_count())
@@ -279,6 +302,27 @@ func _process(delta: float) -> void:
 		for target in targets:
 			_shoot(target)
 		cooldown_timer = 1.0 / max(get_attack_speed(), 0.01)
+
+
+## Okamžitě přesune hráče o dash_distance ve směru aktuálního pohybového
+## vstupu (nebo _last_move_direction, drží-li hráč zrovna žádnou pohybovou
+## klávesu) a spustí dobíjení. No-op, dokud dash_cooldown_timer neklesne na 0.
+func _try_dash() -> void:
+	if dash_cooldown_timer > 0.0:
+		return
+
+	var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var direction: Vector2 = input_dir.normalized() if input_dir != Vector2.ZERO else _last_move_direction
+	global_position += direction * dash_distance
+	dash_cooldown_timer = dash_cooldown
+
+
+## 0.0 (právě použito) - 1.0 (plně dobito/připraveno) - HUD (DashCooldownBar)
+## z toho přímo počítá plnění baru, stejná "roste s dobíjením" logika jako
+## cooldown bary v jiných hrách (prázdný hned po použití, plný když je
+## schopnost připravená).
+func get_dash_cooldown_ratio() -> float:
+	return 1.0 - dash_cooldown_timer / dash_cooldown
 
 
 ## Vrátí až `count` nejbližších nepřátel v dosahu, seřazené od nejbližšího.

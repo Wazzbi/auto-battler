@@ -562,6 +562,54 @@ without touching this getter. The HUD shows it as a small green `+X.X/s` label
 is already full (`_update_hp_regen_label()` in `hud.gd`) so it doesn't clutter the bar when it isn't
 doing anything.
 
+**Poskok (Dash)** (`player.gd`, added 2026-09-28, explicit user request with a sketch of the HUD
+bar) — an instant, first player-controlled ACTION beyond movement (everything else, combat
+included, is fully automatic — see the top-of-file doc comment). Activated with the **spacebar**
+(new `"dash"` input action in `project.godot`, bound to physical keycode 32 like `move_left`/etc.
+are bound to WASD+arrows), it instantly repositions the player by `dash_distance` (150px) in the
+direction of the CURRENT movement input, or `_last_move_direction` (the most recent non-zero
+movement direction, defaulting to `Vector2.RIGHT` before the player ever moves) if no movement key
+is currently held — so pressing dash always does something sensible, even standing still.
+`dash_cooldown` (5.0s) gates re-use via `dash_cooldown_timer`, which counts DOWN from
+`dash_cooldown` to `0.0` every `_process()` tick (same `maxf(x - delta, 0.0)` clamp pattern as
+elsewhere in this file); `_try_dash()` is a no-op while `dash_cooldown_timer > 0.0`.
+
+**Instant reposition, not a tween** — deliberately, not an oversight: this game has zero collision
+layers (see "Combat resolution is distance-based" above), so there's no physics reason to animate
+the traversal, and an instant offset avoids any risk of the manual per-frame movement code in
+`_process()` (`global_position += input_dir * move_speed * delta`) and a simultaneous tween fighting
+over `global_position` in the same frame — two independent systems trying to own the same property
+is exactly the kind of bug class this project already goes out of its way to avoid elsewhere (e.g.
+the camera's own single-owner position update, `camera_follow.gd`).
+
+**`get_dash_cooldown_ratio() -> float`** = `1.0 - dash_cooldown_timer / dash_cooldown` — `0.0` right
+after a dash, `1.0` once fully recharged — is the one public surface the HUD reads; it doesn't touch
+`dash_cooldown_timer` directly. **HUD bar is bottom-center, per the user's own sketch**: `DashLabel`
+("Poskok (mezerník)" — the keybind is spelled out in parentheses right in the label, so the player
+never has to guess which key does this) sits above `DashCooldownBar`, both new fixed-offset children
+of `Control` in `hud.tscn` (`offset_left`/`right` computed to center a 260px-wide block on the
+1280px viewport, same "no dynamic viewport-based layout" precedent as the rest of this HUD).
+**Polled every frame, not signal-driven** — `hud.gd`'s `_process()` calls a new
+`_update_dash_cooldown_bar()` unconditionally (before the existing end-screen-countdown early
+return, so it keeps updating during normal gameplay, not just during Game Over/Victory) reading
+`player_ref.get_dash_cooldown_ratio() * 100.0` into `dash_cooldown_bar.value` — same reasoning as
+the pre-existing `_update_hp_regen_label()`: `dash_cooldown_timer` changes continuously every frame
+with nothing to hang a signal off of, so direct polling is simpler than inventing one. New
+`StyleBoxFlat_dash_fill` sub-resource (blue, `Color(0.3, 0.62, 0.95, 1)`) reuses the existing
+`StyleBoxFlat_bar_bg` background, same two-stylebox pattern as the HP/XP bars.
+
+**Verified with a headless test** (real `main.tscn`, `player.debug_invincible = true` to isolate
+dash mechanics from combat survivability): the `"dash"` input action exists; `get_dash_cooldown_ratio()`
+and the HUD bar both start at `1.0`/`100`; simulating a spacebar press via `Input.action_press("dash")`
+moves the player by exactly `dash_distance` and starts the cooldown; a second press mid-cooldown is a
+no-op (player doesn't move); after `dash_cooldown` seconds elapse the ratio/bar return to `1.0`/`100`
+and dash works again. (One test-only gotcha hit and resolved along the way, not a game bug: resuming
+a suspended `await` from a `SceneTreeTimer.timeout` can land mid-frame, before that frame's node
+`_process()` calls — an `Input.action_press()` issued right there can miss that frame's `_process()`
+entirely; inserting one extra `await get_tree().process_frame` after the timer wait before pressing
+fixed it. Real spacebar presses arrive as queued input events between frames and don't have this
+issue — this was purely an artifact of simulating the press from a coroutine mid-frame in the test.)
+
 **STALE — "Kolo" vs. "Úroveň" no longer applies (2026-09-27, Fáze 6).** `LoopLabel` is deleted;
 there's no loop counter anymore. The top-right corner now shows a single `SurvivalTimeLabel`
 ("Čas: mm:ss", see "Kontinuální spawn/obtížnost" above) where `WaveLabel` used to sit — see "HUD
@@ -1464,7 +1512,7 @@ DebugPanel's new height fitting inside the window.
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown` (Poskok, see "Poskok (Dash)" above); `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
 - `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`
