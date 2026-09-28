@@ -116,10 +116,21 @@ var _skill_progress: Dictionary = {}
 ## poli nemají stabilní identitu napříč sloučeními, takže "zachovat postup"
 ## by vyžadovalo sledovat identitu navíc jen pro tenhle okrajový případ.
 var _ability_progress: Array[float] = []
+## Poloviční rozměry hráčova VLASTNÍHO vizuálu (Polygon2D, ±20 x ±30 dnes) -
+## spočítané jednou v _ready() z `visual.polygon` samotného (ne natvrdo
+## zapsané číslo), ať se automaticky přizpůsobí, kdyby se vizuál hráče někdy
+## změnil. Použité v _resolve_obstacle_collisions() (viz níže) - kolize musí
+## počítat s tím, že HRÁČ SÁM má nenulovou velikost, ne jen s velikostí
+## objektu, jinak by se odsunulo jen hráčovo STŘED mimo objekt a hráčův
+## vlastní vizuál by do objektu pořád vizuálně zasahoval (přesně tenhle
+## přesah nahlásil uživatel screenshotem 2026-09-28 - "chtěl jsem... aby
+## hráč nemohl BÝT UVNITŘ statických objektů").
+var _collision_half_extent: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
 	add_to_group("player")
+	_collision_half_extent = _compute_collision_half_extent()
 
 	# Progrese (úrovně, pasivní schopnosti, nákupy v obchodě) mění staty za
 	# běhu - reagujeme na všechny tři signály, HUD do statů hráče nikdy
@@ -325,39 +336,53 @@ func get_dash_cooldown_ratio() -> float:
 	return 1.0 - dash_cooldown_timer / dash_cooldown
 
 
+## Změří hráčův vlastní Polygon2D (±20 x ±30 dnes) a vrátí jeho poloviční
+## rozměry - viz _collision_half_extent výše pro proč je to potřeba.
+func _compute_collision_half_extent() -> Vector2:
+	var half_extent: Vector2 = Vector2.ZERO
+	for point in visual.polygon:
+		half_extent.x = maxf(half_extent.x, absf(point.x))
+		half_extent.y = maxf(half_extent.y, absf(point.y))
+	return half_extent
+
+
 ## Hráč (na rozdíl od nepřátel, viz enemy.gd's _avoid_obstacles()) statické
-## objekty NEOBCHÁZÍ, ale je jimi blokován - nemůže do nich vejít, viz
-## "Statické objekty ve světě" v CLAUDE.md (explicit user request 2026-09-28,
-## "aby hráč nemohl těmito statickými předměty procházet"). Volá se pro
-## KAŽDOU navrhovanou novou pozici (běžný pohyb i dash) - pokud `pos` skončí
-## uvnitř ČTVERCOVÉ kolizní oblasti nějakého objektu ("obstacles" skupina,
-## `collision_half_size` = polovina strany čtverce, odpovídá skutečnému
-## vizuálu objektu - STEJNÝ tvar jako Polygon2D, ne kruhová aproximace, viz
-## 2026-09-28 follow-up "změnit kolizní model z kruhu na vlastní tvar
-## čtverce"), odsune ji ven na NEJBLIŽŠÍ hranu (osa s MENŠÍM průnikem = kratší
-## cesta ven - standardní AABB point-clamp vytlačení, žádná fyzika). Aplikuje
-## se postupně přes VŠECHNY blízké objekty, ne najednou vyřešené - pro řídce
-## rozmístěné placeholder objekty dostatečně přesné, u hustě natěsnaných
-## překážek by to nebylo dokonalé (menší priorita než skutečná fyzika pro
-## tenhle prototyp).
+## objekty NEOBCHÁZÍ, ale je jimi blokován - nemůže do nich vejít ANI SVÝM
+## VLASTNÍM VIZUÁLEM, ne jen svým středem (viz "Statické objekty ve světě" v
+## CLAUDE.md, explicit user request 2026-09-28 - screenshot ukázal hráče
+## viditelně přesahujícího do objektu, protože dřívější verze počítala jen s
+## objektovou stranou kolize a bod (hráčovo `global_position`) bez vlastní
+## velikosti). Volá se pro KAŽDOU navrhovanou novou pozici (běžný pohyb i
+## dash) - pokud by `pos` skončila blíž k objektu ("obstacles" skupina), než
+## dovoluje SOUČET `obstacle.collision_half_size` (polovina strany
+## čtvercového objektu) A `_collision_half_extent` (poloviční rozměry
+## hráčova vlastního vizuálu) na dané ose - Minkowského součet dvou
+## obdélníků, standardní technika pro "box vs box" kolizi převedenou na
+## jednodušší "bod vs zvětšený box" - odsune ji ven na NEJBLIŽŠÍ hranu (osa s
+## MENŠÍM průnikem = kratší cesta ven, AABB point-clamp vytlačení, žádná
+## fyzika). Aplikuje se postupně přes VŠECHNY blízké objekty, ne najednou
+## vyřešené - pro řídce rozmístěné placeholder objekty dostatečně přesné, u
+## hustě natěsnaných překážek by to nebylo dokonalé (menší priorita než
+## skutečná fyzika pro tenhle prototyp).
 func _resolve_obstacle_collisions(pos: Vector2) -> Vector2:
 	var resolved_pos: Vector2 = pos
 	for obstacle in get_tree().get_nodes_in_group("obstacles"):
 		if not is_instance_valid(obstacle):
 			continue
-		var half_size: float = obstacle.collision_half_size
+		var half_x: float = obstacle.collision_half_size + _collision_half_extent.x
+		var half_y: float = obstacle.collision_half_size + _collision_half_extent.y
 		var local: Vector2 = resolved_pos - obstacle.global_position
-		if absf(local.x) >= half_size or absf(local.y) >= half_size:
+		if absf(local.x) >= half_x or absf(local.y) >= half_y:
 			continue
 
-		var penetration_x: float = half_size - absf(local.x)
-		var penetration_y: float = half_size - absf(local.y)
+		var penetration_x: float = half_x - absf(local.x)
+		var penetration_y: float = half_y - absf(local.y)
 		if penetration_x < penetration_y:
 			var sign_x: float = signf(local.x)
-			local.x = half_size * (sign_x if not is_zero_approx(sign_x) else 1.0)
+			local.x = half_x * (sign_x if not is_zero_approx(sign_x) else 1.0)
 		else:
 			var sign_y: float = signf(local.y)
-			local.y = half_size * (sign_y if not is_zero_approx(sign_y) else 1.0)
+			local.y = half_y * (sign_y if not is_zero_approx(sign_y) else 1.0)
 		resolved_pos = obstacle.global_position + local
 	return resolved_pos
 

@@ -224,6 +224,24 @@ of this PR is the MECHANISM (spawning, targeting, avoidance), not the visuals.
   through a wall. Destroying a destructible object frees it from `"obstacles"` (`queue_free()` in
   `_die()`, unchanged) so it stops blocking immediately, same as it already stopped being
   targetable/steered-around.
+  **STALE (2026-09-28, a fourth pass the same day): the earlier version only pushed the player's
+  CENTER point outside the object's square — the player's own visual body could still visibly
+  overlap the object.** A user screenshot caught it directly: the player's `Polygon2D` (`±20 x ±30`,
+  `scenes/player/player.tscn`) extends well past `global_position` in every direction, so clamping
+  only the center left up to 20-30px of the player's own sprite poking into the object. Fixed with a
+  proper Minkowski-sum "box vs box" resolution: `player.gd`'s new `_collision_half_extent: Vector2`
+  (computed once in `_ready()` via `_compute_collision_half_extent()`, which scans `visual.polygon`
+  for its max `abs(x)`/`abs(y)` rather than hardcoding `Vector2(20, 30)` a second time — stays
+  correct automatically if the player's visual ever changes) is now ADDED to each obstacle's
+  `collision_half_size` on both axes before the inside-the-box check
+  (`half_x = obstacle.collision_half_size + _collision_half_extent.x`, same for `y`) — this is the
+  standard trick for resolving "rectangle vs rectangle" collision as "point vs one rectangle
+  expanded by the other's half-size," reusing the exact same AABB point-clamp logic from the square
+  circle→square change above, just against a bigger effective box. Verified with a headless test
+  that does the actual failure-reproduction scenario (walk straight into an object, like the
+  screenshot) and confirms the two rectangles (`±_collision_half_extent` around the player,
+  `±collision_half_size` around the object) genuinely don't overlap on either axis afterward — not
+  just that the center points are some arbitrary distance apart.
 - **Verified with headless tests** (real `main.tscn`): destructible objects join both
   `"obstacles"`/`"destructibles"`, indestructible joins only `"obstacles"`;
   `_find_nearest_targets()` picks up a nearby destructible when no enemy is in range and NEVER
