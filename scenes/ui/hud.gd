@@ -41,16 +41,15 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 @onready var stat_hp: Label = $Control/CharacterPanel/InventoryTabContent/StatHP
 @onready var stat_armor: Label = $Control/CharacterPanel/InventoryTabContent/StatArmor
 @onready var stat_crit: Label = $Control/CharacterPanel/InventoryTabContent/StatCrit
-@onready var level_label: Label = $Control/LevelBadge/LevelLabel
 ## Portrét je klikatelné tlačítko (viz "CharacterPanel" v CLAUDE.md) - klik
 ## otevře CharacterPanel (Inventář). STALE (2026-09-28): dřív se žlutě
 ## zbarvoval a nesl odznáček "+N" čekajících bodů dovednosti - odstraněno,
 ## protože body dovednosti jsou od "Lobby a meta-progrese" META a hráč je
 ## stejně nemůže během běhu utratit (portrét v běhu na ně nijak nereaguje),
-## takže odznáček jen matl. LevelBadge/LevelLabel zůstávají samostatné
-## sourozenecké uzly (ne děti Portrait), překryté přes jeho roh - proto mají
-## v hud.tscn mouse_filter = 2 (IGNORE), ať klik na jejich malou plochu pořád
-## propadne dolů na tlačítko Portrait.
+## takže odznáček jen matl. **Odznáček s úrovní hráče (LevelBadge/LevelLabel)
+## byl odstraněn stejný den** (explicit user request) - úroveň teď v běhu
+## nikde vidět není (jen nepřímo přes vyšší staty, viz LEVEL_STAT_GROWTH),
+## zpátky se objeví jen na Game Over/Victory obrazovce po konci běhu.
 @onready var portrait_button: Button = $Control/Portrait
 @onready var hp_bar: ProgressBar = $Control/HPBar
 @onready var hp_label: Label = $Control/HPBar/HPLabel
@@ -306,8 +305,7 @@ func _on_xp_changed(current_xp: int, xp_needed: int) -> void:
 	xp_label.text = "XP %d / %d" % [current_xp, xp_needed]
 
 
-func _on_level_changed(new_level: int) -> void:
-	level_label.text = str(new_level)
+func _on_level_changed(_new_level: int) -> void:
 	_refresh_stat_labels()
 
 
@@ -481,7 +479,6 @@ func _create_ability_stack_slot(index: int, label_text: String, tooltip_text: St
 ## signály při resetu už proběhly dřív, než se HUD stihl připojit.
 func _refresh_progression() -> void:
 	_on_survival_time_changed(GameManager.survival_time)
-	level_label.text = str(GameManager.player_level)
 	gold_label.text = "Zlato: %d" % GameManager.currency
 	scrap_label.text = "Šrot: %d" % GameManager.scrap
 	_on_xp_changed(GameManager.player_xp, GameManager.xp_for_next_level())

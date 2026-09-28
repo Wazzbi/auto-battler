@@ -936,7 +936,7 @@ when `BottomBar` was removed entirely in favor of `CharacterPanel` (see "Charact
 this describes the current state, current as the authoritative reference (treat any older
 description you find elsewhere, including `BottomBar` mentions below, as stale):
 
-- **Top-left**: `Portrait`/`LevelBadge`/`LevelLabel` (`offset_left = 20`, `offset_top = 20` —
+- **Top-left**: `Portrait` (`offset_left = 20`, `offset_top = 20` —
   top edge deliberately matches `HPBar`'s top edge, see below, AND the top margin deliberately
   matches the 20px left margin) beside `HPBar`/`XPBar` (`offset_left = 118`, same relative
   arrangement/sizing `BottomBar` used to have, just moved as one block), then `GoldLabel` directly
@@ -950,7 +950,12 @@ description you find elsewhere, including `BottomBar` mentions below, as stale):
   to sit directly under `XPBar` instead (left-aligned with the bars); then the WHOLE top-left block
   shifted down 10px together (so `Portrait`/`HPBar` stayed aligned with each other) once the user
   noticed the resulting 10px top margin looked inconsistent next to the 20px left margin —
-  `AbilitiesContainer` shifted down to follow both times.
+  `AbilitiesContainer` shifted down to follow both times. **STALE (2026-09-28): `LevelBadge`/
+  `LevelLabel` (the small "current level" number overlaid on Portrait's corner) are GONE** —
+  explicit user request to remove the in-game level badge on the avatar. Player level is no longer
+  shown anywhere during a run at all (only indirectly through higher stats, via
+  `LEVEL_STAT_GROWTH`) — it reappears on the Game Over/Victory screen text after the run ends
+  (`hud.gd`'s `show_game_over()`/`show_victory()`, unaffected by this change).
 - **Top-right**: `LoopLabel` ("Kolo N") and `WaveLabel` ("Vlna N"), right-anchored, side by side
   (`WaveLabel` closest to the corner). Moved here from a fixed absolute position near screen-center
   2026-09-09, same change as the top-left move above. **Both labels are right-aligned

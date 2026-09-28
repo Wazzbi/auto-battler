@@ -32,25 +32,6 @@ offset_right = 96.0
 offset_bottom = 96.0
 text = ""
 
-[node name="LevelBadge" type="ColorRect" parent="Control" unique_id=1753874969]
-layout_mode = 0
-mouse_filter = 2
-offset_left = 70.0
-offset_top = 70.0
-offset_right = 104.0
-offset_bottom = 104.0
-color = Color(0.12, 0.13, 0.17, 1)
-
-[node name="LevelLabel" type="Label" parent="Control/LevelBadge" unique_id=1468170134]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-text = "1"
-horizontal_alignment = 1
-vertical_alignment = 1
-
 [node name="HPBar" type="ProgressBar" parent="Control" unique_id=1511595178]
 layout_mode = 0
 offset_left = 118.0
