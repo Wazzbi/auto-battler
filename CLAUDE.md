@@ -491,7 +491,17 @@ odhad 180s/3min), obojí vede do lobby.
   (`GameManager.shop_offer`/`buy_shop_item()`/`reroll_shop()`/`can_buy_shop_item()` beze změny) přes
   4 `ShopCard0..3` + `RerollButton`, stejný vzor jako dřívější `hud.gd`'s `_setup_shop_cards()`/
   `_refresh_shop_panel()` (kód zvlášť v `lobby.gd`, ne sdílený - viz "known follow-up" o extrakci do
-  vlastní scény níže). **"Vždy dostupný" konkrétně znamená**: `lobby.gd`'s `_ensure_shop_offer()`
+  vlastní scény níže). **STALE (2026-09-28, ještě později): karty i dovednostní dlaždice jsou teď
+  celé `Button`, ne `Panel` + vnořené "ActionButton"/"Investovat" tlačítko.** Explicit user request -
+  stejný vzor jako `AbilityDraftPanel`'s `Card0..2` (`hud.tscn`), kde je karta sama tlačítko a klik
+  kdekoliv na ni rovnou vybere. `ShopCard0..3` (`lobby.tscn`) i procedurálně stavěné dovednostní
+  dlaždice (`lobby.gd`'s `_build_skill_tree_ui()`) teď mají žádné vnořené tlačítko - `card.pressed`/
+  `tile.pressed` (Button je sám sobě kořenem) volá přímo `_on_shop_card_action_pressed()`/
+  `_on_skill_node_pressed()`. Potomci (NameLabel/DescLabel/...) mají `mouse_filter = 2` (IGNORE),
+  stejná pojistka jako u `Card0`'s dětí, ať klik na text pořád propadne na tlačítko pod ním. Stavový
+  text dřívějšího tlačítka ("Investovat"/"Max"/"Koupit") zmizel úplně - `disabled` stav dlaždice
+  (ztlumené tlačítko) spolu s existujícím "Stupeň N/M" popiskem (kde N==M už sám říká "Max") nesou
+  stejnou informaci bez extra textu. **"Vždy dostupný" konkrétně znamená**: `lobby.gd`'s `_ensure_shop_offer()`
   (volané z `_ready()`) rovnou nastaví `GameManager.shop_available = true` a zavolá
   `_generate_shop_offer()`, POKUD aktuální běh obchod ještě neotevřel (`shop_available == false`,
   typicky když hráč zemře dřív než `SHOP_OPEN_INTERVAL_SECONDS` časovač poprvé vyprší) - existující

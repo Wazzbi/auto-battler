@@ -158,22 +158,27 @@ func _on_obchod_tab_pressed() -> void:
 
 
 ## Postaví jeden uzel na KAŽDOU schopnost ve GameManager.SKILL_TREE_BRANCHES,
-## v mřížce 4 sloupce (větve) x max 3 řádky (nejdelší větev) - přesunuto beze
-## změny logiky z dřívějšího hud.gd's _build_skill_tree_ui() (viz "Lobby a
-## meta-progrese" v CLAUDE.md, 2026-09-27).
+## v mřížce 4 sloupce (větve) x max 3 řádky (nejdelší větev). **Celá dlaždice
+## je sama o sobě `Button`** (2026-09-28, explicit user request - "ať v nich
+## nejsou tlačítka a jsou celé dlaždice klikatelné jako v panelu výběru
+## schopností") - stejný vzor jako `Card0..2` v `AbilityDraftPanel`
+## (`hud.tscn`/`hud.gd`'s `_show_ability_draft_panel()`): žádné samostatné
+## "Investovat" tlačítko uvnitř, klik kdekoliv na dlaždici rovnou investuje.
+## Popisky (Název/Stupeň/Popis) jsou potomci tlačítka, ne obráceně.
 func _build_skill_tree_ui() -> void:
 	for col in GameManager.SKILL_TREE_BRANCHES.size():
 		var branch: Array = GameManager.SKILL_TREE_BRANCHES[col]
 		for row in branch.size():
 			var ability_id: String = branch[row]
 
-			var panel := Panel.new()
-			panel.name = "SkillNode_%s" % ability_id
-			panel.position = Vector2(
+			var tile := Button.new()
+			tile.name = "SkillNode_%s" % ability_id
+			tile.position = Vector2(
 				col * (SKILL_NODE_WIDTH + SKILL_NODE_GAP), row * (SKILL_NODE_HEIGHT + SKILL_NODE_GAP)
 			)
-			panel.size = Vector2(SKILL_NODE_WIDTH, SKILL_NODE_HEIGHT)
-			nodes_container.add_child(panel)
+			tile.size = Vector2(SKILL_NODE_WIDTH, SKILL_NODE_HEIGHT)
+			tile.pressed.connect(_on_skill_node_pressed.bind(ability_id))
+			nodes_container.add_child(tile)
 
 			var name_label := Label.new()
 			name_label.name = "NameLabel"
@@ -182,7 +187,8 @@ func _build_skill_tree_ui() -> void:
 			name_label.add_theme_font_size_override("font_size", 13)
 			name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			panel.add_child(name_label)
+			name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			tile.add_child(name_label)
 
 			var rank_label := Label.new()
 			rank_label.name = "RankLabel"
@@ -190,27 +196,22 @@ func _build_skill_tree_ui() -> void:
 			rank_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 16.0)
 			rank_label.add_theme_font_size_override("font_size", 11)
 			rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			panel.add_child(rank_label)
+			rank_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			tile.add_child(rank_label)
 
 			var desc_label := Label.new()
 			desc_label.name = "DescLabel"
 			desc_label.position = Vector2(6.0, 56.0)
-			desc_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 58.0)
+			desc_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 88.0)
 			desc_label.add_theme_font_size_override("font_size", 10)
 			desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			panel.add_child(desc_label)
-
-			var button := Button.new()
-			button.name = "ActionButton"
-			button.position = Vector2(6.0, 116.0)
-			button.size = Vector2(SKILL_NODE_WIDTH - 12.0, 28.0)
-			button.pressed.connect(_on_skill_node_pressed.bind(ability_id))
-			panel.add_child(button)
+			desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			tile.add_child(desc_label)
 
 			_skill_node_widgets[ability_id] = {
-				"panel": panel, "name_label": name_label, "rank_label": rank_label,
-				"desc_label": desc_label, "button": button,
+				"panel": tile, "name_label": name_label, "rank_label": rank_label,
+				"desc_label": desc_label, "button": tile,
 			}
 
 	_refresh_skill_tree_ui()
@@ -237,7 +238,6 @@ func _refresh_skill_tree_ui() -> void:
 			widget["panel"].modulate = LOCKED_ITEM_MODULATE
 			widget["rank_label"].text = "Zamčeno"
 			widget["desc_label"].text = ""
-			widget["button"].text = "Zamčeno"
 			widget["button"].disabled = true
 			continue
 
@@ -246,23 +246,21 @@ func _refresh_skill_tree_ui() -> void:
 		# Na stupni 0 (odemčeno, ale zatím neinvestováno) rovnou ukážeme
 		# efekt PRVNÍHO stupně místo prázdného textu, stejně jako dřív v HUD.
 		widget["desc_label"].text = GameManager.get_skill_node_desc(ability_id, max(rank, 1))
-
-		if rank >= max_rank:
-			widget["button"].text = "Max"
-			widget["button"].disabled = true
-		else:
-			widget["button"].text = "Investovat"
-			widget["button"].disabled = not GameManager.can_invest_skill_point(ability_id)
+		# Dlaždice sama nese žádný stavový text ("Investovat"/"Max") - stejně
+		# jako AbilityDraftPanel's karty, disabled stav (ztlumené tlačítko)
+		# spolu s "Stupeň N/M" (kde N==M už samo říká "Max") stačí.
+		widget["button"].disabled = rank >= max_rank or not GameManager.can_invest_skill_point(ability_id)
 
 
-## Napojí každou kartu na její SLOT INDEX v GameManager.shop_offer - stejný
-## vzor jako dřívější hud.gd's _setup_shop_cards() (ShopPanel v běhu, beze
-## změny logiky/GameManageru, jen druhá UI nad stejnými daty).
+## Napojí každou kartu na její SLOT INDEX v GameManager.shop_offer. **Celá
+## karta je sama `Button`** (2026-09-28, stejná změna a stejný důvod jako u
+## dovednostních dlaždic výše - žádné samostatné "Koupit" tlačítko, klik
+## kdekoliv na kartu rovnou koupí, stejný vzor jako AbilityDraftPanel's
+## Card0..2).
 func _setup_shop_cards() -> void:
 	for i in shop_cards.size():
-		var card: Panel = shop_cards[i]
-		var action_button: Button = card.get_node("ActionButton")
-		action_button.pressed.connect(_on_shop_card_action_pressed.bind(i))
+		var card: Button = shop_cards[i]
+		card.pressed.connect(_on_shop_card_action_pressed.bind(i))
 
 
 func _on_shop_card_action_pressed(slot_index: int) -> void:
@@ -288,7 +286,7 @@ func _on_shop_reroll_pressed() -> void:
 ## nabídnout - GameManager.shop_offer má vždy SHOP_OFFER_SIZE položek.
 func _refresh_shop_tab() -> void:
 	for i in shop_cards.size():
-		var card: Panel = shop_cards[i]
+		var card: Button = shop_cards[i]
 
 		if i >= GameManager.shop_offer.size():
 			card.hide()
@@ -304,10 +302,7 @@ func _refresh_shop_tab() -> void:
 		card.get_node("RarityLabel").text = GameManager.SHOP_RARITY_NAMES[rarity]
 		card.get_node("DescLabel").text = GameManager.get_shop_item_desc(item_id, rarity)
 		card.get_node("CostLabel").text = "Cena: %d" % GameManager.get_shop_item_cost(item_id, rarity)
-
-		var action_button: Button = card.get_node("ActionButton")
-		action_button.text = "Koupit"
-		action_button.disabled = not GameManager.can_buy_shop_item(i)
+		card.disabled = not GameManager.can_buy_shop_item(i)
 
 	shop_reroll_button.text = "Přehodit (%d)" % GameManager.get_shop_reroll_cost()
 	shop_reroll_button.disabled = not GameManager.can_reroll_shop()
