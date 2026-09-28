@@ -9,7 +9,6 @@
 [ext_resource type="Script" uid="uid://ilkhblcakne1" path="res://scenes/camera_follow.gd" id="7_camera_follow"]
 [ext_resource type="PackedScene" path="res://scenes/enemies/ranged_enemy.tscn" id="8_ranged_enemy"]
 [ext_resource type="PackedScene" path="res://scenes/enemies/sniper_enemy.tscn" id="9_sniper_enemy"]
-[ext_resource type="PackedScene" path="res://scenes/pickups/ability_pickup.tscn" id="10_ability_pickup"]
 
 [node name="Main" type="Node2D" unique_id=1752286728]
 script = ExtResource("1_main_script")
@@ -17,7 +16,6 @@ enemy_scene = ExtResource("4_enemy")
 elite_enemy_scene = ExtResource("6_elite_enemy")
 ranged_enemy_scene = ExtResource("8_ranged_enemy")
 sniper_enemy_scene = ExtResource("9_sniper_enemy")
-ability_pickup_scene = ExtResource("10_ability_pickup")
 
 [node name="Level01" parent="." unique_id=75340192 instance=ExtResource("2_level")]
 

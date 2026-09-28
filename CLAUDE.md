@@ -64,12 +64,15 @@ movement via keyboard input, enemies swarming from all directions, continuous su
 spawning instead of discrete waves/loops. All 6 phases landed the same day (PRs #42-#47); the
 original phased plan lived at `C:\Users\david\.claude\plans\validated-jumping-fairy.md`, which has
 since been reused for later unrelated plans (that file is a scratch workspace, not a permanent
-record — treat it as stale/irrelevant to this pivot by the time you're reading this). Two follow-up
+record — treat it as stale/irrelevant to this pivot by the time you're reading this). Three follow-up
 changes landed later the same day: moving `BottomBar` into a new `CharacterPanel` behind the avatar
-click (see "CharacterPanel" below, PR #48), and replacing the schopnosti offer's time-based trigger
-with a kill-count one (see "Schopnosti na základě zabití" below). If you see a section below still
-describing OLD side-scrolling behavior without a STALE marker, treat it as a documentation gap, not
-current truth — the code itself is fully top-down.
+click (see "CharacterPanel" below, PR #48), replacing the schopnosti offer's time-based trigger with
+a kill-count one (see "Schopnosti na základě zabití" below, PR #49 — itself superseded a few hours
+later, see next), and finally splitting dovednosti/schopnosti into a run-scoped-vs-meta "Lobby a
+meta-progrese" structure (see below) — the biggest of the three, on par with the pivot itself in how
+much it reshapes the core loop. If you see a section below still describing OLD side-scrolling
+behavior without a STALE marker, treat it as a documentation gap, not current truth — the code
+itself is fully top-down.
 
 **Camera/scrolling model — TOP-DOWN, updated 2026-09-27**: the `Camera2D` (`Main/Camera2D` in
 `main.tscn`, script `scenes/camera_follow.gd`) is an **independent sibling node, not a child of
@@ -357,7 +360,20 @@ a while, same as every other tunable in this project historically has. (`ABILITY
 SECONDS` itself is GONE, replaced the same day — see "Schopnosti na základě zabití" immediately
 below.)
 
-**Schopnosti na základě zabití — nahrazuje časovač zeleným kosočtvercem** (2026-09-27, později
+**STALE (2026-09-27, později téhož dne — "Lobby a meta-progrese" níže): kill-count/kosočtverec
+systém popsaný v téhle sekci je PRYČ, jen několik hodin po tom, co vznikl.** Nabídka schopností se
+vrátila zpátky na run-scoped level-up (`_level_up()` v `game_manager.gd` teď přímo volá
+`pending_ability_drafts += 1; _try_offer_next_ability_draft()`, stejně jako `begin_intro_ability_
+draft()` už dělal) - `enemies_killed`, `_ability_offers_granted_by_kills`, `_ability_kill_
+threshold()`, signál `ability_pickup_dropped`, `request_ability_offer()`,
+`scenes/pickups/ability_pickup.gd`/`.tscn` jsou všechny SMAZANÉ, ne jen deprecated. Důvod obratu:
+zavedení "Lobby a meta-progrese" (viz níže) přesunulo dovednostní strom mimo run-scoped level-upy do
+klidné lobby mezi běhy, takže level-up se uvolnil a bylo přirozené ho vrátit zpátky pro schopnosti -
+tempo pořád sleduje, co hráč DĚLÁ (level roste jen ze zabíjení), jen přes jinou metriku než syrový
+počet zabití. Zbytek téhle sekce je ponechán jen jako historický kontext, PROČ kill-count systém
+kdysi vznikl - žádný z popsaných symbolů dnes neexistuje:
+
+~~**Schopnosti na základě zabití — nahrazuje časovač zeleným kosočtvercem** (2026-09-27, později
 téhož dne jako Fáze 6 - explicit user request: "tempo voleb se má odvíjet od toho, co hráč dělá,
 ne od hodin"). `ABILITY_OFFER_INTERVAL_SECONDS`/`_ability_offer_timer` jsou PRYČ - `GameManager.
 _process()` už nabídku schopností vůbec nespouští. Místo toho:
@@ -401,7 +417,121 @@ _process()` už nabídku schopností vůbec nespouští. Místo toho:
   co práh překročí (ne dřív, ne vícekrát), s korektní pozicí, a že obchodní časovač zůstal
   nedotčený; scéna-level test (real `main.tscn`) potvrdil, že `main.gd` spawne kosočtverec přesně
   na hlášenou pozici, že se nesebere z dálky, že se sebere a vyžádá nabídku při vstupu do
-  `pickup_radius`, a že se okamžitě zničí.
+  `pickup_radius`, a že se okamžitě zničí.~~
+
+**Lobby a meta-progrese — dovednostní strom se přesunul MEZI běhy** (2026-09-27, později téhož dne
+jako kill-count experiment výše - explicit user request: "chtěl bych dát pryč dvojí systém přidávání
+bodů do dovedostí a schopností [...] dovedostní stromy vyjmuli ze hlavního herního loop a bylo by to
+součástí herního lobby"). Motivace: dovednostní strom (klik na portrét, kdykoliv za běhu) a schopnosti
+(kill-count kosočtverec, viz STALE výše) pauzovaly hru ve dvou nezávislých, nesourodých rytmech -
+řešení není další kolizní guard (jako `_shop_open_deferred` mezi obchodem a schopnostmi), ale
+rozdělení podle TEMPA: schopnosti (rychlé rozhodování za chodu) zůstávají v běhu, dovednostní strom
+(pomalé, promyšlené investování) se přesouvá do klidné **lobby** obrazovky MEZI běhy. Tohle znovu
+zavádí koncept "konec běhu", který Fáze 6 záměrně zrušila ve prospěch nekonečného přežití - běh teď
+končí buď smrtí, NEBO dosažením časového checkpointu (`main.gd`'s `loop_duration_seconds`, první
+odhad 180s/3min), obojí vede do lobby.
+
+- **Dvě oddělené úrovňové osy v `game_manager.gd`**: `player_level`/`player_xp` (beze změny jmen,
+  ale teď VÝHRADNĚ run-scoped - řídí jen run-scoped odměny a od téhle změny znovu i spouštění
+  nabídky SCHOPNOSTÍ, viz STALE výše) vs. nové `meta_level`/`meta_xp` (TRVALÉ přes běhy, NEresetuje
+  je `reset_game()`). `pending_skill_points`/`skill_ranks` (dovednostní strom, beze změny tvaru/
+  `invest_skill_point()`/`can_invest_skill_point()`) se staly META - vyřazeny z `reset_game()`'s
+  clear listu, takže investice v lobby permanentně zvyšují základní staty i v budoucích bězích
+  (`get_stat_bonus()` čte `skill_ranks` beze změny, bez ohledu na to, KDE se investovalo).
+- **`_run_xp_earned: int`** (nový, run-scoped) sčítá VŠECHNO XP vydělané za aktuální běh (`add_xp()`
+  k němu přičítá bez ohledu na to, kolik z toho padlo do run-scoped level-upů) - na konci běhu se 1:1
+  převede na `meta_xp` přes `add_meta_xp()`. `meta_xp_for_next_level()` sdílí stejnou `XP_BASE`/
+  `XP_PER_LEVEL_GROWTH` křivku jako `xp_for_next_level()` (první odhad, může se doladit nezávisle).
+- **Sdílený konec běhu**: `trigger_game_over()` (smrt, `player.gd`'s `take_damage()`, beze změny
+  spouštěče) a `trigger_win()` (dokončení smyčky - `State.WON`/`VictoryPanel`, dřív nedosažitelné
+  běžnou hrou, jsou teď reálná, běžná cesta) obě volají novou `_finish_run(reason: String)`, která
+  naplní `last_run_summary: Dictionary` ({"reason", "level", "currency", "meta_xp_gained"}, čte ho
+  lobby) a zavolá `add_meta_xp(_run_xp_earned)` - PŘED tím, než `main.tscn`'s `_enter_tree()` na
+  cestě do dalšího běhu zavolá `reset_game()` a run-scoped stav smaže.
+- **`main.gd`'s `_check_loop_completion()`** (nová, stejný vzor jako `_check_elite_checkpoints()`,
+  volaná z `_process()`) zavolá `GameManager.trigger_win()`, jakmile `survival_time` překročí
+  `loop_duration_seconds` (první odhad 180.0). **Reálná interakce**: `SHOP_OPEN_INTERVAL_SECONDS`
+  snížen ze 240 na **90** (jinak by se periodický obchod v 180s běhu prakticky nikdy neotevřel -
+  explicit user rozhodnutí "obchod necháme beze změny" jinak fakticky znamenalo "obchod zmizí").
+  `elite_checkpoints_seconds` (180/360/540/720/900) zůstal nezměněný, ale s 180s smyčkou se prakticky
+  nikdy nedostane přes první prvek - známý follow-up pro balancování, neblokující.
+- **Nová scéna `scenes/ui/lobby.tscn`/`lobby.gd`** - samostatná scéna (žádný `Player`/`Main`/kamera,
+  čistě UI), na kterou `hud.gd`'s přejmenovaná `_go_to_lobby()` (dřív `_restart_game()`, stejný
+  countdown/hover-pauza mechanismus, jen jiný cíl přechodu) přepne přes
+  `get_tree().change_scene_to_file(...)` po Game Over/Victory countdownu. Metu úroveň/XP bar (vlevo
+  nahoře), dovednostní strom (`_build_skill_tree_ui()`/`_refresh_skill_tree_ui()` PŘESUNUTY beze
+  změny logiky z dřívějšího `hud.gd` - `GameManager.SKILL_TREE_BRANCHES`/`invest_skill_point()` pod
+  tím se nezměnily), obchod (viz níže) a tlačítko "Další běh"
+  (`get_tree().change_scene_to_file("res://scenes/main.tscn")`, spustí `main.gd`'s `_enter_tree()` →
+  `reset_game()` stejně jako dřívější restart).
+- **STALE (2026-09-28, o den později): lobby už NEMÁ souhrn běhu, a místo toho má taby Dovednosti/
+  Obchod.** Explicit user request - obrazovka dřív nahoře ukazovala `GameManager.last_run_summary`
+  ("Zemřel jsi."/"Smyčka dokončena!" + úroveň/zlato/meta-XP); `last_run_summary` se pořád plní
+  (`_finish_run()`), jen se v lobby už nezobrazuje. Layout je teď: vlevo nahoře meta úroveň/XP bar,
+  vpravo nahoře `GoldLabel` ("Zlato: N"), uprostřed nahoře dvě záložková tlačítka
+  `DovednostiTabButton`/`ObchodTabButton` (stejný bílá/`LOCKED_ITEM_MODULATE` vzor jako dřívější
+  CharacterPanel taby) přepínající `NodesContainer` (dovednostní strom) vs. `ShopTabContent`
+  (obchod, viz níže) - `_set_active_tab(show_dovednosti: bool)`. `DovednostiTabButton` nese malý
+  žlutý `SkillPointsBadge` s "+N" (`pending_skill_points`) - **na rozdíl od dřívějšího portrétového
+  odznáčku je tenhle skutečně akční**, protože v lobby (na rozdíl od běhu) investování reálně funguje.
+- **`CharacterPanel` (klik na portrét, v běhu) ztratil záložky úplně** - `InventoryTabButton`/
+  `SkillTreeTabButton`/`SkillTreeTabContent` smazány, zůstala jen dřívější Inventář sekce (staty +
+  aktivní/sklad itemy), bez tab-bar navrch. `_on_portrait_pressed()` se zjednodušil na prosté
+  otevření panelu - žádná "výchozí záložka podle pending_skill_points" logika (ta dovednostní vazba
+  teď nemá v běhu kam vést). **STALE (2026-09-28): žlutý odznáček na portrétu je PRYČ úplně**, ne jen
+  passivní - `Control/SkillPointBadge`/`SkillPointLabel` smazány z `hud.tscn`, `hud.gd`'s
+  `_on_skill_points_changed()` (a připojení na `GameManager.skill_points_changed`) smazáno taky.
+  Explicit user request/zdůvodnění: hráč nemůže body dovednosti přidávat BĚHEM hry vůbec (jsou META,
+  viz "Lobby a meta-progrese" výše), takže i čistě informativní odznáček na portrétu byl matoucí -
+  signalizoval něco, na co portrét v běhu žádnou akcí nereaguje.
+- **STALE (2026-09-28): obchod v lobby už NENÍ odložený do follow-up PR - je tam VŽDY dostupný.**
+  Předchozí den zůstal obchod v běhu beze změny mechanismu (periodicky na časovači) a jeho ruční
+  dostupnost z lobby byla vědomě odložená; explicit user request o den později ji dodal rovnou.
+  `ShopTabContent` (obchod tab) znovupoužívá stejná run-scoped data jako `ShopPanel` v běhu
+  (`GameManager.shop_offer`/`buy_shop_item()`/`reroll_shop()`/`can_buy_shop_item()` beze změny) přes
+  4 `ShopCard0..3` + `RerollButton`, stejný vzor jako dřívější `hud.gd`'s `_setup_shop_cards()`/
+  `_refresh_shop_panel()` (kód zvlášť v `lobby.gd`, ne sdílený - viz "known follow-up" o extrakci do
+  vlastní scény níže). **"Vždy dostupný" konkrétně znamená**: `lobby.gd`'s `_ensure_shop_offer()`
+  (volané z `_ready()`) rovnou nastaví `GameManager.shop_available = true` a zavolá
+  `_generate_shop_offer()`, POKUD aktuální běh obchod ještě neotevřel (`shop_available == false`,
+  typicky když hráč zemře dřív než `SHOP_OPEN_INTERVAL_SECONDS` časovač poprvé vyprší) - existující
+  nabídku z proběhlého běhu naopak nechá beze změny. `ShopEmptyLabel`/"obchod ještě nebyl otevřen"
+  placeholder z předchozího dne je pryč, protože je teď nedosažitelný stav.
+- **STALE (2026-09-28, ještě později téhož dne): `ShopTabContent` teď ukazuje i aktivní/sklad
+  itemy, ne jen nabídku ke koupi.** Explicit user request - stejný obsah, jaký `CharacterPanel`/
+  `InventoryTabContent` ukazuje v běhu (`ActiveLabel`/`ActiveItemsContainer`,
+  `StashLabel`/`StashContainer`, mini-sloty s "Uskladnit"/"Aktivovat"/"Prodat" tlačítky), přidaný
+  POD nabídkové karty + reroll tlačítko (karty zmenšeny z 280 na 190px výšky, ať se všechno vejde do
+  `ShopTabContent`'s 590px). `lobby.gd`'s `_build_inventory_ui()`/`_create_inventory_mini_slot()`/
+  `_refresh_inventory_ui()`/`_fill_inventory_mini_slot()`/`_clear_inventory_mini_slot()`/
+  `_on_active_slot_stash_pressed()`/`_on_stash_slot_activate_pressed()`/`_on_stash_slot_sell_pressed()`
+  jsou **doslovná kopie** stejnojmenných funkcí v `hud.gd` (viz "CharacterPanel" výše) - žádná sdílená
+  scéna/skript mezi nimi (viz "known follow-up" o extrakci `ShopPanel` do vlastní `.tscn` níže, tenhle
+  duplicitní vzor je přesně ten důvod, proč by se to vyplatilo). `_refresh_shop_tab()` volá
+  `_refresh_inventory_ui()` na svém konci, takže oboje zůstává synchronní při každém přepnutí na
+  Obchod tab, nákupu, i změně zlata.
+- **Odstraněno jako mrtvý kód touhle změnou** (kill-count schopnosti systém z předchozí STALE sekce):
+  `GameManager.enemies_killed`, `_ability_offers_granted_by_kills`, `_ability_kill_threshold()`,
+  `_register_kill_toward_ability_pickup()`, signál `ability_pickup_dropped`, `request_ability_offer()`,
+  `enemy_defeated()`'s `death_position` parametr (zpátky na 3 argumenty), `scenes/pickups/
+  ability_pickup.gd`/`.tscn`, `main.gd`'s `ability_pickup_scene` export, HUD debug tlačítko
+  "+10 zabití".
+- **Verified with headless tests at both layers**: pure-logic test (fresh `GameManager` instance)
+  potvrdil `_run_xp_earned` sčítání, že `_level_up()` nabízí schopnost přímo (ne přes
+  `pending_skill_points`), že `trigger_game_over()`/`trigger_win()` obě naplní `last_run_summary` a
+  převedou run-XP na meta-XP přes `add_meta_xp()`, a že `reset_game()` smaže run-scoped stav ale
+  NEsmaže `meta_level`/`meta_xp`/`pending_skill_points`/`skill_ranks`; scéna-level test (real
+  `main.tscn`) potvrdil, že `_check_loop_completion()` skutečně zavolá `trigger_win()` při přechodu
+  `loop_duration_seconds` a že `CharacterPanel` už nemá `SkillTreeTabContent`; samostatný scéna-level
+  test `lobby.tscn` potvrdil, že postaví přesně 1 uzel na každou schopnost ve `SKILL_TREE_BRANCHES` a
+  že klik na uzel skutečně investuje bod a překreslí UI. **Doplněno 2026-09-28** po dnech-po úpravách
+  (souhrn pryč, taby, portrét bez odznáčku, obchod vždy dostupný): další scéna-level test potvrdil, že
+  `hud.tscn` už nemá `SkillPointBadge` uzel a `main.tscn` pořád naběhne bez chyby, a že čerstvý
+  `reset_game()` (tedy `shop_available == false`) po instanciaci `lobby.tscn` skončí s
+  `shop_available == true` a plnou `SHOP_OFFER_SIZE`-položkovou nabídkou hned od prvního snímku, i
+  bez jediného volání `_open_periodic_shop()`. Živě v editoru zatím NEodzkoušeno - hlavně celý cyklus
+  běh → smrt/checkpoint → lobby → investice/nákup → "Další běh" → nový běh s vyššími staty, a vizuální
+  rozložení `lobby.tscn` (žádné hand-authored offsety zatím ověřené okem, jen výpočtem v testu).
 
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
@@ -658,17 +788,31 @@ branches and returns the previous entry, or `""` for index 0) — avoids keeping
 invested point like any other node, it just has no node before it (explicit user clarification
 during design: "kořen taky vyžaduje vlastní investici, jen nemá podmínku před sebou").
 
-**Point economy**: `GameManager.pending_skill_points` (int, run-scoped, reset in `reset_game()`)
-grants exactly **1 point per level-up** (`_level_up()`, same cadence as the old draft's "every
-level, no interval" — that reasoning still holds, see the git history of this section for the
-empirical XP-curve verification that motivated it) — but unlike the old system, a level-up no
-longer auto-opens or pauses ANYTHING. `skill_ranks: Dictionary` (`{ability_id: rank}`, missing key
+**Point economy — STALE cadence description (2026-09-27, "Lobby a meta-progrese" above):**
+`GameManager.pending_skill_points` grants exactly **1 point per META level-up** now, not per
+run-scoped level-up — `add_meta_xp()` increments it, not `_level_up()` (which reverted to offering
+a random schopnost instead, see above). It's also no longer run-scoped — it, and `skill_ranks`
+below, are explicitly EXCLUDED from `reset_game()`'s clear list, so they persist across runs and get
+spent in the lobby (`scenes/ui/lobby.tscn`), not by clicking the in-run portrait. The rest of this
+paragraph is otherwise still accurate: `skill_ranks: Dictionary` (`{ability_id: rank}`, missing key
 == rank 0) replaces `owned_abilities` — there is at most ONE "copy" of any schopnost now (a growing
 rank, not independent stackable instances), so a single Dictionary is sufficient; no active/stash
 split either (schopnosti still have no purchase-slot pressure, same as before). `invest_skill_point
 (ability_id)` is the only way a rank ever increases: checks `can_invest_skill_point()` (points > 0,
 node unlocked, rank < max_rank), then decrements the point and increments the rank atomically,
-emitting both `skill_points_changed`/`skill_ranks_changed`.
+emitting both `skill_points_changed`/`skill_ranks_changed` — unchanged regardless of WHERE (lobby,
+now) it's called from.
+
+**STALE (2026-09-28, "Lobby a meta-progrese" above): the portrait badge described in this whole
+paragraph is GONE** — `SkillPointBadge`/`SkillPointLabel` were deleted from `hud.tscn`, and
+`hud.gd`'s `_on_skill_points_changed()` (along with its `GameManager.skill_points_changed`
+connection) was deleted too. Explicit user reasoning: the badge signaled "you have a point to
+spend," but points are META now and can't be spent by clicking the in-run portrait at all (only in
+the lobby, which has its own, actually-actionable badge on the `DovednostiTabButton`) — a
+non-actionable badge in the run was just confusing. `Control/Portrait` stays a `Button` (still opens
+`CharacterPanel`), just with no `modulate`/badge reaction to `pending_skill_points` anymore. Kept
+below for historical context on the badge-adjacent `mouse_filter` pattern, which is still relevant
+for `LevelBadge`/`LevelLabel`:
 
 **The portrét is a clickable `Button` that turns yellow with a "+N" badge whenever points are
 pending** (explicit user spec) — `Control/Portrait` changed type from `ColorRect` to `Button`
@@ -836,12 +980,14 @@ carrying its own `Title` — the tab buttons themselves now serve as the section
 is shown white, inactive tab uses `LOCKED_ITEM_MODULATE` (the same dimming color the project already
 uses for unavailable items/schopnosti — deliberately no new color introduced just for this).
 
-**Default tab depends on whether a dovednostní bod is pending**: `_on_portrait_pressed()` opens
-Inventář normally, but opens Dovednosti directly when `GameManager.pending_skill_points > 0` — the
-yellow "+N" badge on the portrait has always meant "click here to invest," and defaulting to
-Inventář unconditionally would have silently turned that into a two-click flow (portrait, then the
-Dovednosti tab) every time the badge is lit. This preserves the original one-click badge→invest
-path while still making Inventář the general-purpose default the rest of the time.
+**STALE (2026-09-27, "Lobby a meta-progrese" above): no more tabs, no more default-tab logic.**
+This paragraph described picking Inventář vs. Dovednosti as the default tab depending on
+`pending_skill_points` — Dovednosti moved out to `scenes/ui/lobby.tscn` entirely, so
+`CharacterPanel` has only the one (former Inventář) section left and `_on_portrait_pressed()` just
+opens it unconditionally. The yellow "+N" badge on the portrait still lights up on
+`pending_skill_points > 0`, but now purely as a passive "you have something to spend next time
+you're in the lobby" indicator — clicking the portrait during a run never leads to investing
+anymore.
 
 **`InventoryTabContent` holds three previously-separate pieces, all now in one place**: the stat
 labels (moved verbatim from `BottomBar`, same `_refresh_stat_labels()` body, just new `@onready`
@@ -1106,8 +1252,11 @@ reuse the *real* code paths rather than shortcutting past them:
   `debug_max_skill_tree()` sets every `ABILITIES` entry straight to its `max_rank`,
   `debug_reset_skill_tree()` clears `skill_ranks` AND `pending_skill_points` back to nothing. Reset
   does **not** refund points to re-spend elsewhere, because schopnosti were never bought with a
-  spendable currency in the first place — it's just a clean slate for the next level-up to build up
-  points again.
+  spendable currency in the first place — it's just a clean slate. **STALE detail (2026-09-27,
+  "Lobby a meta-progrese" above)**: this used to say "for the next level-up to build up points
+  again" — `pending_skill_points` is now META (grows from `add_meta_xp()` at the end of a run, not
+  from a run-scoped level-up), so the clean slate rebuilds from META level-ups across future runs,
+  not from levels within the current one.
 - **+5 bodů schopnosti** (node `AddManySkillPointsButton`, repurposed 2026-09-26 from the old
   random-autopick "Auto vylepšení" toggle, which no longer makes sense once every pick is
   deliberate) — grants 5 points at once via 5 calls to `debug_add_skill_point()`, for quickly
@@ -1224,12 +1373,13 @@ DebugPanel's new height fitting inside the window.
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params; `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
-- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above)
+- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`
 - `scenes/enemies/elite_enemy.tscn` — Elite's stat overrides (speed/max_hp/melee_range/hit_radius) and visual scale, node properties only (script is shared with `enemy.gd`)
 - `scenes/enemies/ranged_enemy.tscn` / `sniper_enemy.tscn` — each variant's `melee_range` (engagement distance) and color, also just node properties on the shared `enemy.gd`; sniper's `melee_range` (550) vs. the player's base `attack_range` (400) no longer produces the old "protected artillery" behavior (that was an emergent side effect of movement logic removed in the top-down pivot's Fáze 1 — see the STALE note under "Sniper enemies" above), so this relationship is currently just flavor, not a load-bearing mechanic
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); the X-cap machinery this would feed is dormant (see "Level01 is boundless" above), so adding one alone won't do anything today
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window, now on both axes)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
-- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above), `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (CharacterPanel's skill tree node grid sizing, see "CharacterPanel" and "Schopnosti" above)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`, shared by both run-scoped `xp_for_next_level()` and META `meta_xp_for_next_level()`, see "Lobby a meta-progrese" above), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
+- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above)
+- `scenes/ui/lobby.gd` — `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (skill tree node grid sizing, moved here from `hud.gd` — see "Lobby a meta-progrese" above)

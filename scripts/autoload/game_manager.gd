@@ -16,12 +16,15 @@ signal currency_changed(new_amount: int)
 signal scrap_changed(new_amount: int)
 signal xp_changed(current_xp: int, xp_needed: int)
 signal level_changed(new_level: int)
-## Emitne se, když se změní počet nevyužitých bodů DOVEDNOSTI (level-up,
-## nebo jejich utracení) - viz "Dovednosti (strom)" v CLAUDE.md. HUD podle
-## toho zbarví portrét a odznáček "+N" (žlutě, dokud je co utrácet). NEplete
-## se s pending_ability_drafts/ability_draft_ready níže - to je souběžný,
-## samostatný systém (SCHOPNOSTI, náhodná nabídka po vlně).
+## Emitne se, když se změní počet nevyužitých bodů DOVEDNOSTI (meta level-up,
+## nebo jejich utracení v lobby) - viz "Lobby a meta-progrese" v CLAUDE.md.
+## HUD (v běhu, passivní odznáček) i lobby (aktivní investování) na to reagují.
+## NEplete se s pending_ability_drafts/ability_draft_ready níže - to je
+## souběžný, run-scoped systém (SCHOPNOSTI, náhodná nabídka po level-upu).
 signal skill_points_changed(new_amount: int)
+## Emitne se při META level-upu (dovednostní strom, trvalý přes běhy) - na
+## rozdíl od level_changed výše, který je run-scoped a resetuje se každý běh.
+signal meta_level_changed(new_level: int)
 ## Emitne se po investování bodu do uzlu DOVEDNOSTNÍHO stromu - HUD podle
 ## toho překreslí hromádku vlastněných schopností a otevřený SkillTreePanel,
 ## pokud je zrovna vidět.
@@ -33,13 +36,6 @@ signal skill_ranks_changed
 ## dovednostního stromu výše - obě sdílí stejný `ABILITIES` katalog, ale
 ## každý svým vlastním mechanismem (viz "Schopnosti (náhodná nabídka)").
 signal ability_draft_ready(offered: Array)
-## Emitne se na zabití, které překročí další kumulativní práh zabití (viz
-## _ability_kill_threshold() a "Schopnosti na základě zabití" v CLAUDE.md) -
-## `position` je pozice, kde nepřítel zemřel. main.gd na to reaguje spawnutím
-## zeleného kosočtverce (ability_pickup.tscn) na tom místě; samotná nabídka
-## (pending_ability_drafts/ability_draft_ready) se NEspustí hned tady, ale
-## až hráč kosočtverec doopravdy sebere (viz request_ability_offer()).
-signal ability_pickup_dropped(position: Vector2)
 ## Emitne se po přidání nebo sloučení SCHOPNOSTI (owned_abilities) - HUD
 ## podle toho překreslí sloty vlastněných schopností. Bez parametru (jako
 ## shop_inventory_changed), protože jeden ability_id může mít víc současně
@@ -62,9 +58,13 @@ enum State { INTRO, PLAYING, GAME_OVER, WON }
 ## current_wave, loop_count, ENEMY_HP_GROWTH_PER_LOOP, wave_started/
 ## wave_cleared/loop_changed) jsou PRYČ úplně - nahrazeny kontinuálním,
 ## časem řízeným systémem, viz "Kontinuální spawn/obtížnost" níže a
-## survival_time/get_enemy_hp_multiplier(). State.WON a VictoryPanel zůstávají
-## nedosažitelné běžnou hrou (nic nevolá trigger_win()), záměrně ponechané pro
-## budoucí skutečný konec (např. až budou existovat i další planety/levely).
+## survival_time/get_enemy_hp_multiplier().
+##
+## CORRECTION (2026-09-27, později téhož dne - "Lobby a meta-progrese" v
+## CLAUDE.md): State.WON teď JE dosažitelné - main.gd volá trigger_win(), když
+## survival_time překročí loop_duration_seconds ("běh dokončen", ne skutečný
+## konec obsahu). Obě cesty (trigger_game_over()/trigger_win()) teď vedou do
+## lobby scény (scenes/ui/lobby.tscn), ne do restart-na-místě.
 
 ## O kolik procent víc HP dostanou nově spawnutí nepřátelé za každou odehranou
 ## minutu přežití (spojitě, ne skokově po kolech jako dřív). PROZATÍMNÍ
@@ -73,15 +73,12 @@ enum State { INTRO, PLAYING, GAME_OVER, WON }
 ## do budoucna se čeká na komplexnější systém (nové typy nepřátel, jiné
 ## staty, ...), viz get_enemy_hp_multiplier().
 const ENEMY_HP_GROWTH_PER_MINUTE: float = 0.15
-## Koeficient křivky pro kumulativní počet zabití potřebný na n-tou nabídku
-## SCHOPNOSTÍ (náhodný draft) - viz _ability_kill_threshold() a "Schopnosti
-## na základě zabití" v CLAUDE.md. Nahrazuje ABILITY_OFFER_INTERVAL_SECONDS
-## (2026-09-27, explicit user request - tempo voleb se má odvíjet od toho,
-## co hráč dělá /zabíjí/, ne od hodin). PRVNÍ ODHAD, ne doladěné hraním.
-const ABILITY_KILL_THRESHOLD_COEFFICIENT: float = 10.0
 ## Jak často (v sekundách reálného přežití) se automaticky otevře obchod -
-## nahrazuje dřívější "na konci každého kola (10 vln)". PRVNÍ ODHAD.
-const SHOP_OPEN_INTERVAL_SECONDS: float = 240.0
+## nahrazuje dřívější "na konci každého kola (10 vln)". Snížené z 240 na 90
+## (2026-09-27, "Lobby a meta-progrese") - běh teď obvykle trvá jen
+## loop_duration_seconds (main.gd, první odhad 180s), takže 240s by se obchod
+## v běhu prakticky nikdy neotevřel. PRVNÍ ODHAD.
+const SHOP_OPEN_INTERVAL_SECONDS: float = 90.0
 
 ## XP potřebné na 2. úroveň; každá další úroveň stojí o XP_PER_LEVEL_GROWTH víc.
 ## Sníženo z 60 na 40, aby první level-up padl už ve vlně 1, ne až v půlce vlny 2.
@@ -313,10 +310,10 @@ const SHOP_RARITY_COLORS: Array[Color] = [
 ## 2) **SCHOPNOSTI (náhodná nabídka)** - stejné jako PŮVODNÍ systém před
 ##    2026-09-26 (rarity+merge draft, `owned_abilities`/`pending_ability_drafts`
 ##    atd., viz "Schopnosti (náhodná nabídka)" níže) - spouštěč: po dopadu
-##    (jako vždy) A po překročení dalšího kumulativního prahu zabití (viz
-##    "Schopnosti na základě zabití", `_ability_kill_threshold()` v
-##    `enemy_defeated()` - top-down pivot Fáze 6 nejdřív svázal tenhle
-##    spouštěč s časem, 2026-09-27 přešel na počet zabití).
+##    (jako vždy) A po KAŽDÉM run-scoped level-upu (`_level_up()` výše - top-
+##    down pivot Fáze 6 nejdřív svázal tenhle spouštěč s časem, pak
+##    2026-09-27 ráno na počet zabití, a tentýž den odpoledne se vrátil zpátky
+##    na level-up, viz "Lobby a meta-progrese" v CLAUDE.md).
 ##
 ## Aby oba systémy mohly sdílet stejný `ABILITIES[id]` a přesto škálovat
 ## nezávisle, má aktivní schopnost DVĚ oddělená pole trigger hodnot:
@@ -465,18 +462,9 @@ const PASSIVE_EFFECT_MULTIPLIERS: Array[float] = [1.0, 1.5, 2.25, 3.5]
 ## Fáze 6). Resetuje se jen na skutečný Game Over (reset_game()).
 var survival_time: float = 0.0
 ## Akumulátor pro SHOP_OPEN_INTERVAL_SECONDS - viz _process() níže. Obchod
-## zůstává na časovači (explicit user request 2026-09-27 - "obchod necháme
-## zatím na timing, vyřešíme to později"), jen nabídka schopností přešla na
-## počet zabití, viz enemies_killed/_ability_kill_threshold() níže.
+## zůstává na časovači beze změny (explicit user request 2026-09-27, "Lobby a
+## meta-progrese") - jen interval zkrácen, ať se v kratším běhu stihne otevřít.
 var _shop_open_timer: float = 0.0
-## Celkový počet zabitých nepřátel za AKTUÁLNÍ běh - jediný vstup pro
-## _ability_kill_threshold(). Resetuje se v reset_game().
-var enemies_killed: int = 0
-## Kolik nabídek schopností už bylo vyvoláno přes práh zabití (NE kolik jich
-## hráč reálně sebral - to sleduje pending_ability_drafts/owned_abilities) -
-## index do _ability_kill_threshold(), roste o 1 pokaždé, když enemy_defeated()
-## zjistí, že enemies_killed překročil další práh a emitne ability_pickup_dropped.
-var _ability_offers_granted_by_kills: int = 0
 var currency: int = 0
 ## Nakrafťovaná surovina (šrot) - vstup pro budoucí blueprinty/crafting v
 ## obchodě (viz "Suroviny a crafting" v CLAUDE.md). Zatím jediný typ suroviny,
@@ -485,19 +473,40 @@ var scrap: int = 0
 var enemies_alive: int = 0
 var state: State = State.INTRO
 
+## Run-scoped úroveň/XP - resetuje se KAŽDÝ běh (reset_game()). Řídí run-scoped
+## odměny (LEVEL_STAT_GROWTH, a od "Lobby a meta-progrese" 2026-09-27 znovu i
+## spouštění nabídky SCHOPNOSTÍ, viz _level_up() níže) - NEplete se s
+## meta_level/meta_xp níže, což je TRVALÁ obdoba přes běhy pro dovednostní strom.
 var player_level: int = 1
 var player_xp: int = 0
-## Kolik NEVYUŽITÝCH bodů schopnosti hráč aktuálně má - 1 za KAŽDÝ level-up
-## (viz _level_up()), utrácí se přes invest_skill_point(). Na rozdíl od
-## dřívějšího pending_ability_drafts se NIC nenabízí automaticky - hráč si
-## body drží, dokud sám neotevře strom (klik na portrét v HUD) a nevybere
-## uzel. Pokud hráč ignoruje portrét přes víc levelů, číslo prostě roste.
+## META úroveň/XP - TRVALÉ přes běhy (NEresetuje se v reset_game()), roste jen
+## na konci běhu (smrt nebo dokončení smyčky) o _run_xp_earned, viz
+## add_meta_xp()/_finish_run() níže. Zavedeno 2026-09-27 ("Lobby a
+## meta-progrese") - dovednostní strom se přesunul z run-scoped level-upů do
+## lobby mezi běhy právě proto, aby neinterferoval s tempem schopností v běhu.
+var meta_level: int = 1
+var meta_xp: int = 0
+## Kolik XP hráč vydělal za AKTUÁLNÍ běh (add_xp() k tomu přičítá, bez ohledu
+## na to, kolik z toho stihlo padnout do run-scoped level-upů) - na konci běhu
+## se tohle číslo 1:1 převede na meta_xp (viz _finish_run()). Resetuje se v
+## reset_game().
+var _run_xp_earned: int = 0
+## Souhrn POSLEDNÍHO dokončeného běhu ({"reason": "died"/"completed",
+## "level": int, "currency": int, "meta_xp_gained": int}) - naplní ho
+## _finish_run(), čte scenes/ui/lobby.gd při zobrazení souhrnu. NEresetuje se
+## v reset_game() (potřebuje přežít do doby, kdy main.tscn._enter_tree()
+## reset zavolá PŘED tím, než hráč lobby vůbec uvidí).
+var last_run_summary: Dictionary = {}
+## Kolik NEVYUŽITÝCH bodů dovednosti hráč aktuálně má - 1 za KAŽDÝ META
+## level-up (viz add_meta_xp()), utrácí se přes invest_skill_point() v lobby.
+## TRVALÉ přes běhy (NEresetuje se v reset_game(), od "Lobby a meta-progrese"
+## 2026-09-27 - dřív se resetovalo, protože šlo o run-scoped level-upy).
 var pending_skill_points: int = 0
 ## Aktuální stupeň KAŽDÉ investované schopnosti - {ability_id: rank}. Chybějící
-## klíč (nebo get_skill_rank() vrátí 0) znamená "nevlastní vůbec". Nahrazuje
-## dřívější owned_abilities (Array nezávislých instancí s vlastní raritou) -
-## teď existuje nanejvýš JEDNA "kopie" každé schopnosti, jen s rostoucím
-## rankem, takže stačí jedno číslo na ability_id, žádné pole instancí.
+## klíč (nebo get_skill_rank() vrátí 0) znamená "nevlastní vůbec". TRVALÉ přes
+## běhy (stejná změna jako pending_skill_points výše) - investice v lobby tak
+## permanentně zvyšují základní staty i v dalších bězích (get_stat_bonus()
+## beze změny čte skill_ranks bez ohledu na to, kde se investovalo).
 var skill_ranks: Dictionary = {}
 ## Vlastněné SCHOPNOSTI z náhodné nabídky (samostatný systém od
 ## skill_ranks výše, viz "Schopnosti (náhodná nabídka)") - pasivní
@@ -548,9 +557,9 @@ var shop_reroll_count: int = 0
 var shop_available: bool = false
 ## true, když čeká na otevření AUTOMATICKY otevřená nabídka obchodu (viz
 ## SHOP_OPEN_INTERVAL_SECONDS), ale zrovna běží nevyřízená nabídka schopnosti -
-## viz _try_open_pending_shop(). Řeší kolizi: obchodní časovač a sebrání
-## kosočtverce schopnosti (viz request_ability_offer()) se mohou trefit do
-## stejné chvíle, takže bez tohohle odložení by AbilityDraftPanel a
+## viz _try_open_pending_shop(). Řeší kolizi: obchodní časovač a run-scoped
+## level-up (spouštějící nabídku schopnosti, viz _level_up()) se mohou trefit
+## do stejné chvíle, takže bez tohohle odložení by AbilityDraftPanel a
 ## ShopPanel mohly naskočit na sobě současně.
 var _shop_open_deferred: bool = false
 ## DEBUG: když true, reroll_shop() nic neúčtuje - pro rychlé testování bez
@@ -563,19 +572,19 @@ var debug_free_reroll: bool = false
 ## Volá main.gd v _enter_tree(), tedy DŘÍV než se spustí _ready() hráče a HUD -
 ## ty už tak čtou čerstvý stav. Kdyby se resetovalo až v _ready() Main uzlu,
 ## hráč by se po restartu naskočil se staty z předchozí hry.
+## **NEresetuje** meta_level/meta_xp/pending_skill_points/skill_ranks (viz
+## jejich komentáře výše) - to je záměrně TRVALÝ stav přes běhy, jediné, co
+## reset_game() nesmí smazat (2026-09-27, "Lobby a meta-progrese").
 func reset_game() -> void:
 	survival_time = 0.0
 	_shop_open_timer = 0.0
-	enemies_killed = 0
-	_ability_offers_granted_by_kills = 0
+	_run_xp_earned = 0
 	currency = 0
 	enemies_alive = 0
 	state = State.INTRO
 	player_level = 1
 	player_xp = 0
 	scrap = 0
-	pending_skill_points = 0
-	skill_ranks.clear()
 	pending_ability_drafts = 0
 	_current_ability_offer = []
 	owned_abilities.clear()
@@ -590,8 +599,7 @@ func reset_game() -> void:
 ## Tiká jen ve State.PLAYING (stejný guard pattern jako player.gd's _process()
 ## pro HP regen atd.) - pohání survival_time a periodický obchod
 ## (SHOP_OPEN_INTERVAL_SECONDS, zatím zůstává na časovači, viz _shop_open_timer
-## výše). Nabídka schopností už NENÍ časová - viz enemy_defeated()/
-## _ability_kill_threshold() níže.
+## výše). Nabídka schopností je run-scoped level-up (_level_up()), ne časová.
 func _process(delta: float) -> void:
 	if state != State.PLAYING:
 		return
@@ -612,55 +620,21 @@ func register_enemy_spawned() -> void:
 	enemies_alive += 1
 
 
-## Zavolá nepřítel při své smrti - přidá měnu, suroviny i XP a zkontroluje,
-## jestli tenhle konkrétní zabitý nepřítel překročil další kumulativní práh
-## zabití (viz _ability_kill_threshold() níže) - pokud ano, emitne
-## ability_pickup_dropped(death_position), na což main.gd reaguje spawnutím
-## zeleného kosočtverce (viz "Schopnosti na základě zabití" v CLAUDE.md).
-## `death_position` je nepovinná (default Vector2.ZERO) jen kvůli zpětné
-## kompatibilitě volajících, co pozici neznají - v praxi ji vždycky posílá
-## enemy.gd's _die() (global_position v okamžiku smrti). STALE poznámka:
+## Zavolá nepřítel při své smrti - přidá měnu, suroviny i XP. STALE poznámka:
 ## dřív tu byla i kontrola "vlna vyčištěná" (enemies_alive<=0 &&
 ## enemies_remaining_to_spawn<=0 -> _on_wave_cleared()) - ta odpadla úplně
 ## spolu s celým vlnovým systémem (Fáze 6); spawn nepřátel a obchod běží na
-## čase (viz _process() výše), nabídka schopností teď na počtu zabití.
-func enemy_defeated(reward: int, xp_reward: int, scrap_reward: int = 0, death_position: Vector2 = Vector2.ZERO) -> void:
+## čase (viz _process() výše). Nabídka SCHOPNOSTÍ se spouští z add_xp() →
+## _level_up() (run-scoped, ne přímo tady) - viz "Lobby a meta-progrese" v
+## CLAUDE.md (2026-09-27, vrací se z mezitímního kill-count/kosočtverec
+## systému zpátky na XP/úroveň).
+func enemy_defeated(reward: int, xp_reward: int, scrap_reward: int = 0) -> void:
 	currency += reward
 	currency_changed.emit(currency)
 	scrap += scrap_reward
 	scrap_changed.emit(scrap)
 	add_xp(xp_reward)
 	enemies_alive -= 1
-
-	_register_kill_toward_ability_pickup(death_position)
-
-
-## Sdíleno mezi enemy_defeated() a debug_add_kills() - vytažené zvlášť, ať
-## debug tlačítko nemusí duplikovat práh-kontrolní logiku.
-func _register_kill_toward_ability_pickup(death_position: Vector2) -> void:
-	enemies_killed += 1
-	if enemies_killed >= _ability_kill_threshold(_ability_offers_granted_by_kills):
-		_ability_offers_granted_by_kills += 1
-		ability_pickup_dropped.emit(death_position)
-
-
-## Kumulativní počet zabití potřebný na (offer_index + 1)-tou nabídku
-## schopností po zabíjení (offer_index je 0-indexovaný - 0 pro první
-## nabídku). Odmocninová křivka (stejná filozofie jako
-## _get_target_concurrent_count() v main.gd - postupný, ne skokový růst):
-## 10, 28, 52, 80, 112, 147, 185, 226, 270, 316 pro prvních 10 nabídek s
-## ABILITY_KILL_THRESHOLD_COEFFICIENT=10. PRVNÍ ODHAD koeficientu.
-func _ability_kill_threshold(offer_index: int) -> int:
-	return int(round(ABILITY_KILL_THRESHOLD_COEFFICIENT * pow(offer_index + 1, 1.5)))
-
-
-## Veřejné rozhraní pro "hráč právě sebral kosočtverec schopnosti" (viz
-## ability_pickup.gd) - stejná fronta/mechanismus, jaký dřív spouštěl
-## časovač nebo _on_wave_cleared(), jen se veřejně pojmenovaným vstupním
-## bodem místo sahání na privátní _try_offer_next_ability_draft() zvenčí.
-func request_ability_offer() -> void:
-	pending_ability_drafts += 1
-	_try_offer_next_ability_draft()
 
 
 ## Obchod se odemyká a nabízí novou nabídku po SHOP_OPEN_INTERVAL_SECONDS
@@ -760,13 +734,37 @@ func xp_for_next_level() -> int:
 	return XP_BASE + (player_level - 1) * XP_PER_LEVEL_GROWTH
 
 
-## Přidá XP a případně povýší i o víc úrovní naráz (velký přebytek XP)
+## Přidá XP a případně povýší i o víc úrovní naráz (velký přebytek XP).
+## `_run_xp_earned` sčítá VŠECHNO XP vydělané za tenhle běh (bez ohledu na to,
+## kolik z toho padlo do run-scoped level-upů) - na konci běhu se 1:1 převede
+## na meta_xp (viz _finish_run()).
 func add_xp(amount: int) -> void:
 	player_xp += amount
+	_run_xp_earned += amount
 	while player_xp >= xp_for_next_level():
 		player_xp -= xp_for_next_level()
 		_level_up()
 	xp_changed.emit(player_xp, xp_for_next_level())
+
+
+## Kolik META-XP je potřeba na další META úroveň - sdílí stejnou křivku jako
+## xp_for_next_level() (první odhad, může se doladit nezávisle později).
+func meta_xp_for_next_level() -> int:
+	return XP_BASE + (meta_level - 1) * XP_PER_LEVEL_GROWTH
+
+
+## Přidá META-XP (voláno jen z _finish_run() na konci běhu, ne za běhu) a
+## případně povýší META úroveň i víckrát naráz - stejný while-loop tvar jako
+## add_xp(), jen granuje pending_skill_points (TRVALé, viz jejich komentář
+## výše) místo run-scoped efektu.
+func add_meta_xp(amount: int) -> void:
+	meta_xp += amount
+	while meta_xp >= meta_xp_for_next_level():
+		meta_xp -= meta_xp_for_next_level()
+		meta_level += 1
+		pending_skill_points += 1
+		meta_level_changed.emit(meta_level)
+		skill_points_changed.emit(pending_skill_points)
 
 
 ## Zavolá hráč po dopadu úvodní "drop-in" animace (viz player.gd's
@@ -785,18 +783,21 @@ func begin_intro_ability_draft() -> void:
 	_try_offer_next_ability_draft()
 
 
+## Run-scoped level-up nabízí SCHOPNOST (náhodný draft) přímo, na KAŽDÉ úrovni
+## - žádný interval/ramp, stejně jako begin_intro_ability_draft() výše (a jako
+## celý tenhle systém fungoval PŘED 2026-09-27 ranním kill-count/kosočtverec
+## experimentem - "Lobby a meta-progrese" ho vrací zpátky na XP/úroveň, ať
+## nabídka pořád sleduje, co hráč DĚLÁ /zabíjí a levelu je z XP zabíjení/, jen
+## přes jinou metriku). Dovednostní strom (pending_skill_points/skill_ranks)
+## se do run-scoped level-upu už NEzapojuje vůbec - je teď META, roste jen na
+## konci běhu (viz add_meta_xp()).
 func _level_up() -> void:
 	player_level += 1
-	# Bod schopnosti přijde na KAŽDÉ úrovni - žádný interval/ramp (viz
-	# "Schopnosti" výše). Na rozdíl od dřívějšího draftu se ale NIC
-	# nenabízí/nepozastavuje automaticky - hráč si bod jen přičte a utratí
-	# ho, až sám otevře strom (klik na portrét).
-	pending_skill_points += 1
+	pending_ability_drafts += 1
+	_try_offer_next_ability_draft()
 	# level_changed teď skutečně mění staty (LEVEL_STAT_GROWTH, viz
-	# get_stat_bonus()), ne jen UI sync - ale schopnosti pořád zůstávají
-	# hlavním zdrojem růstu, level growth je jen malá podlaha navrch.
+	# get_stat_bonus()), ne jen UI sync.
 	level_changed.emit(player_level)
-	skill_points_changed.emit(pending_skill_points)
 
 
 ## Vylosuje ABILITY_CHOICE_COUNT náhodných ABILITY_ORDER schopností (bez
@@ -1385,18 +1386,38 @@ func finish_intro() -> void:
 func trigger_game_over() -> void:
 	if state == State.GAME_OVER:
 		return
+	_finish_run("died")
 	state = State.GAME_OVER
 	game_over_triggered.emit()
 	print("Game Over! Přežitý čas: ", format_survival_time(survival_time), " | Úroveň: ", player_level)
 
 
-## Zavolá hráč po dosažení konce levelu
+## Zavolá main.gd, jakmile survival_time překročí loop_duration_seconds (běh
+## dokončen bez smrti) - viz _check_loop_completion() a "Lobby a
+## meta-progrese" v CLAUDE.md (2026-09-27). State.WON/VictoryPanel tu dřív
+## čekaly nedosažitelné na budoucí "skutečný konec obsahu" - teď je "dokončení
+## běhu" reálný, běžný způsob, jak se sem dostat, ne jen teoretický zbytek.
 func trigger_win() -> void:
 	if state == State.WON:
 		return
+	_finish_run("completed")
 	state = State.WON
 	game_won_triggered.emit()
 	print("Level dokončen! Přežitý čas: ", format_survival_time(survival_time), " | Úroveň: ", player_level)
+
+
+## Sdílený konec běhu pro smrt i dokončení smyčky (viz trigger_game_over()/
+## trigger_win() výše) - uloží souhrn pro lobby (last_run_summary) a převede
+## vydělané run-XP na TRVALÉ meta-XP, PŘED tím, než main.tscn._enter_tree()
+## na cestě do dalšího běhu zavolá reset_game() a run-scoped stav smaže.
+func _finish_run(reason: String) -> void:
+	last_run_summary = {
+		"reason": reason,
+		"level": player_level,
+		"currency": currency,
+		"meta_xp_gained": _run_xp_earned,
+	}
+	add_meta_xp(_run_xp_earned)
 
 
 ## Formátuje survival_time jako "mm:ss" - sdílené mezi tímhle debug printem a
@@ -1445,22 +1466,10 @@ func debug_reset_skill_tree() -> void:
 
 
 ## DEBUG: rovnou vynutí jednu nabídku SCHOPNOSTI (náhodný draft) bez čekání
-## na sebrání kosočtverce - jen tenký alias pro request_ability_offer(),
-## pojmenovaný podle konvence Debug panelu.
+## na level-up - stejná fronta/mechanismus jako _level_up() teď používá přímo.
 func debug_force_ability_draft() -> void:
-	request_ability_offer()
-
-
-## DEBUG: přidá `count` k enemies_killed a zkontroluje případné překročené
-## prahy (viz _register_kill_toward_ability_pickup()) - pro rychlé
-## přiblížení se dalšímu prahu bez skutečného grindění zabití. Může emitnout
-## ability_pickup_dropped víckrát najednou, pokud `count` přeskočí víc než
-## jeden práh naráz - stejné chování jako by přišlo z opravdových zabití.
-## Position kosočtverce je Vector2.ZERO (souřadnice počátku) - stačí pro
-## otestování mechanismu samotného, ne pro realistické umístění.
-func debug_add_kills(count: int) -> void:
-	for i in count:
-		_register_kill_toward_ability_pickup(Vector2.ZERO)
+	pending_ability_drafts += 1
+	_try_offer_next_ability_draft()
 
 
 ## DEBUG: nastaví každou schopnost (náhodná nabídka) rovnou na 1 kopii

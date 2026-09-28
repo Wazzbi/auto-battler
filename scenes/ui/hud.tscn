@@ -51,28 +51,6 @@ text = "1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="SkillPointBadge" type="ColorRect" parent="Control"]
-visible = false
-layout_mode = 0
-mouse_filter = 2
-offset_left = 70.0
-offset_top = 12.0
-offset_right = 104.0
-offset_bottom = 46.0
-color = Color(0.85, 0.65, 0.15, 1)
-
-[node name="SkillPointLabel" type="Label" parent="Control/SkillPointBadge"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.1, 0.08, 0.02, 1)
-theme_override_font_sizes/font_size = 13
-text = "+1"
-horizontal_alignment = 1
-vertical_alignment = 1
-
 [node name="HPBar" type="ProgressBar" parent="Control" unique_id=1511595178]
 layout_mode = 0
 offset_left = 118.0
@@ -736,14 +714,6 @@ offset_right = 460.0
 offset_bottom = 618.0
 text = "Rychlost: 1x"
 
-[node name="AddKillsButton" type="Button" parent="Control/DebugPanel"]
-layout_mode = 0
-offset_left = 20.0
-offset_top = 622.0
-offset_right = 460.0
-offset_bottom = 658.0
-text = "+10 zabití"
-
 [node name="CloseButton" type="Button" parent="Control/DebugPanel"]
 layout_mode = 0
 offset_left = 150.0
@@ -764,25 +734,6 @@ offset_left = -420.0
 offset_top = -320.0
 offset_right = 420.0
 offset_bottom = 320.0
-
-[node name="InventoryTabButton" type="Button" parent="Control/CharacterPanel"]
-layout_mode = 0
-offset_left = 235.0
-offset_top = 16.0
-offset_right = 415.0
-offset_bottom = 50.0
-theme_override_font_sizes/font_size = 16
-text = "Inventář"
-
-[node name="SkillTreeTabButton" type="Button" parent="Control/CharacterPanel"]
-layout_mode = 0
-offset_left = 425.0
-offset_top = 16.0
-offset_right = 605.0
-offset_bottom = 50.0
-theme_override_font_sizes/font_size = 16
-modulate = Color(0.45, 0.45, 0.52, 1)
-text = "Dovednosti"
 
 [node name="InventoryTabContent" type="Control" parent="Control/CharacterPanel"]
 layout_mode = 0
@@ -876,31 +827,6 @@ offset_left = 0.0
 offset_top = 270.0
 offset_right = 800.0
 offset_bottom = 344.0
-
-[node name="SkillTreeTabContent" type="Control" parent="Control/CharacterPanel"]
-visible = false
-layout_mode = 0
-offset_left = 20.0
-offset_top = 60.0
-offset_right = 820.0
-offset_bottom = 610.0
-
-[node name="PointsLabel" type="Label" parent="Control/CharacterPanel/SkillTreeTabContent"]
-layout_mode = 0
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 800.0
-offset_bottom = 24.0
-theme_override_font_sizes/font_size = 16
-text = "Dostupné body: 0"
-horizontal_alignment = 1
-
-[node name="NodesContainer" type="Control" parent="Control/CharacterPanel/SkillTreeTabContent"]
-layout_mode = 0
-offset_left = 0.0
-offset_top = 32.0
-offset_right = 800.0
-offset_bottom = 550.0
 
 [node name="CloseButton" type="Button" parent="Control/CharacterPanel"]
 layout_mode = 0

@@ -51,13 +51,19 @@ extends Node2D
 @export var elite_count_per_checkpoint: int = 1
 ## Časové značky (sekundy reálného přežití), na kterých se spawnou Elite
 ## nepřátelé - nahrazuje dřívější "jen na 10. vlně". PRVNÍ ODHAD (každé 3
-## minuty), needoladěné hraním.
+## minuty), needoladěné hraním. STALE poznámka (2026-09-27, "Lobby a
+## meta-progrese"): s loop_duration_seconds = 180.0 (viz níže) se běh teď
+## typicky ukončí kolem prvního prvku - druhý a další prakticky nikdy
+## nepřijdou na řadu v rámci jednoho běhu. Známý follow-up pro balancování,
+## neblokující pro tenhle PR.
 @export var elite_checkpoints_seconds: Array[float] = [180.0, 360.0, 540.0, 720.0, 900.0]
-## Scéna zeleného kosočtverce (viz "Schopnosti na základě zabití" v
-## CLAUDE.md) - main.gd ho spawne na místě smrti nepřítele, který překročil
-## další práh zabití (GameManager.ability_pickup_dropped), stejně jako
-## spawnuje nepřátele - vlastní scénu/pozici, GameManager jen řekne KDY a KDE.
-@export var ability_pickup_scene: PackedScene
+## Po kolika sekundách reálného přežití se běh považuje za DOKONČENÝ (viz
+## _check_loop_completion() níže) - main.gd na to zavolá GameManager.
+## trigger_win(), který přes _finish_run() převede vydělané run-XP na trvalé
+## meta-XP a přesune hráče do lobby (scenes/ui/lobby.tscn). PRVNÍ ODHAD (3
+## minuty), needoladěné hraním - viz "Lobby a meta-progrese" v CLAUDE.md
+## (2026-09-27).
+@export var loop_duration_seconds: float = 180.0
 
 @onready var player: Node2D = $Player
 @onready var camera: Camera2D = $Camera2D
@@ -82,7 +88,6 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	GameManager.game_over_triggered.connect(_on_game_over)
 	GameManager.game_won_triggered.connect(_on_game_won)
-	GameManager.ability_pickup_dropped.connect(_on_ability_pickup_dropped)
 
 	hud.connect_player(player)
 	hud.connect_main(self)
@@ -98,6 +103,7 @@ func _process(delta: float) -> void:
 		return
 
 	_check_elite_checkpoints()
+	_check_loop_completion()
 
 	var should_spawn: bool = (
 		elites_left_to_spawn > 0
@@ -134,6 +140,15 @@ func _check_elite_checkpoints() -> void:
 	):
 		elites_left_to_spawn += elite_count_per_checkpoint
 		_elite_checkpoints_consumed += 1
+
+
+## Jakmile survival_time překročí loop_duration_seconds, běh se považuje za
+## DOKONČENÝ (na rozdíl od smrti) - GameManager.trigger_win() zařídí zbytek
+## (uložení souhrnu, převod run-XP na meta-XP, State.WON), stejná cesta do
+## lobby jako smrt (viz "Lobby a meta-progrese" v CLAUDE.md).
+func _check_loop_completion() -> void:
+	if GameManager.survival_time >= loop_duration_seconds:
+		GameManager.trigger_win()
 
 
 func _spawn_enemy() -> void:
@@ -199,24 +214,14 @@ func _variant_chance_multiplier() -> float:
 
 
 func _on_game_over() -> void:
-	hud.show_game_over(GameManager.survival_time, GameManager.currency)
+	hud.show_game_over(
+		GameManager.survival_time, GameManager.currency,
+		GameManager.last_run_summary.get("meta_xp_gained", 0)
+	)
 
 
 func _on_game_won() -> void:
-	hud.show_victory(GameManager.currency)
-
-
-## Zavolá GameManager.enemy_defeated(), když zabitý nepřítel překročí další
-## kumulativní práh zabití (viz "Schopnosti na základě zabití" v CLAUDE.md) -
-## spawne zelený kosočtverec na místě smrti. Samotné vyžádání nabídky
-## (GameManager.request_ability_offer()) proběhne až při sebrání, viz
-## ability_pickup.gd.
-func _on_ability_pickup_dropped(position: Vector2) -> void:
-	if ability_pickup_scene == null:
-		return
-	var pickup: Node2D = ability_pickup_scene.instantiate()
-	add_child(pickup)
-	pickup.global_position = position
+	hud.show_victory(GameManager.currency, GameManager.last_run_summary.get("meta_xp_gained", 0))
 
 
 # --- Debug panel ---------------------------------------------------------
