@@ -1217,7 +1217,19 @@ it's always the interactive one.
 — TEMPORARILY in the bottom-right corner as of 2026-09-09, see "HUD layout" above — which shows
 "Debug" plus a procedurally-drawn eye icon (open/closed,
 `eye_icon.gd` — no image asset, consistent with the rest of the project's visuals) that mirrors
-whether the panel is open. Unlike the shop, opening it does **not** pause the game — the point is
+whether the panel is open. **`DebugPanel` itself was repositioned 2026-09-28** (explicit user
+request) — it had grown tall enough over time (bottom at `y=750`, past the 720px viewport, AND
+directly overlapping `DebugButton`'s own screen area at the bottom-right) that the toggle button
+became unclickable while the panel was open, the only way to close it was via the panel's own
+"Zavřít" button. Fixed two ways together: `DebugPanel` moved up and shrunk (`offset_top`/
+`offset_bottom` from `50`/`750` to `16`/`650`, now fits entirely within the viewport with room to
+spare above `DebugButton`), and its `CloseButton` moved from a centered row at the panel's bottom
+(the space that used to overlap `DebugButton`) to a small square icon-only button (text `"X"`, no
+more "Zavřít" label) next to `Title` in the top-right corner of the panel — freeing the whole bottom
+region, which is what actually made the up-shift+shrink possible without cutting off any existing
+button row. `hud.gd`'s `@onready var debug_close_button` path (`$Control/DebugPanel/CloseButton`)
+and its `_on_debug_close_pressed()` wiring are unchanged — only the node's position/size/text in
+`hud.tscn` moved. Unlike the shop, opening it does **not** pause the game — the point is
 to see the effect of an action (kill, skip wave, spawn Elite, ...) happen live. Every action on the
 panel is a thin call into a method explicitly named/commented `DEBUG:` on `GameManager`, `player.gd`,
 or `main.gd` — the panel itself (`_setup_debug_panel()` and its handlers in `hud.gd`) holds no game
