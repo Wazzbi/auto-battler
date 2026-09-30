@@ -767,6 +767,39 @@ odhad 180s/3min), obojí vede do lobby.
   `enemy_defeated()`'s `death_position` parametr (zpátky na 3 argumenty), `scenes/pickups/
   ability_pickup.gd`/`.tscn`, `main.gd`'s `ability_pickup_scene` export, HUD debug tlačítko
   "+10 zabití".
+- **STALE (2026-09-30): "Aktivní itemy"/"Sklad" už NEJSOU součástí `ShopTabContent` - přesunuly se do
+  nového, VŽDY viditelného `Sidebar` panelu vpravo (viz obrázek přiložený uživatelem).** Explicit user
+  request - dřív byly vidět jen na Obchod tabu (protože žily uvnitř `ShopTabContent`, viz předchozí
+  STALE bod výše); teď je `Sidebar` SOUROZENEC `NodesContainer`/`ShopTabContent` (`lobby.tscn`,
+  `visible = true` natrvalo, nepřepíná se v `_set_active_tab()`), takže je vidět na OBOU hlavních
+  tabech současně. `NodesContainer`/`ShopTabContent`'s šířka se zmenšila (`offset_right` 1240→940),
+  `ShopCard0..3` se přerovnaly ze 4×270px na 4×210px, aby vedle nich bylo místo (strom dovedností
+  potřebuje jen ~710px, do 900px se vešel beze změny).
+  - **Mřížkový, ne jednořádkový layout** - `lobby.gd`'s `_create_inventory_mini_slot()` (dřív
+    jednořádkový pruh, `Vector2(index * (w+gap), 0)`) teď staví ČTVERCOVÉ sloty
+    (`SIDEBAR_SLOT_SIZE` 88px) do mřížky o `SIDEBAR_GRID_COLUMNS` (3) sloupcích
+    (`Vector2((index % columns) * (w+gap), (index / columns) * (w+gap))`) - 6 aktivních slotů vyjde
+    na 3×2, 9 sklad slotů na 3×3. `SHOP_MINI_SLOT_WIDTH`/`GAP` (laděné jen pro jednořádkový pruh) byly
+    přejmenovány/nahrazeny `SIDEBAR_SLOT_SIZE`/`SIDEBAR_SLOT_GAP`. **`hud.gd`'s run-time
+    `CharacterPanel` touhle změnou není dotčený** - pořád má svou vlastní, beze změny jednořádkovou
+    verzi téhle funkce, jen `lobby.gd`'s kopie se změnila.
+  - **Nová podzáložka "Statistiky" vedle "Inventář"** (`InventoryTabButton`/`StatsTabButton`, stejný
+    white/`LOCKED_ITEM_MODULATE` vzor jako hlavní taby, `_set_sidebar_tab(show_inventory: bool)`) -
+    ukazuje stejných 6 statů jako dřívější run-time `CharacterPanel`'s `_refresh_stat_labels()`
+    (Poškození/Rychlost útoku/Dostřel/Max HP/Brnění/Kritický zásah), ale **BEZ živé instance Player**
+    (lobby žádnou nemá). `lobby.gd`'s nová `_refresh_statistics_tab()` místo toho krátce instancuje
+    `player.tscn` MIMO strom scény (`instantiate()` nevolá `_ready()`, takže `@onready var visual`
+    zůstane nenastavené - nevadí, `get_damage()`/`get_attack_speed()`/`get_attack_range()`/
+    `get_armor()`/`get_crit_chance()` se ho nedotýkají, jsou to čisté funkce tvaru `base_X +
+    GameManager.get_stat_bonus("X")`) a hned ji `free()`-ne - staty tak zůstávají jednozdrojové
+    (`player.gd`), žádná druhá kopie `base_damage` atd. čísel, která by se s ním mohla časem rozejít.
+    **Staty odrážejí AKTUÁLNÍ (ne "vyčištěný") stav** - `GameManager.reset_game()` se volá až
+    `main.gd`'s `_enter_tree()` po stisku "Další běh", takže dokud je lobby otevřené,
+    `active_shop_items`/`player_level`/`owned_abilities` pořád drží hodnoty z právě skončeného běhu
+    (stejné chování jako existující Aktivní itemy zobrazení mělo už předtím, ne nový problém).
+    **Líné obnovení** - `_refresh_statistics_tab()` se volá jen při přepnutí NA tenhle podtab, a znovu
+    při změně dovednosti/inventáře POKUD je zrovna vidět (na rozdíl od kontinuálně-pollovaných věcí
+    jako dash cooldown - staty se samy od sebe neustále nemění).
 - **Verified with headless tests at both layers**: pure-logic test (fresh `GameManager` instance)
   potvrdil `_run_xp_earned` sčítání, že `_level_up()` nabízí schopnost přímo (ne přes
   `pending_skill_points`), že `trigger_game_over()`/`trigger_win()` obě naplní `last_run_summary` a
@@ -783,6 +816,12 @@ odhad 180s/3min), obojí vede do lobby.
   bez jediného volání `_open_periodic_shop()`. Živě v editoru zatím NEodzkoušeno - hlavně celý cyklus
   běh → smrt/checkpoint → lobby → investice/nákup → "Další běh" → nový běh s vyššími staty, a vizuální
   rozložení `lobby.tscn` (žádné hand-authored offsety zatím ověřené okem, jen výpočtem v testu).
+  **Doplněno 2026-09-30** po přidání Sidebaru: další scéna-level test potvrdil, že `Sidebar` zůstává
+  `visible` při přepnutí na OBOU hlavních tabech, že staví přesně 6 aktivních + 9 sklad slotů, že
+  přepnutí na podtab Statistiky vyplní staty reálným (ne placeholder) číslem, a že koupě itemu jak
+  přepočítá "Aktivní itemy (N/6)" hlavičku, tak (pokud je zrovna vidět) i Statistiky. Vizuální
+  rozložení `Sidebar`u samotné pořád NEodzkoušené okem (jen výpočtem) - hlavně jestli se text uvnitř
+  88px čtvercových slotů/tlačítek nepřekrývá při delších názvech itemů.
 
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
@@ -1764,4 +1803,4 @@ DebugPanel's new height fitting inside the window.
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window, now on both axes)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`, shared by both run-scoped `xp_for_next_level()` and META `meta_xp_for_next_level()`, see "Lobby a meta-progrese" above), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above)
-- `scenes/ui/lobby.gd` — `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (skill tree node grid sizing, moved here from `hud.gd` — see "Lobby a meta-progrese" above)
+- `scenes/ui/lobby.gd` — `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (skill tree node grid sizing, moved here from `hud.gd` — see "Lobby a meta-progrese" above), `SIDEBAR_SLOT_SIZE`/`SIDEBAR_SLOT_GAP`/`SIDEBAR_GRID_COLUMNS` (postranní panel's item-slot grid, see the 2026-09-30 STALE note in "Lobby a meta-progrese" above)

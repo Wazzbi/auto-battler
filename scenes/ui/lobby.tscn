@@ -86,7 +86,7 @@ horizontal_alignment = 2
 layout_mode = 0
 offset_left = 40.0
 offset_top = 80.0
-offset_right = 1240.0
+offset_right = 940.0
 offset_bottom = 670.0
 
 [node name="ShopTabContent" type="Control" parent="."]
@@ -94,14 +94,14 @@ visible = false
 layout_mode = 0
 offset_left = 40.0
 offset_top = 80.0
-offset_right = 1240.0
+offset_right = 940.0
 offset_bottom = 670.0
 
 [node name="ShopCard0" type="Button" parent="ShopTabContent"]
 layout_mode = 0
 offset_left = 0.0
 offset_top = 0.0
-offset_right = 270.0
+offset_right = 210.0
 offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard0"]
@@ -109,7 +109,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 24.0
 theme_override_font_sizes/font_size = 13
 text = "Název"
@@ -120,7 +120,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 42.0
 theme_override_font_sizes/font_size = 10
 text = "Nevlastníš"
@@ -131,7 +131,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 130.0
 theme_override_font_sizes/font_size = 10
 text = "Popis"
@@ -143,7 +143,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 154.0
 theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
@@ -151,9 +151,9 @@ horizontal_alignment = 1
 
 [node name="ShopCard1" type="Button" parent="ShopTabContent"]
 layout_mode = 0
-offset_left = 290.0
+offset_left = 230.0
 offset_top = 0.0
-offset_right = 560.0
+offset_right = 440.0
 offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard1"]
@@ -161,7 +161,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 24.0
 theme_override_font_sizes/font_size = 13
 text = "Název"
@@ -172,7 +172,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 42.0
 theme_override_font_sizes/font_size = 10
 text = "Nevlastníš"
@@ -183,7 +183,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 130.0
 theme_override_font_sizes/font_size = 10
 text = "Popis"
@@ -195,7 +195,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 154.0
 theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
@@ -203,9 +203,9 @@ horizontal_alignment = 1
 
 [node name="ShopCard2" type="Button" parent="ShopTabContent"]
 layout_mode = 0
-offset_left = 580.0
+offset_left = 460.0
 offset_top = 0.0
-offset_right = 850.0
+offset_right = 670.0
 offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard2"]
@@ -213,7 +213,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 24.0
 theme_override_font_sizes/font_size = 13
 text = "Název"
@@ -224,7 +224,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 42.0
 theme_override_font_sizes/font_size = 10
 text = "Nevlastníš"
@@ -235,7 +235,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 130.0
 theme_override_font_sizes/font_size = 10
 text = "Popis"
@@ -247,7 +247,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 154.0
 theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
@@ -255,9 +255,9 @@ horizontal_alignment = 1
 
 [node name="ShopCard3" type="Button" parent="ShopTabContent"]
 layout_mode = 0
-offset_left = 870.0
+offset_left = 690.0
 offset_top = 0.0
-offset_right = 1140.0
+offset_right = 900.0
 offset_bottom = 190.0
 
 [node name="NameLabel" type="Label" parent="ShopTabContent/ShopCard3"]
@@ -265,7 +265,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 4.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 24.0
 theme_override_font_sizes/font_size = 13
 text = "Název"
@@ -276,7 +276,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 26.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 42.0
 theme_override_font_sizes/font_size = 10
 text = "Nevlastníš"
@@ -287,7 +287,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 44.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 130.0
 theme_override_font_sizes/font_size = 10
 text = "Popis"
@@ -299,7 +299,7 @@ layout_mode = 0
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 134.0
-offset_right = 264.0
+offset_right = 204.0
 offset_bottom = 154.0
 theme_override_font_sizes/font_size = 11
 text = "Cena: 0"
@@ -307,44 +307,139 @@ horizontal_alignment = 1
 
 [node name="RerollButton" type="Button" parent="ShopTabContent"]
 layout_mode = 0
-offset_left = 490.0
+offset_left = 350.0
 offset_top = 204.0
-offset_right = 690.0
+offset_right = 550.0
 offset_bottom = 240.0
 theme_override_font_sizes/font_size = 14
 text = "Přehodit (20)"
 
-[node name="ActiveLabel" type="Label" parent="ShopTabContent"]
+[node name="Sidebar" type="Control" parent="."]
+layout_mode = 0
+offset_left = 960.0
+offset_top = 80.0
+offset_right = 1240.0
+offset_bottom = 670.0
+
+[node name="ActiveItemsLabel" type="Label" parent="Sidebar"]
 layout_mode = 0
 offset_left = 0.0
-offset_top = 254.0
-offset_right = 800.0
-offset_bottom = 274.0
+offset_top = 0.0
+offset_right = 280.0
+offset_bottom = 20.0
 theme_override_font_sizes/font_size = 12
 text = "Aktivní itemy (0/6)"
 
-[node name="ActiveItemsContainer" type="Control" parent="ShopTabContent"]
+[node name="ActiveItemsContainer" type="Control" parent="Sidebar"]
 layout_mode = 0
 offset_left = 0.0
-offset_top = 278.0
-offset_right = 800.0
-offset_bottom = 324.0
+offset_top = 26.0
+offset_right = 280.0
+offset_bottom = 210.0
 
-[node name="StashLabel" type="Label" parent="ShopTabContent"]
+[node name="InventoryTabButton" type="Button" parent="Sidebar"]
 layout_mode = 0
 offset_left = 0.0
-offset_top = 334.0
-offset_right = 800.0
-offset_bottom = 354.0
+offset_top = 220.0
+offset_right = 135.0
+offset_bottom = 256.0
+theme_override_font_sizes/font_size = 14
+text = "Inventář"
+
+[node name="StatsTabButton" type="Button" parent="Sidebar"]
+layout_mode = 0
+offset_left = 145.0
+offset_top = 220.0
+offset_right = 280.0
+offset_bottom = 256.0
+theme_override_font_sizes/font_size = 14
+modulate = Color(0.45, 0.45, 0.52, 1)
+text = "Statistiky"
+
+[node name="SidebarInventoryContent" type="Control" parent="Sidebar"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 266.0
+offset_right = 280.0
+offset_bottom = 590.0
+
+[node name="StashLabel" type="Label" parent="Sidebar/SidebarInventoryContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 280.0
+offset_bottom = 20.0
 theme_override_font_sizes/font_size = 12
 text = "Sklad (0/9)"
 
-[node name="StashContainer" type="Control" parent="ShopTabContent"]
+[node name="StashContainer" type="Control" parent="Sidebar/SidebarInventoryContent"]
 layout_mode = 0
 offset_left = 0.0
-offset_top = 358.0
-offset_right = 800.0
-offset_bottom = 422.0
+offset_top = 26.0
+offset_right = 280.0
+offset_bottom = 306.0
+
+[node name="SidebarStatsContent" type="Control" parent="Sidebar"]
+visible = false
+layout_mode = 0
+offset_left = 0.0
+offset_top = 266.0
+offset_right = 280.0
+offset_bottom = 590.0
+
+[node name="StatDamageLabel" type="Label" parent="Sidebar/SidebarStatsContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 280.0
+offset_bottom = 24.0
+theme_override_font_sizes/font_size = 13
+text = "Poškození: 0"
+
+[node name="StatAttackSpeedLabel" type="Label" parent="Sidebar/SidebarStatsContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 30.0
+offset_right = 280.0
+offset_bottom = 54.0
+theme_override_font_sizes/font_size = 13
+text = "Rychlost útoku: 0"
+
+[node name="StatRangeLabel" type="Label" parent="Sidebar/SidebarStatsContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 60.0
+offset_right = 280.0
+offset_bottom = 84.0
+theme_override_font_sizes/font_size = 13
+text = "Dostřel: 0"
+
+[node name="StatHpLabel" type="Label" parent="Sidebar/SidebarStatsContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 90.0
+offset_right = 280.0
+offset_bottom = 114.0
+theme_override_font_sizes/font_size = 13
+text = "Max HP: 0"
+
+[node name="StatArmorLabel" type="Label" parent="Sidebar/SidebarStatsContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 120.0
+offset_right = 280.0
+offset_bottom = 144.0
+theme_override_font_sizes/font_size = 13
+text = "Brnění: 0"
+
+[node name="StatCritLabel" type="Label" parent="Sidebar/SidebarStatsContent"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 150.0
+offset_right = 280.0
+offset_bottom = 174.0
+theme_override_font_sizes/font_size = 13
+text = "Kritický zásah: 0 %"
 
 [node name="NextRunButton" type="Button" parent="."]
 layout_mode = 0
