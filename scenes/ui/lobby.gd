@@ -28,14 +28,14 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 const SKILL_NODE_WIDTH: float = 170.0
 const SKILL_NODE_HEIGHT: float = 150.0
 const SKILL_NODE_GAP: float = 10.0
-## Šířka/mezera miniaturních slotů pro aktivní/sklad itemy - stejné hodnoty
-## a stejný _create_inventory_mini_slot() vzor jako dřívější hud.gd (viz
-## "CharacterPanel" v CLAUDE.md), teď duplikované sem, protože Obchod v
-## lobby ukazuje aktivní/sklad itemy vedle nabídky ke koupi (explicit user
-## request 2026-09-28 - "může shop v lobby ukazovat taky UI s aktivními
-## předměty hráče a stash jako u ingame shopu?").
-const SHOP_MINI_SLOT_WIDTH: float = 74.0
-const SHOP_MINI_SLOT_GAP: float = 6.0
+## Rozměr/mezera čtvercových miniaturních slotů pro aktivní/sklad itemy v
+## postranním Sidebaru (viz "Lobby UI: postranní panel" v CLAUDE.md,
+## 2026-09-30) - nahrazuje dřívější SHOP_MINI_SLOT_WIDTH/GAP (ty byly laděné
+## jen pro jednořádkový pruh, teď je layout mřížkový, viz
+## _create_inventory_mini_slot()'s nový `columns` parametr).
+const SIDEBAR_SLOT_SIZE: float = 88.0
+const SIDEBAR_SLOT_GAP: float = 8.0
+const SIDEBAR_GRID_COLUMNS: int = 3
 
 @onready var meta_level_label: Label = $MetaLevelLabel
 @onready var gold_label: Label = $GoldLabel
@@ -54,10 +54,26 @@ const SHOP_MINI_SLOT_GAP: float = 6.0
 	$ShopTabContent/ShopCard3,
 ]
 @onready var shop_reroll_button: Button = $ShopTabContent/RerollButton
-@onready var inventory_active_label: Label = $ShopTabContent/ActiveLabel
-@onready var inventory_active_container: Control = $ShopTabContent/ActiveItemsContainer
-@onready var inventory_stash_label: Label = $ShopTabContent/StashLabel
-@onready var inventory_stash_container: Control = $ShopTabContent/StashContainer
+
+## Postranní panel (viz "Lobby UI: postranní panel" v CLAUDE.md) - na rozdíl
+## od NodesContainer/ShopTabContent NENÍ dítětem žádného ze dvou hlavních
+## tabů, je jejich SOUROZENEC a zůstává `visible = true` natrvalo, takže je
+## vidět jak na Dovednostech, tak na Obchodě.
+@onready var sidebar: Control = $Sidebar
+@onready var inventory_active_label: Label = $Sidebar/ActiveItemsLabel
+@onready var inventory_active_container: Control = $Sidebar/ActiveItemsContainer
+@onready var sidebar_inventory_tab_button: Button = $Sidebar/InventoryTabButton
+@onready var sidebar_stats_tab_button: Button = $Sidebar/StatsTabButton
+@onready var sidebar_inventory_content: Control = $Sidebar/SidebarInventoryContent
+@onready var inventory_stash_label: Label = $Sidebar/SidebarInventoryContent/StashLabel
+@onready var inventory_stash_container: Control = $Sidebar/SidebarInventoryContent/StashContainer
+@onready var sidebar_stats_content: Control = $Sidebar/SidebarStatsContent
+@onready var stat_damage_label: Label = $Sidebar/SidebarStatsContent/StatDamageLabel
+@onready var stat_attack_speed_label: Label = $Sidebar/SidebarStatsContent/StatAttackSpeedLabel
+@onready var stat_range_label: Label = $Sidebar/SidebarStatsContent/StatRangeLabel
+@onready var stat_hp_label: Label = $Sidebar/SidebarStatsContent/StatHpLabel
+@onready var stat_armor_label: Label = $Sidebar/SidebarStatsContent/StatArmorLabel
+@onready var stat_crit_label: Label = $Sidebar/SidebarStatsContent/StatCritLabel
 
 @onready var next_run_button: Button = $NextRunButton
 
@@ -81,6 +97,8 @@ func _ready() -> void:
 
 	dovednosti_tab_button.pressed.connect(_on_dovednosti_tab_pressed)
 	obchod_tab_button.pressed.connect(_on_obchod_tab_pressed)
+	sidebar_inventory_tab_button.pressed.connect(_on_sidebar_inventory_tab_pressed)
+	sidebar_stats_tab_button.pressed.connect(_on_sidebar_stats_tab_pressed)
 	next_run_button.pressed.connect(_on_next_run_pressed)
 	_setup_shop_cards()
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
@@ -91,6 +109,7 @@ func _ready() -> void:
 	_refresh_meta_ui()
 	_on_currency_changed(GameManager.currency)
 	_set_active_tab(true)
+	_set_sidebar_tab(true)
 
 
 ## Obchod je v lobby VŽDY dostupný (explicit user request 2026-09-28) -
@@ -116,6 +135,8 @@ func _on_skill_points_changed(_new_amount: int) -> void:
 
 func _on_skill_ranks_changed() -> void:
 	_refresh_skill_tree_ui()
+	if sidebar_stats_content.visible:
+		_refresh_statistics_tab()
 
 
 func _refresh_meta_ui() -> void:
@@ -128,20 +149,18 @@ func _refresh_meta_ui() -> void:
 
 func _on_currency_changed(new_amount: int) -> void:
 	gold_label.text = "Zlato: %d" % new_amount
-	if shop_tab_content.visible:
-		_refresh_shop_tab()
+	_refresh_shop_tab()
 
 
 ## Přepne mezi dvěma taby (Dovednosti/Obchod) - stejný vzor jako dřívější
 ## CharacterPanel v hud.gd (bílá = aktivní, LOCKED_ITEM_MODULATE = neaktivní).
+## Sidebar (Aktivní itemy/Inventář/Statistiky) se NEpřepíná spolu s tímhle -
+## je vidět na obou tabech, viz Sidebar's @onready komentář výše.
 func _set_active_tab(show_dovednosti: bool) -> void:
 	nodes_container.visible = show_dovednosti
 	shop_tab_content.visible = not show_dovednosti
 	dovednosti_tab_button.modulate = Color.WHITE if show_dovednosti else LOCKED_ITEM_MODULATE
 	obchod_tab_button.modulate = LOCKED_ITEM_MODULATE if show_dovednosti else Color.WHITE
-
-	if not show_dovednosti:
-		_refresh_shop_tab()
 
 
 func _on_dovednosti_tab_pressed() -> void:
@@ -150,6 +169,52 @@ func _on_dovednosti_tab_pressed() -> void:
 
 func _on_obchod_tab_pressed() -> void:
 	_set_active_tab(false)
+
+
+## Přepne mezi dvěma PODzáložkami Sidebaru (Inventář/Statistiky) - stejný
+## white/LOCKED_ITEM_MODULATE vzor jako _set_active_tab() výše. Statistiky se
+## refreshují jen při přepnutí NA ně (líné obnovení - viz
+## _refresh_statistics_tab()'s komentář proč to stačí).
+func _set_sidebar_tab(show_inventory: bool) -> void:
+	sidebar_inventory_content.visible = show_inventory
+	sidebar_stats_content.visible = not show_inventory
+	sidebar_inventory_tab_button.modulate = Color.WHITE if show_inventory else LOCKED_ITEM_MODULATE
+	sidebar_stats_tab_button.modulate = LOCKED_ITEM_MODULATE if show_inventory else Color.WHITE
+
+	if not show_inventory:
+		_refresh_statistics_tab()
+
+
+func _on_sidebar_inventory_tab_pressed() -> void:
+	_set_sidebar_tab(true)
+
+
+func _on_sidebar_stats_tab_pressed() -> void:
+	_set_sidebar_tab(false)
+
+
+## Staty postavy, stejné formátování jako dřívější hud.gd's
+## _refresh_stat_labels() (viz "CharacterPanel" v CLAUDE.md), ale BEZ živé
+## instance Player - lobby žádnou nemá (viz plán "Lobby UI: postranní
+## panel"). get_damage()/get_attack_speed()/get_attack_range()/get_armor()/
+## get_crit_chance() jsou čisté funkce tvaru "base_X + GameManager.
+## get_stat_bonus(...)" bez závislosti na stromu scény, takže stačí krátce
+## instancovat player.tscn MIMO strom (instantiate() nevolá _ready(), takže
+## @onready var visual zůstane nenastavené - nevadí, tyhle gettery se ho
+## nedotýkají) a hned ji zahodit. Staty tak zůstávají jednozdrojové
+## (player.gd), ne druhá kopie čísel, která by se s ním mohla rozejít.
+## Líné volání (jen při přepnutí na tenhle podtab, nebo při změně
+## dovednosti/inventáře KDYŽ je zrovna vidět) stačí - staty se nemění
+## kontinuálně jako třeba dash cooldown.
+func _refresh_statistics_tab() -> void:
+	var reference: Node = preload("res://scenes/player/player.tscn").instantiate()
+	stat_damage_label.text = "Poškození: %.0f" % reference.get_damage()
+	stat_attack_speed_label.text = "Rychlost útoku: %.1f/s" % reference.get_attack_speed()
+	stat_range_label.text = "Dostřel: %.0f" % reference.get_attack_range()
+	stat_hp_label.text = "Max HP: %.0f" % (reference.base_max_hp + GameManager.get_stat_bonus("max_hp"))
+	stat_armor_label.text = "Brnění: %.0f" % reference.get_armor()
+	stat_crit_label.text = "Kritický zásah: %.0f %%" % (reference.get_crit_chance() * 100.0)
+	reference.free()
 
 
 ## Postaví jeden uzel na KAŽDOU schopnost ve GameManager.SKILL_TREE_BRANCHES,
@@ -263,13 +328,13 @@ func _on_shop_card_action_pressed(slot_index: int) -> void:
 
 
 func _on_shop_offer_changed(_offer_ids: Array) -> void:
-	if shop_tab_content.visible:
-		_refresh_shop_tab()
+	_refresh_shop_tab()
 
 
 func _on_shop_inventory_changed() -> void:
-	if shop_tab_content.visible:
-		_refresh_shop_tab()
+	_refresh_shop_tab()
+	if sidebar_stats_content.visible:
+		_refresh_statistics_tab()
 
 
 func _on_shop_reroll_pressed() -> void:
@@ -322,29 +387,37 @@ func _build_inventory_ui() -> void:
 		_stash_slot_widgets.append(widget)
 
 
-## Jeden miniaturní slot: Panel s Labelem (2 řádky - krátký název + rarita)
-## a N tlačítky pod sebou - identické tělo jako dřívější hud.gd's
-## _create_inventory_mini_slot().
+## Jeden čtvercový miniaturní slot (SIDEBAR_SLOT_SIZE×SIDEBAR_SLOT_SIZE):
+## Panel s Labelem nahoře (krátký název + rarita) a N tlačítky pod sebou,
+## rozmístěný v MŘÍŽCE (SIDEBAR_GRID_COLUMNS sloupců), ne v jednom řádku jako
+## dřívější verze - viz "Lobby UI: postranní panel" v CLAUDE.md. Na rozdíl od
+## dřívějšího hud.gd's stejnojmenné funkce (pořád jednořádková, beze změny -
+## run-time CharacterPanel touhle úpravou není dotčený).
 func _create_inventory_mini_slot(parent: Control, index: int, button_texts: Array) -> Dictionary:
 	var panel := Panel.new()
-	panel.position = Vector2(index * (SHOP_MINI_SLOT_WIDTH + SHOP_MINI_SLOT_GAP), 0.0)
-	panel.size = Vector2(SHOP_MINI_SLOT_WIDTH, 28.0 + button_texts.size() * 18.0)
+	panel.position = Vector2(
+		(index % SIDEBAR_GRID_COLUMNS) * (SIDEBAR_SLOT_SIZE + SIDEBAR_SLOT_GAP),
+		(index / SIDEBAR_GRID_COLUMNS) * (SIDEBAR_SLOT_SIZE + SIDEBAR_SLOT_GAP)
+	)
+	panel.size = Vector2(SIDEBAR_SLOT_SIZE, SIDEBAR_SLOT_SIZE)
 	parent.add_child(panel)
 
 	var label := Label.new()
 	label.position = Vector2(2.0, 2.0)
-	label.size = Vector2(SHOP_MINI_SLOT_WIDTH - 4.0, 24.0)
-	label.add_theme_font_size_override("font_size", 8)
+	label.size = Vector2(SIDEBAR_SLOT_SIZE - 4.0, 28.0)
+	label.add_theme_font_size_override("font_size", 9)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel.add_child(label)
 
 	var buttons: Array = []
-	for bi in button_texts.size():
+	var button_count: int = button_texts.size()
+	var button_height: float = (SIDEBAR_SLOT_SIZE - 34.0) / maxf(button_count, 1)
+	for bi in button_count:
 		var button := Button.new()
-		button.position = Vector2(2.0, 28.0 + bi * 18.0)
-		button.size = Vector2(SHOP_MINI_SLOT_WIDTH - 4.0, 16.0)
+		button.position = Vector2(2.0, 32.0 + bi * button_height)
+		button.size = Vector2(SIDEBAR_SLOT_SIZE - 4.0, button_height - 2.0)
 		button.add_theme_font_size_override("font_size", 7)
 		button.text = button_texts[bi]
 		panel.add_child(button)
