@@ -86,6 +86,18 @@ extends Node2D
 ## Stejný účel jako spawn_margin u nepřátel - jak daleko za viditelným
 ## okrajem obrazovky se objekty spawnují.
 @export var object_spawn_margin: float = 60.0
+## Minimální extra odstup (navíc k součtu obou objektů collision_half_size/
+## pickup_radius) mezi nově spawnutým statickým objektem/pickupem a každým
+## už existujícím obstaclem - viz _is_position_clear_of_obstacles() níže.
+## Opraveno 2026-10-01 na žádost uživatele (screenshot ukázal zničitelný
+## objekt vygenerovaný přímo na nezničitelném) - dřív se tahle kontrola
+## vůbec neprováděla (CLAUDE.md to dokumentoval jako vědomé zjednodušení
+## pro první verzi, teď dotažené).
+@export var object_spacing_margin: float = 10.0
+## Kolikrát _spawn_world_object() zkusí novou náhodnou pozici, než spawn
+## tenhle cyklus prostě přeskočí - radši chybějící spawn (doplní se příští
+## interval) než garantovaně překrývající se objekt.
+const MAX_SPAWN_POSITION_ATTEMPTS: int = 10
 
 ## Sebratelné předměty (kosočtverce, viz "Sebratelné předměty" v CLAUDE.md) -
 ## spawnují se stejným ring-spawn mechanismem jako výše, ale strop
@@ -162,15 +174,18 @@ func _process(delta: float) -> void:
 	if destructible_object_scene != null and _destructibles_spawned < max_destructibles:
 		_destructible_spawn_timer -= delta
 		if _destructible_spawn_timer <= 0.0:
-			_spawn_world_object(destructible_object_scene)
-			_destructibles_spawned += 1
+			# Čítač se zvedá jen při SKUTEČNÉM spawnu - pokud _spawn_world_object()
+			# nenašlo volné místo (viz jeho MAX_SPAWN_POSITION_ATTEMPTS), vrátí
+			# null a "total spawned" strop se tím nesmí vyčerpat nadarmo.
+			if _spawn_world_object(destructible_object_scene) != null:
+				_destructibles_spawned += 1
 			_destructible_spawn_timer = destructible_spawn_interval
 
 	if indestructible_object_scene != null and _indestructibles_spawned < max_indestructibles:
 		_indestructible_spawn_timer -= delta
 		if _indestructible_spawn_timer <= 0.0:
-			_spawn_world_object(indestructible_object_scene)
-			_indestructibles_spawned += 1
+			if _spawn_world_object(indestructible_object_scene) != null:
+				_indestructibles_spawned += 1
 			_indestructible_spawn_timer = indestructible_spawn_interval
 
 	if heal_pickup_scene != null and get_tree().get_nodes_in_group("heal_pickups").size() < max_heal_pickups:
@@ -269,12 +284,52 @@ func _spawn_around_player(scene: PackedScene) -> Node2D:
 ## Vytvoří a umístí statický objekt (viz "Statické objekty ve světě" v
 ## CLAUDE.md) na náhodné místo na kruhu kolem hráče - stejný ring-spawn jádro
 ## jako _spawn_around_player(), jen bez HP škálování/GameManager.enemies_alive
-## účetnictví, které objekty vůbec nemají.
+## účetnictví, které objekty vůbec nemají. Zkouší až MAX_SPAWN_POSITION_
+## ATTEMPTS náhodných pozic, dokud nenajde jednu, která se nepřekrývá se
+## žádným existujícím obstaclem (viz _is_position_clear_of_obstacles()) - při
+## neúspěchu objekt vůbec nevytvoří a vrátí null, volající si to musí ohlídat
+## (viz _process() - čítač "total spawned" se inkrementuje jen při úspěchu).
 func _spawn_world_object(scene: PackedScene) -> Node2D:
 	var world_object: Node2D = scene.instantiate()
+	var half_size: Variant = world_object.get("collision_half_size")
+	if half_size == null:
+		half_size = world_object.get("pickup_radius")
+	if half_size == null:
+		half_size = 0.0
+
+	var position: Vector2 = _random_position_around_player(object_spawn_margin)
+	var found_clear_spot: bool = _is_position_clear_of_obstacles(position, half_size)
+	var attempts: int = 1
+	while not found_clear_spot and attempts < MAX_SPAWN_POSITION_ATTEMPTS:
+		position = _random_position_around_player(object_spawn_margin)
+		found_clear_spot = _is_position_clear_of_obstacles(position, half_size)
+		attempts += 1
+
+	if not found_clear_spot:
+		world_object.free()
+		return null
+
 	add_child(world_object)
-	world_object.global_position = _random_position_around_player(object_spawn_margin)
+	world_object.global_position = position
 	return world_object
+
+
+## True, pokud by čtverec o polovičním rozměru new_half_size na pozici `pos`
+## nepřekrýval (ani se nedotýkal blíž než object_spacing_margin) žádný
+## existující obstacle - AABB test na obou osách, stejný "čtverec, ne kruh"
+## přístup jako player.gd's _resolve_obstacle_collisions(). Pickupy (nejsou
+## v "obstacles" skupině, viz pickup_base.gd) se tak sice touhle kontrolou
+## samy neřídí, ale ani jiný objekt se na NĚ spawnem narazit nemůže - chrání
+## jen proti obstacle-obstacle překryvu, což je přesně to, co bylo nahlášené.
+func _is_position_clear_of_obstacles(pos: Vector2, new_half_size: float) -> bool:
+	for obstacle in get_tree().get_nodes_in_group("obstacles"):
+		if not is_instance_valid(obstacle):
+			continue
+		var required_distance: float = new_half_size + obstacle.collision_half_size + object_spacing_margin
+		var offset: Vector2 = pos - obstacle.global_position
+		if absf(offset.x) < required_distance and absf(offset.y) < required_distance:
+			return false
+	return true
 
 
 ## Náhodná pozice na kruhu kolem hráče, těsně mimo viditelnou obrazovku

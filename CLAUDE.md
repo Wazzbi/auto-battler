@@ -192,10 +192,31 @@ of this PR is the MECHANISM (spawning, targeting, avoidance), not the visuals.
   object at a time, gated by `max_destructibles`/`max_indestructibles` (40/20). **The cap counts
   TOTAL EVER SPAWNED this run, not currently-alive** — destroying a destructible object does NOT
   free up a new spawn slot, same one-way-ratchet simplicity as `elites_left_to_spawn` elsewhere in
-  this file. No minimum-spacing check between objects (a deliberate simplification for this first
-  pass — occasional visual overlap is an accepted placeholder-quality trade-off, not a bug to fix
-  yet). Objects, once spawned, are never cleaned up/despawned except by destruction — same
-  "no object pooling, relies on runs being short" characteristic enemies already have.
+  this file. **STALE (2026-10-01): "No minimum-spacing check between objects" is no longer true —
+  fixed on user report (screenshot showed a destructible object generated directly on top of an
+  indestructible one).** `_spawn_world_object(scene)` now reads the candidate object's own footprint
+  (`collision_half_size` if it has one, else `pickup_radius` for the pickups below, else `0.0`) and
+  retries `_random_position_around_player()` up to `MAX_SPAWN_POSITION_ATTEMPTS` (10) times until
+  `_is_position_clear_of_obstacles(pos, half_size)` passes — a square-vs-square AABB check (same
+  "square, not circle" philosophy as `player.gd`'s `_resolve_obstacle_collisions()`) against every
+  node in `"obstacles"`, requiring `new_half_size + obstacle.collision_half_size +
+  object_spacing_margin` (10.0) of clearance on both axes. If all attempts stay blocked (a crowded
+  late-run world), the function gives up and returns `null` rather than ever placing a guaranteed
+  overlap — the caller in `_process()` only increments the `_destructibles_spawned`/
+  `_indestructibles_spawned` one-way-ratchet counters on a non-null result, so a blocked attempt
+  doesn't silently burn through the total-spawn budget for nothing; the spawn timer still resets
+  either way, so it just retries at the next interval. Pickups (`heal_pickup_scene`/
+  `speed_pickup_scene`) go through the same `_spawn_world_object()` and therefore the same spacing
+  check even though they aren't in `"obstacles"` themselves — they just can't be *placed inside* an
+  existing obstacle anymore, which is a harmless side effect of fixing the shared function, not a
+  separate feature. **Verified with a headless test**: a position known to overlap an existing
+  obstacle (and one merely touching its edge, inside `object_spacing_margin`) is confirmed NOT
+  clear, a far-away position IS; an obstacle covering the entire spawn ring makes
+  `_spawn_world_object()` return `null` without adding any node to the tree and without consuming
+  the total-spawned counter; a normal (unblocked) spawn still succeeds and its position is
+  confirmed non-overlapping with the one remaining obstacle. Objects, once spawned, are still never
+  cleaned up/despawned except by destruction — same "no object pooling, relies on runs being short"
+  characteristic enemies already have; that part is unchanged.
 - **Enemy avoidance is TANGENTIAL steering, not radial repulsion, and NOT real pathfinding** —
   explicit user decision: `NavigationServer2D`/navmesh baking was considered and declined in favor
   of staying consistent with how the rest of this game resolves movement/combat (distance checks,
@@ -1827,7 +1848,7 @@ DebugPanel's new height fitting inside the window.
 
 - `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown` (Poskok, see "Poskok (Dash)" above); `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
-- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin` (see "Statické objekty ve světě" above), `heal_pickup_spawn_interval`/`speed_pickup_spawn_interval`/`max_heal_pickups`/`max_speed_pickups` (see "Sebratelné předměty" above — these caps are LIVE-count, not total-ever-spawned, unlike the destructible/indestructible ones)
+- `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin`/`object_spacing_margin`/`MAX_SPAWN_POSITION_ATTEMPTS` (see "Statické objekty ve světě" above), `heal_pickup_spawn_interval`/`speed_pickup_spawn_interval`/`max_heal_pickups`/`max_speed_pickups` (see "Sebratelné předměty" above — these caps are LIVE-count, not total-ever-spawned, unlike the destructible/indestructible ones)
 - `scenes/world_objects/heal_pickup.tscn` / `speed_pickup.tscn` — `heal_amount` (heal pickup) / `speed_bonus_percent`/`buff_duration` (speed pickup), plus shared `pickup_radius`/`floating_text_color` from `pickup_base.gd` (see "Sebratelné předměty" above)
 - `scenes/enemies/enemy.gd` — enemy speed/HP/damage, `melee_range`, `hit_radius`, `reward`, `xp_reward`, `scrap_reward` (see "Suroviny a crafting" above), `is_ranged`/`projectile_scene`, `obstacle_avoid_strength` (see "Statické objekty ve světě" above)
 - `scenes/world_objects/destructible_object.tscn` / `indestructible_object.tscn` — `max_hp`/`hit_radius`/`reward`/`scrap_reward` (destructible only), `avoid_radius` (enemy steering, circular)/`collision_half_size` (player blocking, square — matches the `Polygon2D` visual exactly) — see "Statické objekty ve světě" above
