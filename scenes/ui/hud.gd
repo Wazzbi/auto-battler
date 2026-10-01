@@ -16,12 +16,6 @@ extends CanvasLayer
 ## obchod/CharacterPanel reagovaly i když je hra pozastavená přes
 ## get_tree().paused (otevřený obchod, panel, nebo čekající nabídka schopnosti).
 
-## Za kolik sekund se hra po Game Over nebo výhře automaticky restartuje,
-## pokud kurzor nestojí nad příslušným panelem (viz _process a
-## _on_end_panel_mouse_entered/exited). Stejná logika pro oba konce hry -
-## jen jeden z panelů může být zobrazený najednou (GAME_OVER, nebo WON).
-const END_SCREEN_RESTART_DELAY: float = 10.0
-
 ## Ztlumení slotu itemu/schopnosti, který hráč ještě nevlastní
 const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 
@@ -151,14 +145,12 @@ const ABILITY_STACK_MAX_ROWS: int = 6
 ## na první přeplnění baru. Čistě vizuální, viz doc komentář u
 ## _animate_meta_xp_gain().
 @onready var game_over_level_up_label: Label = $Control/GameOverPanel/LevelUpLabel
-@onready var game_over_countdown_label: Label = $Control/GameOverPanel/CountdownLabel
 @onready var game_over_continue_button: Button = $Control/GameOverPanel/ContinueButton
 @onready var victory_panel: Panel = $Control/VictoryPanel
 @onready var victory_label: Label = $Control/VictoryPanel/Label
 @onready var victory_meta_xp_bar: ProgressBar = $Control/VictoryPanel/MetaXPBar
 @onready var victory_meta_xp_label: Label = $Control/VictoryPanel/MetaXPBar/MetaXPLabel
 @onready var victory_level_up_label: Label = $Control/VictoryPanel/LevelUpLabel
-@onready var victory_countdown_label: Label = $Control/VictoryPanel/CountdownLabel
 @onready var victory_continue_button: Button = $Control/VictoryPanel/ContinueButton
 
 @onready var debug_button: Button = $Control/DebugButton
@@ -200,21 +192,11 @@ var player_ref: Node2D = null
 var main_ref: Node = null
 
 ## Kroky rychlosti hry pro Debug panel - cyklické tlačítko prochází tímhle
-## polem. Mění Engine.time_scale globálně (zpomalí/zrychlí i Timery,
-## Tweeny a countdown na Game Over/Victory panelu - to je záměr).
+## polem. Mění Engine.time_scale globálně (zpomalí/zrychlí i Timery a Tweeny,
+## včetně META XP bar animace na Game Over/Victory panelu - to je záměr).
 const DEBUG_SPEED_STEPS: Array[float] = [1.0, 2.0, 5.0, 10.0]
 var _debug_speed_index: int = 0
 var _debug_panel_open: bool = false
-
-## Zbývající čas do auto-restartu po Game Over/výhře. Počítá se ručně (ne přes
-## Timer uzel), protože potřebujeme jednoduše pozastavit/obnovit odpočet podle
-## toho, jestli je kurzor nad panelem - viz CLAUDE.md poznámku k mobilnímu portu.
-var _end_screen_countdown: float = 0.0
-var _end_screen_countdown_active: bool = false
-## Label aktuálně zobrazeného konečného panelu (Game Over, nebo Victory) -
-## nastaví ho show_game_over()/show_victory() při spuštění odpočtu.
-var _active_countdown_label: Label = null
-var _countdown_label_prefix: String = ""
 
 ## Dokud je zapnuté, nabídky SCHOPNOSTI (náhodná nabídka) se vyřizují samy
 ## (náhodný pick) bez zobrazení AbilityDraftPanelu - vypnuto defaultně,
@@ -257,30 +239,16 @@ func _ready() -> void:
 	shop_reroll_button.pressed.connect(_on_shop_reroll_pressed)
 
 	game_over_continue_button.pressed.connect(_go_to_lobby)
-	game_over_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
-	game_over_panel.mouse_exited.connect(_on_end_panel_mouse_exited)
-
 	victory_continue_button.pressed.connect(_go_to_lobby)
-	victory_panel.mouse_entered.connect(_on_end_panel_mouse_entered)
-	victory_panel.mouse_exited.connect(_on_end_panel_mouse_exited)
 
 	_setup_debug_panel()
 
 	_refresh_progression()
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	_update_dash_cooldown_bar()
 	_update_speed_buff_card()
-
-	if not _end_screen_countdown_active:
-		return
-	_end_screen_countdown -= delta
-	if _end_screen_countdown <= 0.0:
-		_end_screen_countdown_active = false
-		_go_to_lobby()
-	else:
-		_update_end_screen_countdown_label()
 
 
 ## Volá se KAŽDÝ snímek (ne jen na signál) - na rozdíl od ostatních statů
@@ -772,7 +740,6 @@ func show_game_over(survival_time: float, currency: int, meta_xp_gained: int) ->
 		GameManager.format_survival_time(survival_time), GameManager.player_level, currency, meta_xp_gained
 	]
 	game_over_panel.show()
-	_start_end_screen_countdown(game_over_countdown_label, "Lobby za")
 	_animate_meta_xp_gain(game_over_meta_xp_bar, game_over_meta_xp_label, game_over_level_up_label)
 
 
@@ -784,7 +751,6 @@ func show_victory(currency: int, meta_xp_gained: int) -> void:
 		GameManager.player_level, currency, meta_xp_gained
 	]
 	victory_panel.show()
-	_start_end_screen_countdown(victory_countdown_label, "Lobby za")
 	_animate_meta_xp_gain(victory_meta_xp_bar, victory_meta_xp_label, victory_level_up_label)
 
 
@@ -799,9 +765,9 @@ const META_XP_BAR_LEVEL_UP_PAUSE: float = 0.25
 ## user request 2026-09-28 - čistě vizuální dohánění: skutečný herní stav
 ## (meta_level/meta_xp/pending_skill_points) je hotový hned, tahle coroutine
 ## jen kreslí, JAK se k němu došlo. Pokud hráč klikne "Pokračovat" (→
-## _go_to_lobby()) nebo countdown doběhne dřív, než animace skončí, na nic to
-## nemá vliv - lobby čte rovnou finální GameManager stav, ne nic z týhle
-## animace. Přeteče-li bar víckrát (víc META level-upů z jednoho běhu), pod
+## _go_to_lobby()) dřív, než animace skončí, na nic to nemá vliv - lobby čte
+## rovnou finální GameManager stav, ne nic z týhle animace. Přeteče-li bar
+## víckrát (víc META level-upů z jednoho běhu), pod
 ## barem se objeví "+N úroveň", kde N postupně roste s každým přeplněním.
 ## `is_instance_valid(bar)` kontrola po každém `await` bezpečně ukončí
 ## animaci, kdyby mezitím scéna zmizela (change_scene_to_file), místo pádu na
@@ -878,33 +844,16 @@ func _close_ability_draft_panel() -> void:
 	get_tree().paused = false
 
 
-func _start_end_screen_countdown(countdown_label: Label, prefix: String) -> void:
-	_active_countdown_label = countdown_label
-	_countdown_label_prefix = prefix
-	_end_screen_countdown = END_SCREEN_RESTART_DELAY
-	_end_screen_countdown_active = true
-	_update_end_screen_countdown_label()
-
-
-func _on_end_panel_mouse_entered() -> void:
-	_end_screen_countdown_active = false
-
-
-func _on_end_panel_mouse_exited() -> void:
-	_end_screen_countdown_active = true
-
-
-func _update_end_screen_countdown_label() -> void:
-	_active_countdown_label.text = "%s: %d s" % [_countdown_label_prefix, int(ceil(_end_screen_countdown))]
-
-
 ## Konec běhu (smrt nebo dokončení smyčky) vede do lobby, ne do restartu na
 ## místě - main.tscn se znovu spustí až po kliknutí na "Další běh" v lobby
 ## (viz scenes/ui/lobby.gd), ne automaticky. GameManager je autoload a scénu
 ## přežije beze změny, takže last_run_summary/meta stav je pro lobby.gd
-## dostupný okamžitě po přechodu.
+## dostupný okamžitě po přechodu. **Jediná cesta z Game Over/Victory panelu**
+## (2026-10-01, explicit user request "odstranit odpočítávání v end game
+## panelu") - panel dřív po END_SCREEN_RESTART_DELAY sekundách přešel do
+## lobby i sám (pokud kurzor nestál nad panelem), teď čeká výhradně na klik
+## na "Pokračovat".
 func _go_to_lobby() -> void:
-	_end_screen_countdown_active = false
 	game_over_panel.hide()
 	victory_panel.hide()
 	character_panel.hide()

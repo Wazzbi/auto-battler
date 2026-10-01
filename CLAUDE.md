@@ -1099,22 +1099,28 @@ only opens when the player clicks the portrait themselves. `hud.gd`'s `_on_skill
 and `_on_skill_tree_close_pressed()` both dropped their `state == State.INTRO` special-casing since
 it's unreachable now.
 
-**Game Over / Victory auto-restart flow**: `hud.gd` drives both `GameOverPanel` and `VictoryPanel`
-with the *same* countdown mechanism — `_end_screen_countdown` ticks down via a manually decremented
-float in `_process` (not a `Timer` node), and `_active_countdown_label` points at whichever panel's
-`CountdownLabel` is currently showing (`show_game_over()`/`show_victory()` set it, along with a
-prefix string — both **"Lobby za"** since "Lobby a meta-progrese" 2026-09-27 (STALE: used to be
-"Restart za" vs. "Nová hra za" — both panels lead to the same place now, see below). This works
-because the two panels are mutually exclusive: `GameManager.state` is either `GAME_OVER` or `WON`,
-never both, so there's never a question of *which* panel's countdown is running. Both panels'
-`mouse_entered`/`mouse_exited` connect to the same `_on_end_panel_mouse_entered`/`_exited` handlers
-(hovering pauses, moving off resumes), and both "Pokračovat" buttons connect to the same
-`_go_to_lobby()` (STALE: renamed from `_restart_game()`), which calls
+**Game Over / Victory flow**: `hud.gd` drives both `GameOverPanel` and `VictoryPanel` with the same
+shape — `show_game_over()`/`show_victory()` set the panel's text and show it; both "Pokračovat"
+buttons connect to the same `_go_to_lobby()` (STALE: renamed from `_restart_game()`), which calls
 `get_tree().change_scene_to_file("res://scenes/ui/lobby.tscn")` instead of the old
 `reload_current_scene()` — `GameManager` is an autoload so it survives the scene change untouched,
 and `main.gd`'s `_enter_tree()` calls `GameManager.reset_game()` only once the player picks "Další
 běh" from the lobby and `main.tscn` loads again, so that's the only reset path; there's no separate
-"restart" signal or function on `GameManager` itself. **`MetaXPBar`/`MetaXPLabel` (2026-09-28)**:
+"restart" signal or function on `GameManager` itself. The two panels are mutually exclusive:
+`GameManager.state` is either `GAME_OVER` or `WON`, never both.
+
+**STALE (2026-10-01): there is no more auto-restart countdown.** Explicit user request ("odstranit
+odpočítávání v end game panelu") — `_end_screen_countdown`/`_end_screen_countdown_active`/
+`_active_countdown_label`/`_countdown_label_prefix` (a manually-decremented float in `_process`, not
+a `Timer` node), `END_SCREEN_RESTART_DELAY` (10s), `_start_end_screen_countdown()`,
+`_on_end_panel_mouse_entered()`/`_exited()` (hover-to-pause, resume-on-exit), and
+`_update_end_screen_countdown_label()` are all DELETED, not deprecated — along with both panels'
+`CountdownLabel` child nodes in `hud.tscn` (`ContinueButton` moved up into the freed space).
+`_process()` no longer early-returns through a countdown branch at all, it's unconditionally just
+`_update_dash_cooldown_bar()`/`_update_speed_buff_card()` now. **Clicking "Pokračovat" is the ONLY
+way to leave either panel** — there is no longer any path that advances to the lobby on its own, so
+a player can linger on the end screen indefinitely (reading their run summary, or just because they
+stepped away) with no time pressure. **`MetaXPBar`/`MetaXPLabel` (2026-09-28)**:
 both panels also show a META-XP progress bar, right below the "+N meta-XP" text line in
 `game_over_label`/`victory_label`. Moved here FROM `scenes/ui/lobby.tscn` (explicit user request
 "vyjmout progres bar s XP v lobby a dát to pod meta-xp do end-game okénka") — the lobby itself now
@@ -1129,8 +1135,8 @@ the instant `_finish_run()` ran (see "Lobby a meta-progrese" above, called from
 `trigger_game_over()`/`trigger_win()` *before* either signal handler even reaches
 `show_game_over()`/`show_victory()`) — **the animation is purely cosmetic catch-up, never a source
 of truth**. This is the entire reason it's safe for the player to skip: clicking "Pokračovat" (→
-`_go_to_lobby()`) or letting the countdown expire mid-animation changes nothing, because the lobby
-reads `GameManager.meta_level`/`pending_skill_points` directly, never anything from the animation.
+`_go_to_lobby()`) mid-animation changes nothing, because the lobby reads
+`GameManager.meta_level`/`pending_skill_points` directly, never anything from the animation.
 - `_finish_run()` (`game_manager.gd`) records `"meta_level_before"`/`"meta_xp_before"` into
   `last_run_summary` *before* calling `add_meta_xp()` — the only reason the animation can replay
   from the pre-gain starting point after the real state has already moved on.
@@ -1158,9 +1164,9 @@ reads `GameManager.meta_level`/`pending_skill_points` directly, never anything f
   with the bar directly at the final value and `level_up_label` never shown; a run that triggers the
   animation and then has its scene freed mid-flight produces no error.
 
-**Mobile port note**: the pause-on-hover mechanic has no equivalent on touch (no hover state), so
-this will need a different interaction — e.g. pause while a finger is down, or drop the pause and
-just show the countdown — when a mobile port is attempted.
+**STALE — "Mobile port note" below no longer applies.** It used to flag that the pause-on-hover
+countdown mechanic (removed 2026-10-01, see above) would need touch-specific handling; since the
+countdown itself is gone, there's nothing left to port for the end-screen flow specifically — "Lobby za"-style buttons like "Pokračovat" already work fine on touch.
 
 **Visuals are all procedural** — colored `Polygon2D` shapes for characters, and `_draw()`-based
 rendering for the checkerboard ground (`scenes/levels/ground.gd`) and the impact ring effect.
@@ -1935,5 +1941,5 @@ DebugPanel's new height fitting inside the window.
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); the X-cap machinery this would feed is dormant (see "Level01 is boundless" above), so adding one alone won't do anything today
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window, now on both axes)
 - `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`, shared by both run-scoped `xp_for_next_level()` and META `meta_xp_for_next_level()`, see "Lobby a meta-progrese" above), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 5 branches, root-to-capstone order — see "Schopnosti" above and the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above for the newest `"mobility"` branch/`swift_steps`/`rapid_recharge`), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
-- `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above)
+- `scenes/ui/hud.gd` — `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above), `META_XP_BAR_SEGMENT_DURATION`/`META_XP_BAR_LEVEL_UP_PAUSE` (Game Over/Victory's meta-XP bar animation pacing, see "Game Over / Victory flow" above — `END_SCREEN_RESTART_DELAY` is GONE, no more auto-restart countdown)
 - `scenes/ui/lobby.gd` — `SKILL_NODE_DIAMETER`/`SKILL_WEB_CENTER`/`SKILL_WEB_INNER_RADIUS`/`SKILL_WEB_RADIUS_STEP`/`TAG_COLORS` (skill tree web layout/coloring, see the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above), `SIDEBAR_SLOT_SIZE`/`SIDEBAR_SLOT_GAP`/`SIDEBAR_GRID_COLUMNS` (postranní panel's item-slot grid, see the 2026-09-30 STALE note in "Lobby a meta-progrese" above)
