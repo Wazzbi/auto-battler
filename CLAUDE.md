@@ -879,6 +879,81 @@ smazání), ne redesign. Tři konkrétní skryté věci:
   `GameManager.shop_auto_open_requested` (simulace toho, co by časovač udělal) `ShopPanel` neotevře
   ani hru nepauzne.
 
+**Dovednostní strom je teď "pavučina" (Path of Exile styl), ne mřížka** (2026-10-01, explicit user
+request: "udělat dovednosti v dovednostním stromu trochu víc kompaktnější a jejich efekt zobrazovat
+na hover... UI dovednostního stromu aby měl strukturu vizuálně jako pavučina"). `lobby.gd`'s
+`_build_skill_tree_ui()`/`_refresh_skill_tree_ui()` kompletně přepsané - viz "Schopnosti" výše pro
+historii `SKILL_TREE_BRANCHES`/`invest_skill_point()` pod tím (beze změny logiky investování, jen
+vizuál a dvě nové dovednosti):
+
+- **Paprskový layout, ne col/row mřížka** - nové konstanty `SKILL_NODE_DIAMETER` (64px, nahrazuje
+  `SKILL_NODE_WIDTH`/`HEIGHT`), `SKILL_WEB_CENTER`/`SKILL_WEB_INNER_RADIUS`/`SKILL_WEB_RADIUS_STEP`.
+  Úhel KAŽDÉ větve = `-PI/2 + col * (TAU / SKILL_TREE_BRANCHES.size())` - rovnoměrně rozdělí celý
+  kruh podle AKTUÁLNÍHO počtu větví, nic natvrdo (přidání další větve v budoucnu nevyžaduje ladit
+  úhly ručně). Pozice uzlu = `SKILL_WEB_CENTER + Vector2.RIGHT.rotated(úhel) * (SKILL_WEB_INNER_
+  RADIUS + row * SKILL_WEB_RADIUS_STEP)` - kořen větve nejblíž středu, capstone nejdál.
+  `_build_skill_tree_ui()` je teď TŘI průchody (spočítat všechny pozice → nakreslit všechny spojnice
+  → nakreslit všechny kruhy navrch) - sourozenecké pořadí přidání v Godotu = pořadí kreslení, takže
+  spojnice musí být přidané PŘED kruhy, jinak by kruhy překrývaly.
+- **Spojnice jsou `Line2D`** (nová `_skill_edge_widgets: Dictionary`, ability_id → Line2D) - žádný
+  `Line2D`/connector kód nikde jinde v projektu neexistoval (ověřeno grepem), tohle je první použití.
+  Barva spojnice se v `_refresh_skill_tree_ui()` mění podle toho, jestli uzel, ke kterému vede, má
+  `rank > 0` (plná barva tagu té větve = "cesta prošlápnuta") nebo ne (tlumená šedá
+  `SKILL_EDGE_COLOR_LOCKED`).
+- **Kompaktní kruhové uzly** - `_make_circle_stylebox(color)` vytváří `StyleBoxFlat` s
+  `corner_radius_* = SKILL_NODE_DIAMETER/2` (plně kulatý), aplikovaný přes `_apply_skill_node_style()`
+  na normal/hover/pressed/disabled stavy tlačítka (`focus` dostává prázdný `StyleBoxEmpty`, ať
+  nekreslí hranatý focus rámeček přes kruh). Barva: zamčeno = tmavě šedá
+  (`SKILL_NODE_COLOR_LOCKED`), odemčeno-stupeň 0 = ztlumená barva tagu té větve (nová `TAG_COLORS`
+  konstanta, jedna barva na tag - `kinetic`/`precision`/`support`/`explosive`/`mobility`), stupeň ≥ 1
+  = plná barva tagu - vizuálně "rozsvícená" investovaná větev. Viditelný text uvnitř kruhu je teď jen
+  `short_name` (ne plný `name`) + "N/M" stupeň - oba ~9px font, výrazně méně než dřívější 170×150
+  dlaždice se třemi plnými řádky textu.
+- **Popis efektu je na hover (`tooltip_text` na samotném tlačítku), ne vždy-viditelný `desc_label`
+  child** - `desc_label` jako samostatný uzel úplně zmizel. `tooltip_text` je zavedený vzor v tomhle
+  souboru (`_fill_inventory_mini_slot()`, viz "Lobby UI: postranní panel" výše), spoléhá čistě na
+  Godotí vestavěnou tooltip bublinu, žádný vlastní tooltip panel nikde v projektu. Zamčený uzel:
+  `"%s\nZamčeno" % name`. Odemčený: `"%s (Stupeň %d/%d)\n%s" % [name, rank, max_rank, get_skill_
+  node_desc(...)]` (stejná `get_skill_node_desc()` volání jako dřív, jen text teď míří do tooltipu
+  místo do child Labelu).
+- **Dvě nové dovednosti, pátá větev `"mobility"`** (`game_manager.gd`'s `ABILITIES`/`SKILL_TREE_
+  BRANCHES`/`ABILITY_ORDER` - **musí být ve všech třech**, jinak by nešly investovat NEBO by chyběly
+  v náhodné nabídce schopností, protože obě soustavy sdílí stejný `ABILITIES` katalog, viz "Schopnosti
+  - DVA SOUBĚŽNÉ ZDROJE" výše) - kratší, 2 uzly, stejný precedent jako "Explozivní" (branch nemusí mít
+  stejnou délku všude):
+  - **`swift_steps`** ("Hbité nohy", kořen, max rank 3) - `"stat": "move_speed"`, +6 px/s na stupeň
+    (+18/30 % na maxu ze základních 60 px/s). Trvalý protějšek `speed_pickup.gd`'s DOČASNÉHO +15 %
+    bonusu (viz "Sebratelné předměty" výše).
+  - **`rapid_recharge`** ("Rychlé dobíjení", capstone, max rank 5) - `"stat": "dash_cooldown_
+    reduction"`, -0.5s na stupeň (-2.5s na maxu z 5s základu) - FLAT redukce, ne %, stejná filozofie
+    jako `base_armor`.
+  - `TAG_DISPLAY_NAMES`/`STAT_DISPLAY_NAMES` (`game_manager.gd`) dostaly odpovídající záznamy
+    (`"mobility": "Mobilita"`, `"move_speed": "rychlost pohybu"`, `"dash_cooldown_reduction":
+    "zkrácení dobíjení poskoku (s)"`) - `get_stat_bonus()` samo o sobě ŽÁDNOU registraci nového stat
+    ID nevyžaduje (žádný whitelist, jen string porovnání `definition["stat"] == stat_id`), tyhle
+    dva záznamy jsou čistě kosmetické (jinak by `_format_stat_line()` ukázal syrové ID místo hezkého
+    popisu).
+- **`player.gd` zapojuje oba nové staty** - `get_move_speed()` teď sčítá `move_speed +
+  GameManager.get_stat_bonus("move_speed")` jako svůj základ, DOČASNÝ bonus ze `speed_pickup.gd`
+  zůstává násobný NAVRCH toho součtu (beze změny vlastního chování/nestackování). Nová
+  `get_dash_cooldown()` = `maxf(dash_cooldown - GameManager.get_stat_bonus("dash_cooldown_
+  reduction"), MIN_DASH_COOLDOWN)` (nová `const MIN_DASH_COOLDOWN = 1.5` - ochranná podlaha jako
+  `MIN_DAMAGE_RATIO` u brnění, i při plné investici do `rapid_recharge` nesmí cooldown klesnout pod
+  rozumné minimum). `_try_dash()`'s `dash_cooldown_timer = dash_cooldown` → `= get_dash_cooldown()`;
+  `get_dash_cooldown_ratio()`'s dělitel taky `dash_cooldown` → `get_dash_cooldown()` (jinak by bar po
+  investici do redukce nikdy nedošel na 100 %, protože by pořád dělil PŮVODNÍ, ne zredukovanou,
+  hodnotou).
+- **Verified with headless tests**: `GameManager.get_stat_bonus("move_speed")`/`"dash_cooldown_
+  reduction"` jsou `0.0` bez investice a rostou přesně lineárně po investování ranků;
+  `player.get_move_speed()`/`get_dash_cooldown()` odráží investovaný bonus na reálné `Player`
+  instanci (real `main.tscn`), `get_dash_cooldown()` respektuje `MIN_DASH_COOLDOWN` i při maximální
+  investici, a skutečné zmáčknutí mezerníku (`Input.action_press("dash")`) nastaví zredukovaný
+  cooldown; `lobby.tscn` postaví všech 13 uzlů (11 + 2 nové) a 8 spojnic (počet non-root uzlů napříč
+  větvemi), `tooltip_text` obsahuje skutečný popis (ne prázdný řetězec) u odemčeného uzlu a
+  `"Zamčeno"` u zamčeného, klik na odemčený uzel pořád investuje přes `GameManager.invest_skill_
+  point()` beze změny. Vizuální kontrola (kruhy se nepřekrývají, text čitelný, tvar skutečně
+  připomíná pavučinu, hover tooltip se opravdu zobrazuje) zatím NEprovedena živě v editoru.
+
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
 alive and `PLAYING` — not just after a loop transition, and not paused by combat. Routed through
@@ -1226,18 +1301,20 @@ final/capstone node) in addition to its existing `"type"` shape:
   entry, first-pass number like the rest, not balance-tuned. Resolved entirely in `player.gd` (see
   below), NOT in `get_stat_bonus()`.
 
-**The tree has 4 branches, one per tag, each a plain ordered `Array[String]` from root to capstone**
-(`GameManager.SKILL_TREE_BRANCHES`):
+**The tree has branches, one per tag, each a plain ordered `Array[String]` from root to capstone**
+(`GameManager.SKILL_TREE_BRANCHES`). **STALE (2026-10-01): a 5th branch exists now — see the
+skill-tree-web note in "Lobby a meta-progrese" above for `"mobility"`/`swift_steps`/
+`rapid_recharge`, added alongside the visual "pavučina" redesign.** The original 4:
 ```
 Kinetická:  power_core → split_rounds → overclock_matrix
 Přesná:     rapid_coils → long_barrel → precision_targeting
 Podpůrná:   reinforced_plating → nanite_repair → kinetic_dampers
 Explozivní: double_tap → orbital_bombardment
 ```
-The explosive branch is deliberately shorter (2 nodes, not 3) — a branch doesn't need to match the
-others' length, only the "root → ... → capstone" shape. **A node's prerequisite is derived from its
-position in this array, not stored as its own field** (`get_skill_prereq(ability_id)` scans the 4
-branches and returns the previous entry, or `""` for index 0) — avoids keeping two sources of truth
+The explosive (and now mobility) branch is deliberately shorter (2 nodes, not 3) — a branch doesn't
+need to match the others' length, only the "root → ... → capstone" shape. **A node's prerequisite is
+derived from its position in this array, not stored as its own field** (`get_skill_prereq(ability_id)`
+scans the branches and returns the previous entry, or `""` for index 0) — avoids keeping two sources of truth
 (an explicit `"prereq"` key that could drift from the branch order) in sync by hand.
 `is_skill_node_unlocked(ability_id)` is true for a root (`prereq == ""`) or once
 `get_skill_rank(prereq) >= 1` — **"unlocked" does NOT mean "free"**: a root still needs its own
@@ -1846,7 +1923,7 @@ DebugPanel's new height fitting inside the window.
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown` (Poskok, see "Poskok (Dash)" above); `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown`/`MIN_DASH_COOLDOWN` (Poskok, see "Poskok (Dash)" above and the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above for the `rapid_recharge` cooldown-reduction floor); `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
 - `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin`/`object_spacing_margin`/`MAX_SPAWN_POSITION_ATTEMPTS` (see "Statické objekty ve světě" above), `heal_pickup_spawn_interval`/`speed_pickup_spawn_interval`/`max_heal_pickups`/`max_speed_pickups` (see "Sebratelné předměty" above — these caps are LIVE-count, not total-ever-spawned, unlike the destructible/indestructible ones)
 - `scenes/world_objects/heal_pickup.tscn` / `speed_pickup.tscn` — `heal_amount` (heal pickup) / `speed_bonus_percent`/`buff_duration` (speed pickup), plus shared `pickup_radius`/`floating_text_color` from `pickup_base.gd` (see "Sebratelné předměty" above)
@@ -1857,6 +1934,6 @@ DebugPanel's new height fitting inside the window.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); the X-cap machinery this would feed is dormant (see "Level01 is boundless" above), so adding one alone won't do anything today
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window, now on both axes)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`, shared by both run-scoped `xp_for_next_level()` and META `meta_xp_for_next_level()`, see "Lobby a meta-progrese" above), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 4 branches, root-to-capstone order — see "Schopnosti" above), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`, shared by both run-scoped `xp_for_next_level()` and META `meta_xp_for_next_level()`, see "Lobby a meta-progrese" above), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 5 branches, root-to-capstone order — see "Schopnosti" above and the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above for the newest `"mobility"` branch/`swift_steps`/`rapid_recharge`), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
 - `scenes/ui/hud.gd` — `END_SCREEN_RESTART_DELAY`, `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above)
-- `scenes/ui/lobby.gd` — `SKILL_NODE_WIDTH`/`HEIGHT`/`GAP` (skill tree node grid sizing, moved here from `hud.gd` — see "Lobby a meta-progrese" above), `SIDEBAR_SLOT_SIZE`/`SIDEBAR_SLOT_GAP`/`SIDEBAR_GRID_COLUMNS` (postranní panel's item-slot grid, see the 2026-09-30 STALE note in "Lobby a meta-progrese" above)
+- `scenes/ui/lobby.gd` — `SKILL_NODE_DIAMETER`/`SKILL_WEB_CENTER`/`SKILL_WEB_INNER_RADIUS`/`SKILL_WEB_RADIUS_STEP`/`TAG_COLORS` (skill tree web layout/coloring, see the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above), `SIDEBAR_SLOT_SIZE`/`SIDEBAR_SLOT_GAP`/`SIDEBAR_GRID_COLUMNS` (postranní panel's item-slot grid, see the 2026-09-30 STALE note in "Lobby a meta-progrese" above)

@@ -259,15 +259,15 @@ func get_crit_chance() -> float:
 	return base_crit_chance + GameManager.get_stat_bonus("crit_chance")
 
 
-## Na rozdíl od ostatních statů NEPROCHÁZÍ přes GameManager.get_stat_bonus() -
-## move_speed dodnes nemá žádný trvalý progression zdroj (schopnost/item), jen
-## tenhle jeden DOČASNÝ bonus ze speed_pickup.gd. Až/pokud přibude trvalý
-## zdroj rychlosti, patří sem stejný "base + GameManager.get_stat_bonus(...)"
-## vzorec jako u ostatních statů, s dočasným bonusem navíc.
+## Trvalý zdroj (dovednost "Hbité nohy", viz GameManager.ABILITIES'
+## swift_steps) se sčítá do základu stejně jako u ostatních statů; dočasný
+## bonus ze speed_pickup.gd zůstává NÁSOBNÝ NAVRCH toho součtu, beze změny
+## vlastního chování (přepisuje se, nestacká, viz apply_speed_buff()).
 func get_move_speed() -> float:
+	var base: float = move_speed + GameManager.get_stat_bonus("move_speed")
 	if _speed_buff_timer > 0.0:
-		return move_speed * (1.0 + _speed_buff_bonus_percent)
-	return move_speed
+		return base * (1.0 + _speed_buff_bonus_percent)
+	return base
 
 
 ## Volá speed_pickup.gd při sebrání - PŘEPÍŠE (neskládá) předchozí bonus i
@@ -378,15 +378,31 @@ func _try_dash() -> void:
 	var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var direction: Vector2 = input_dir.normalized() if input_dir != Vector2.ZERO else _last_move_direction
 	global_position = _resolve_obstacle_collisions(global_position + direction * dash_distance)
-	dash_cooldown_timer = dash_cooldown
+	dash_cooldown_timer = get_dash_cooldown()
+
+
+## Ochranná podlaha jako MIN_DAMAGE_RATIO u brnění (viz take_damage()) - i při
+## plné investici do dovednosti "Rychlé dobíjení" (rapid_recharge) nesmí
+## dash_cooldown klesnout pod rozumné minimum.
+const MIN_DASH_COOLDOWN: float = 1.5
+
+
+## dash_cooldown (export, "základní" hodnota) zmenšený o trvalou dovednostní
+## redukci (flat sekundy, ne %, viz GameManager.ABILITIES' rapid_recharge) -
+## stejný "base + GameManager.get_stat_bonus(...)" vzorec jako ostatní staty,
+## jen odečítá místo přičítá.
+func get_dash_cooldown() -> float:
+	return maxf(dash_cooldown - GameManager.get_stat_bonus("dash_cooldown_reduction"), MIN_DASH_COOLDOWN)
 
 
 ## 0.0 (právě použito) - 1.0 (plně dobito/připraveno) - HUD (DashCooldownBar)
 ## z toho přímo počítá plnění baru, stejná "roste s dobíjením" logika jako
 ## cooldown bary v jiných hrách (prázdný hned po použití, plný když je
-## schopnost připravená).
+## schopnost připravená). Dělí AKTUÁLNÍ (zredukovanou) dash_cooldown hodnotou,
+## ne surovým exportem - jinak by bar po investici do rapid_recharge ukazoval
+## špatný poměr (nikdy by nedošel na 100 %).
 func get_dash_cooldown_ratio() -> float:
-	return 1.0 - dash_cooldown_timer / dash_cooldown
+	return 1.0 - dash_cooldown_timer / get_dash_cooldown()
 
 
 ## Změří hráčův vlastní Polygon2D (±20 x ±30 dnes) a vrátí jeho poloviční

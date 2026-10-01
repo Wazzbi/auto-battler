@@ -22,12 +22,30 @@ extends Control
 ## dál plní (`_finish_run()`), jen se tu už nezobrazuje.
 
 const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
-## Rozměry jednoho uzlu stromu a mřížky - 4 sloupce (větve, viz
-## GameManager.SKILL_TREE_BRANCHES), max 3 řádky (nejdelší větev). Stejné
-## hodnoty jako dřív v hud.gd.
-const SKILL_NODE_WIDTH: float = 170.0
-const SKILL_NODE_HEIGHT: float = 150.0
-const SKILL_NODE_GAP: float = 10.0
+## Kompaktní kruhové uzly v "pavučině" (Path of Exile styl, 2026-10-01,
+## explicit user request) - nahrazuje dřívější 170×150 mřížkovou dlaždici s
+## natvrdo vypsaným popisem. SKILL_WEB_CENTER je střed NodesContaineru
+## (900×590, viz lobby.tscn) - paprsky z něj vedou k jednotlivým větvím,
+## viz _build_skill_tree_ui(). Nejdelší paprsek (3uzlová větev) dosáhne
+## SKILL_WEB_INNER_RADIUS + 2*SKILL_WEB_RADIUS_STEP = 240px od středu, což se
+## pohodlně vejde do 900×590 (limitující osa je výška: 590/2 - poloviční
+## průměr uzlu - rezerva ≈ 263 > 240).
+const SKILL_NODE_DIAMETER: float = 64.0
+const SKILL_WEB_CENTER: Vector2 = Vector2(450.0, 295.0)
+const SKILL_WEB_INNER_RADIUS: float = 90.0
+const SKILL_WEB_RADIUS_STEP: float = 75.0
+## Barva paprsku/uzlů podle tagu dané větve (všechny uzly jedné větve sdílí
+## stejný tag, viz GameManager.ABILITIES) - vizuálně "rozsvítí" investovanou
+## cestu, podobně jako PoE.
+const TAG_COLORS := {
+	"kinetic": Color(0.85, 0.45, 0.25),
+	"precision": Color(0.3, 0.55, 0.85),
+	"support": Color(0.35, 0.75, 0.45),
+	"explosive": Color(0.8, 0.3, 0.3),
+	"mobility": Color(0.35, 0.8, 0.75),
+}
+const SKILL_EDGE_COLOR_LOCKED := Color(0.3, 0.3, 0.34)
+const SKILL_NODE_COLOR_LOCKED := Color(0.16, 0.16, 0.19)
 ## Rozměr/mezera čtvercových miniaturních slotů pro aktivní/sklad itemy v
 ## postranním Sidebaru (viz "Lobby UI: postranní panel" v CLAUDE.md,
 ## 2026-09-30) - nahrazuje dřívější SHOP_MINI_SLOT_WIDTH/GAP (ty byly laděné
@@ -77,10 +95,16 @@ const SIDEBAR_GRID_COLUMNS: int = 3
 
 @onready var next_run_button: Button = $NextRunButton
 
-## Dictionary {ability_id: {"panel", "name_label", "rank_label", "desc_label",
-## "button"}} - postaveno jednou v _ready(), znovu použito při každém
-## _refresh_skill_tree_ui() (žádné přestavování stromu za běhu).
+## Dictionary {ability_id: {"panel", "name_label", "rank_label", "button"}} -
+## postaveno jednou v _ready(), znovu použito při každém
+## _refresh_skill_tree_ui() (žádné přestavování stromu za běhu). Žádný
+## "desc_label" - popis teď žije v button's tooltip_text (hover), ne jako
+## vždy-viditelný text.
 var _skill_node_widgets: Dictionary = {}
+## Dictionary {ability_id: Line2D} - spojnice od KAŽDÉHO non-root uzlu k jeho
+## prerekvizitě (viz GameManager.get_skill_prereq()), postaveno v
+## _build_skill_tree_ui(), barva se obnovuje v _refresh_skill_tree_ui().
+var _skill_edge_widgets: Dictionary = {}
 ## Stejný princip jako u dovednostního stromu - Dictionary {"panel", "label",
 ## "buttons": Array} na slot, postaveno jednou v _build_inventory_ui().
 var _active_slot_widgets: Array = []
@@ -217,34 +241,67 @@ func _refresh_statistics_tab() -> void:
 	reference.free()
 
 
-## Postaví jeden uzel na KAŽDOU schopnost ve GameManager.SKILL_TREE_BRANCHES,
-## v mřížce 4 sloupce (větve) x max 3 řádky (nejdelší větev). **Celá dlaždice
-## je sama o sobě `Button`** (2026-09-28, explicit user request - "ať v nich
-## nejsou tlačítka a jsou celé dlaždice klikatelné jako v panelu výběru
-## schopností") - stejný vzor jako `Card0..2` v `AbilityDraftPanel`
-## (`hud.tscn`/`hud.gd`'s `_show_ability_draft_panel()`): žádné samostatné
-## "Investovat" tlačítko uvnitř, klik kdekoliv na dlaždici rovnou investuje.
-## Popisky (Název/Stupeň/Popis) jsou potomci tlačítka, ne obráceně.
+## Postaví "pavučinu" (Path of Exile styl, 2026-10-01, explicit user request)
+## - KAŽDÁ větev GameManager.SKILL_TREE_BRANCHES je jeden paprsek vedoucí ze
+## společného SKILL_WEB_CENTER, kořen nejblíž středu, capstone nejdál. Úhel
+## paprsku = rovnoměrné rozdělení celého kruhu podle POČTU větví (funguje
+## automaticky pro libovolný počet, nic natvrdo). TŘI PRŮCHODY, ne jeden -
+## nejdřív spočítat VŠECHNY pozice, pak nakreslit VŠECHNY spojnice (Line2D),
+## teprve pak VŠECHNY kruhové uzly navrch - sourozenecké pořadí přidání v
+## Godotu určuje pořadí kreslení, takže spojnice musí být přidané dřív, ať
+## nepřekrývají kruhy.
+##
+## **Celý uzel je sama o sobě `Button`** (2026-09-28, explicit user request -
+## "ať v nich nejsou tlačítka a jsou celé dlaždice klikatelné") - stejný vzor
+## jako `Card0..2` v `AbilityDraftPanel`, žádné samostatné "Investovat"
+## tlačítko uvnitř. **Popis je teď na hover (tooltip_text), ne vždy-viditelný
+## text** (2026-10-01, explicit user request "efekt zobrazovat na hover") -
+## viditelně zůstává jen zkrácený název (short_name) a "N/M" stupeň, aby byl
+## uzel kompaktní.
 func _build_skill_tree_ui() -> void:
-	for col in GameManager.SKILL_TREE_BRANCHES.size():
+	var branch_count: int = GameManager.SKILL_TREE_BRANCHES.size()
+	var node_positions: Dictionary = {}
+
+	for col in branch_count:
 		var branch: Array = GameManager.SKILL_TREE_BRANCHES[col]
+		var angle: float = -PI / 2.0 + col * (TAU / branch_count)
 		for row in branch.size():
 			var ability_id: String = branch[row]
+			node_positions[ability_id] = SKILL_WEB_CENTER + Vector2.RIGHT.rotated(angle) * (
+				SKILL_WEB_INNER_RADIUS + row * SKILL_WEB_RADIUS_STEP
+			)
+
+	for col in branch_count:
+		var branch: Array = GameManager.SKILL_TREE_BRANCHES[col]
+		for row in range(1, branch.size()):
+			var ability_id: String = branch[row]
+			var prereq_id: String = branch[row - 1]
+
+			var line := Line2D.new()
+			line.name = "Edge_%s" % ability_id
+			line.width = 3.0
+			line.default_color = SKILL_EDGE_COLOR_LOCKED
+			line.points = PackedVector2Array([node_positions[prereq_id], node_positions[ability_id]])
+			nodes_container.add_child(line)
+			_skill_edge_widgets[ability_id] = line
+
+	for branch in GameManager.SKILL_TREE_BRANCHES:
+		for ability_id in branch:
+			var node_pos: Vector2 = node_positions[ability_id]
 
 			var tile := Button.new()
 			tile.name = "SkillNode_%s" % ability_id
-			tile.position = Vector2(
-				col * (SKILL_NODE_WIDTH + SKILL_NODE_GAP), row * (SKILL_NODE_HEIGHT + SKILL_NODE_GAP)
-			)
-			tile.size = Vector2(SKILL_NODE_WIDTH, SKILL_NODE_HEIGHT)
+			tile.position = node_pos - Vector2(SKILL_NODE_DIAMETER, SKILL_NODE_DIAMETER) / 2.0
+			tile.size = Vector2(SKILL_NODE_DIAMETER, SKILL_NODE_DIAMETER)
+			tile.clip_text = true
 			tile.pressed.connect(_on_skill_node_pressed.bind(ability_id))
 			nodes_container.add_child(tile)
 
 			var name_label := Label.new()
 			name_label.name = "NameLabel"
-			name_label.position = Vector2(6.0, 4.0)
-			name_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 34.0)
-			name_label.add_theme_font_size_override("font_size", 13)
+			name_label.position = Vector2(2.0, 8.0)
+			name_label.size = Vector2(SKILL_NODE_DIAMETER - 4.0, 24.0)
+			name_label.add_theme_font_size_override("font_size", 9)
 			name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -252,26 +309,15 @@ func _build_skill_tree_ui() -> void:
 
 			var rank_label := Label.new()
 			rank_label.name = "RankLabel"
-			rank_label.position = Vector2(6.0, 38.0)
-			rank_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 16.0)
-			rank_label.add_theme_font_size_override("font_size", 11)
+			rank_label.position = Vector2(2.0, 36.0)
+			rank_label.size = Vector2(SKILL_NODE_DIAMETER - 4.0, 16.0)
+			rank_label.add_theme_font_size_override("font_size", 9)
 			rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			rank_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			tile.add_child(rank_label)
 
-			var desc_label := Label.new()
-			desc_label.name = "DescLabel"
-			desc_label.position = Vector2(6.0, 56.0)
-			desc_label.size = Vector2(SKILL_NODE_WIDTH - 12.0, 88.0)
-			desc_label.add_theme_font_size_override("font_size", 10)
-			desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			tile.add_child(desc_label)
-
 			_skill_node_widgets[ability_id] = {
-				"panel": tile, "name_label": name_label, "rank_label": rank_label,
-				"desc_label": desc_label, "button": tile,
+				"panel": tile, "button": tile, "name_label": name_label, "rank_label": rank_label,
 			}
 
 	_refresh_skill_tree_ui()
@@ -281,9 +327,36 @@ func _on_skill_node_pressed(ability_id: String) -> void:
 	GameManager.invest_skill_point(ability_id)
 
 
-## Překreslí zbývající body a všechny uzly - volá se při stavbě a při každé
-## změně bodů/ranků (na rozdíl od dřívějšího hud.gd, tahle scéna je vždycky
-## vidět, dokud je aktivní, takže žádný ".visible" guard není potřeba).
+## Jeden kruhový StyleBoxFlat (corner_radius = poloviční průměr uzlu = plně
+## kulatý) - vytváří se znovu při každém refreshi (barva se mění podle stavu
+## uzlu), ne jednou při stavbě.
+func _make_circle_stylebox(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	var radius: int = int(SKILL_NODE_DIAMETER / 2.0)
+	style.corner_radius_top_left = radius
+	style.corner_radius_top_right = radius
+	style.corner_radius_bottom_left = radius
+	style.corner_radius_bottom_right = radius
+	return style
+
+
+func _apply_skill_node_style(button: Button, color: Color) -> void:
+	var normal: StyleBoxFlat = _make_circle_stylebox(color)
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", _make_circle_stylebox(color.lightened(0.2)))
+	button.add_theme_stylebox_override("pressed", _make_circle_stylebox(color.darkened(0.2)))
+	button.add_theme_stylebox_override("disabled", normal)
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+
+## Překreslí zbývající body a všechny uzly/spojnice - volá se při stavbě a
+## při každé změně bodů/ranků (na rozdíl od dřívějšího hud.gd, tahle scéna je
+## vždycky vidět, dokud je aktivní, takže žádný ".visible" guard není
+## potřeba). Barva uzlu/spojnice vychází z TAG_COLORS té větve (všechny uzly
+## jedné větve sdílí stejný tag) - zamčeno = tmavě šedá, odemčeno-stupeň 0 =
+## ztlumená barva tagu, stupeň ≥ 1 = plná barva tagu (investovaná cesta
+## "svítí", podobně jako PoE).
 func _refresh_skill_tree_ui() -> void:
 	for ability_id in _skill_node_widgets:
 		var widget: Dictionary = _skill_node_widgets[ability_id]
@@ -291,25 +364,32 @@ func _refresh_skill_tree_ui() -> void:
 		var rank: int = GameManager.get_skill_rank(ability_id)
 		var max_rank: int = GameManager.get_skill_max_rank(ability_id)
 		var unlocked: bool = GameManager.is_skill_node_unlocked(ability_id)
+		var tags: Array = definition.get("tags", [])
+		var tag_color: Color = TAG_COLORS.get(tags[0], Color(0.4, 0.4, 0.46)) if not tags.is_empty() else Color(0.4, 0.4, 0.46)
 
-		widget["name_label"].text = definition["name"]
+		widget["name_label"].text = definition["short_name"]
 
 		if not unlocked:
-			widget["panel"].modulate = LOCKED_ITEM_MODULATE
+			_apply_skill_node_style(widget["button"], SKILL_NODE_COLOR_LOCKED)
 			widget["rank_label"].text = "Zamčeno"
-			widget["desc_label"].text = ""
 			widget["button"].disabled = true
-			continue
+			widget["button"].tooltip_text = "%s\nZamčeno" % definition["name"]
+		else:
+			_apply_skill_node_style(widget["button"], tag_color if rank > 0 else tag_color.darkened(0.55))
+			widget["rank_label"].text = "%d/%d" % [rank, max_rank]
+			# Dlaždice sama nese žádný stavový text ("Investovat"/"Max") -
+			# stejně jako AbilityDraftPanel's karty, disabled stav (ztlumené
+			# tlačítko) spolu s "N/M" (kde N==M už samo říká "Max") stačí.
+			widget["button"].disabled = rank >= max_rank or not GameManager.can_invest_skill_point(ability_id)
+			# Na stupni 0 (odemčeno, ale zatím neinvestováno) rovnou ukážeme
+			# efekt PRVNÍHO stupně místo prázdného textu, stejně jako dřív.
+			widget["button"].tooltip_text = "%s (Stupeň %d/%d)\n%s" % [
+				definition["name"], rank, max_rank,
+				GameManager.get_skill_node_desc(ability_id, max(rank, 1)),
+			]
 
-		widget["panel"].modulate = Color.WHITE
-		widget["rank_label"].text = "Stupeň %d/%d" % [rank, max_rank]
-		# Na stupni 0 (odemčeno, ale zatím neinvestováno) rovnou ukážeme
-		# efekt PRVNÍHO stupně místo prázdného textu, stejně jako dřív v HUD.
-		widget["desc_label"].text = GameManager.get_skill_node_desc(ability_id, max(rank, 1))
-		# Dlaždice sama nese žádný stavový text ("Investovat"/"Max") - stejně
-		# jako AbilityDraftPanel's karty, disabled stav (ztlumené tlačítko)
-		# spolu s "Stupeň N/M" (kde N==M už samo říká "Max") stačí.
-		widget["button"].disabled = rank >= max_rank or not GameManager.can_invest_skill_point(ability_id)
+		if _skill_edge_widgets.has(ability_id):
+			_skill_edge_widgets[ability_id].default_color = tag_color if rank > 0 else SKILL_EDGE_COLOR_LOCKED
 
 
 ## Napojí každou kartu na její SLOT INDEX v GameManager.shop_offer. **Celá
