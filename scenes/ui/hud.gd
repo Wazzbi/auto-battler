@@ -590,10 +590,19 @@ func _on_shop_offer_changed(_offer_ids: Array) -> void:
 ## obtížnost" v CLAUDE.md). ShopPanel od 2026-09-27 slouží VÝHRADNĚ k
 ## nákupu - správa vlastněných itemů (aktivovat/uskladnit/prodat) žije v
 ## CharacterPanel/InventoryTabContent, viz _refresh_inventory_ui() níže.
+##
+## SCHOVÁNO (2026-10-01, explicit user request - hra byla momentálně příliš
+## komplikovaná, obchod skryt, ne smazán, viz "Obchod - dočasně skryto" v
+## CLAUDE.md): tělo je teď zakomentované, takže se ShopPanel v běhu nikdy
+## sám neotevře. GameManager's SHOP_OPEN_INTERVAL_SECONDS časovač/signál pod
+## tím běží beze změny (shop_available se pořád nastaví na true, nabídka se
+## pořád generuje) - jen HUD na signál přestal reagovat. Odkomentovat tělo
+## je jediné, co je potřeba udělat, aby se obchod zase vrátil.
 func _on_shop_auto_open_requested() -> void:
-	_refresh_shop_panel()
-	shop_panel.show()
-	get_tree().paused = true
+	pass
+	# _refresh_shop_panel()
+	# shop_panel.show()
+	# get_tree().paused = true
 
 
 func _on_shop_reroll_pressed() -> void:

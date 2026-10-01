@@ -39,6 +39,7 @@ theme_override_font_sizes/font_size = 16
 text = "Dovednosti"
 
 [node name="ObchodTabButton" type="Button" parent="."]
+visible = false
 layout_mode = 0
 offset_left = 670.0
 offset_top = 16.0
@@ -315,6 +316,7 @@ theme_override_font_sizes/font_size = 14
 text = "Přehodit (20)"
 
 [node name="Sidebar" type="Control" parent="."]
+visible = false
 layout_mode = 0
 offset_left = 960.0
 offset_top = 80.0

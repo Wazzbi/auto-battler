@@ -823,6 +823,41 @@ odhad 180s/3min), obojí vede do lobby.
   rozložení `Sidebar`u samotné pořád NEodzkoušené okem (jen výpočtem) - hlavně jestli se text uvnitř
   88px čtvercových slotů/tlačítek nepřekrývá při delších názvech itemů.
 
+**Obchod - dočasně skryto (2026-10-01, explicit user request)** - uživatel se dostal do bodu, kdy
+mu hra přišla moc komplikovaná na to, aby ji zvládal posouvat dopředu správně ("možná protože jsem
+nemocný") a požádal o zjednodušení: schovat Obchod tab v lobby, schovat postranní panel s itemy
+(viz "Sidebar" výše) na tabu Dovednosti, a schovat automatické otevírání obchodu v běhu.
+**Výslovně POUZE schováno, NE smazáno** - cílem je snadná cesta zpátky (nebo pozdější definitivní
+smazání), ne redesign. Tři konkrétní skryté věci:
+
+- **`lobby.tscn`'s `ObchodTabButton`** má teď `visible = false`. Nic jiného v `lobby.gd` se
+  NEMĚNILO - `_setup_shop_cards()`/`_ensure_shop_offer()`/`_refresh_shop_tab()` atd. běží dál beze
+  změny na pozadí (generují nabídku, reagují na signály), jen se k nim hráč nemůže v UI dostat,
+  protože tlačítko, které by přepnulo na `ShopTabContent`, není vidět. `DovednostiTabButton` zůstal
+  viditelný a funkční - je teď fakticky jediný tab, který jde zobrazit.
+- **`lobby.tscn`'s `Sidebar`** (Aktivní itemy/Inventář/Statistiky, viz "Lobby a meta-progrese" výše)
+  má teď taky `visible = false`. Byl navržený jako vždy-viditelný na OBOU tabech (viz 2026-09-30
+  STALE bod výše) - skrytím kořenového uzlu zmizí z obou, i když by se Obchod tab sám znovu odkryl.
+  `lobby.gd`'s kód (`_build_inventory_ui()`, `_refresh_inventory_ui()`, `_refresh_statistics_tab()`,
+  `_set_sidebar_tab()`) běží dál beze změny, jen aktualizuje teď neviditelné uzly.
+- **`hud.gd`'s `_on_shop_auto_open_requested()`** (volaná z `GameManager.shop_auto_open_requested`
+  signálu, viz "Shop opens periodically..." níže) má teď zakomentované tělo (`pass` + zakomentovaný
+  zbytek, ne smazaný kód) - `ShopPanel` se tak v běhu už nikdy sám neotevře.
+  `GameManager`'s `SHOP_OPEN_INTERVAL_SECONDS` časovač pod tím běží dál beze změny (`shop_available`
+  se pořád nastaví na `true`, nabídka se pořád generuje a mění) - jen HUD na signál přestal reagovat.
+- **Žádné změny v `game_manager.gd`** - `shop_offer`/`buy_shop_item()`/`active_shop_items`/
+  `SHOP_OPEN_INTERVAL_SECONDS`/vše kolem obchodu zůstává plně funkční na backendu, jen bez
+  jakéhokoliv UI vstupního bodu. Pokud hráč měl před touhle změnou aktivní itemy, jejich staty se
+  dál počítají (`get_stat_bonus()` čte `active_shop_items` beze změny) - skrytí UI neodebírá
+  rozehrané výhody, jen brání dalšímu nakupování/úpravě.
+- **Jak se vrátit zpátky**: smazat `visible = false` u `ObchodTabButton`/`Sidebar` v `lobby.tscn`,
+  a odkomentovat tělo `_on_shop_auto_open_requested()` v `hud.gd` - žádné jiné soubory nejsou
+  dotčené, takže návrat je tříbodová, mechanická změna. **Verified with a headless test**: čerstvá
+  `lobby.tscn` instance potvrdila `ObchodTabButton`/`Sidebar` skryté a `DovednostiTabButton`/strom
+  dovedností pořád viditelné; real `main.tscn` potvrdil, že ruční `emit()` na
+  `GameManager.shop_auto_open_requested` (simulace toho, co by časovač udělal) `ShopPanel` neotevře
+  ani hru nepauzne.
+
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
 alive and `PLAYING` — not just after a loop transition, and not paused by combat. Routed through
