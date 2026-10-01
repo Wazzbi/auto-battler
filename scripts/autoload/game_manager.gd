@@ -211,6 +211,8 @@ const STAT_DISPLAY_NAMES := {
 	"hp_regen": "regenerace HP/s",
 	"armor": "brnění",
 	"crit_chance": "šance na kritický zásah",
+	"move_speed": "rychlost pohybu",
+	"dash_cooldown_reduction": "zkrácení dobíjení poskoku (s)",
 }
 ## "crit_chance" je JEDINÝ stat uložený jako podíl (0.08 = 8 %), všechny
 ## ostatní jsou absolutní čísla - proto dostává v _format_stat_line() vlastní
@@ -228,6 +230,7 @@ const TAG_DISPLAY_NAMES := {
 	"precision": "Přesná",
 	"explosive": "Explozivní",
 	"support": "Podpůrná",
+	"mobility": "Mobilita",
 }
 ## Pořadí itemů v obchodě - 7 itemů na jen SHOP_ACTIVE_SLOTS aktivních slotů,
 ## takže hráč nutně jeden vynechá (nebo ho odloží do skladu) - záměrný
@@ -413,23 +416,39 @@ const ABILITIES := {
 		"effect_params": {"damage": 30.0},
 		"tags": ["explosive"], "max_rank": 5,
 	},
+	## Kořen Mobility větve (max_rank 3, viz SKILL_TREE_BRANCHES) - trvalý
+	## protějšek speed_pickup.gd's DOČASNÉHO +15% bonusu (viz "Sebratelné
+	## předměty" v CLAUDE.md), zapojený přes player.gd's get_move_speed().
+	"swift_steps": {
+		"name": "Hbité nohy", "short_name": "Nohy", "type": "passive",
+		"stat": "move_speed", "value": 6.0, "tags": ["mobility"], "max_rank": 3,
+	},
+	## Capstone Mobility větve (max_rank 5) - flat redukce player.gd's
+	## dash_cooldown (viz get_dash_cooldown()), ne % jako u ostatních statů -
+	## stejná "flat, ne % " filozofie jako base_armor kvůli MIN_DASH_COOLDOWN
+	## podlaze (viz player.gd).
+	"rapid_recharge": {
+		"name": "Rychlé dobíjení", "short_name": "Dobíjení", "type": "passive",
+		"stat": "dash_cooldown_reduction", "value": 0.5, "tags": ["mobility"], "max_rank": 5,
+	},
 }
 ## Pořadí schopností v HUD - stejný účel jako SHOP_ITEM_ORDER.
 const ABILITY_ORDER: Array[String] = [
 	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating",
 	"nanite_repair", "kinetic_dampers", "overclock_matrix", "precision_targeting",
-	"double_tap", "orbital_bombardment",
+	"double_tap", "orbital_bombardment", "swift_steps", "rapid_recharge",
 ]
-## 4 větve DOVEDNOSTNÍHO stromu (podle tagu), každá OD KOŘENE PO CAPSTONE -
-## viz get_skill_prereq()/is_skill_node_unlocked(). Explozivní větev je
-## záměrně kratší (jen 2 uzly, oba existující aktivní schopnosti) - strom
-## nevyžaduje stejnou délku všude, jen konzistentní "kořen → ... → capstone"
-## tvar. Netýká se schopností (náhodné nabídky) níže - ta žádný strom nemá.
+## 5 větví DOVEDNOSTNÍHO stromu (podle tagu), každá OD KOŘENE PO CAPSTONE -
+## viz get_skill_prereq()/is_skill_node_unlocked(). Explozivní a Mobilita
+## jsou záměrně kratší (jen 2 uzly) - strom nevyžaduje stejnou délku všude,
+## jen konzistentní "kořen → ... → capstone" tvar. Netýká se schopností
+## (náhodné nabídky) níže - ta žádný strom nemá.
 const SKILL_TREE_BRANCHES: Array[Array] = [
 	["power_core", "split_rounds", "overclock_matrix"],
 	["rapid_coils", "long_barrel", "precision_targeting"],
 	["reinforced_plating", "nanite_repair", "kinetic_dampers"],
 	["double_tap", "orbital_bombardment"],
+	["swift_steps", "rapid_recharge"],
 ]
 
 ## --- Schopnosti (náhodná nabídka) -----------------------------------------
