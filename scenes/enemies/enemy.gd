@@ -141,6 +141,14 @@ func _shoot_projectile() -> void:
 	projectile.setup(contact_damage, player_ref)
 
 
+## Veřejný přístup k _is_dead pro jiné skripty (projectile.gd potřebuje
+## zjistit, jestli jeho zásah právě zabil tohoto nepřítele, pro trigger
+## "on_kill" - viz player.gd's register_projectile_kill()) - čistší než
+## sahat na podtržítkovou proměnnou přímo zvenčí.
+func is_dead() -> bool:
+	return _is_dead
+
+
 func take_damage(amount: float) -> void:
 	if _is_dead:
 		return

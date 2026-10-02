@@ -431,24 +431,101 @@ const ABILITIES := {
 		"name": "Rychlé dobíjení", "short_name": "Dobíjení", "type": "passive",
 		"stat": "dash_cooldown_reduction", "value": 0.5, "tags": ["mobility"], "max_rank": 5,
 	},
+	## --- 5 nových AKTIVNÍCH schopností se skutečným herním efektem --------
+	## Přidáno 2026-10-02, explicit user request: nabídka SCHOPNOSTÍ (náhodná
+	## nabídka po level-upu) a dovednostní strom dřív sdílely stejný katalog,
+	## ze kterého měly reálný HERNÍ EFEKT jen double_tap/orbital_bombardment -
+	## zbytek byly čisté statové přírůstky, takže run-scoped nabídka
+	## nabízela "jen další číslo" tam, kde měla nabízet rozhodnutí. Těchto 5
+	## je nově VLOŽENO jako PROSTŘEDNÍ uzel do každé z 5 větví (mezi kořen/
+	## druhý uzel a existující capstone) - existující capstony (max_rank 5)
+	## se tím NEMĚNÍ, žádný rebalance. Od téhle chvíle navíc platí: jen
+	## "type": "active" položky se nabízí v náhodné draft nabídce (viz
+	## _active_ability_ids() níže) - čistě statové dovednosti jsou odteď
+	## dostupné VÝHRADNĚ investicí v lobby.
+	##
+	## Trigger "always" (Rikošet/Průbojné střely) - žádné nabíjení, jen
+	## čtení aktuální "síly" při výstřelu (viz get_always_active_magnitude()
+	## níže) - player.gd ji čte přímo v _shoot() a předává do
+	## projectile.gd's setup().
+	"ricochet_shot": {
+		"name": "Rikošet", "short_name": "Rikošet", "type": "active",
+		"trigger": "always",
+		"trigger_values": [1, 2, 3, 4],
+		"skill_trigger_values": [1, 2, 3],
+		"effect": "ricochet", "effect_params": {},
+		"tags": ["kinetic"], "max_rank": 3,
+	},
+	"piercing_rounds": {
+		"name": "Průbojné střely", "short_name": "Průraz", "type": "active",
+		"trigger": "always",
+		"trigger_values": [1, 2, 3, 4],
+		"skill_trigger_values": [1, 2, 3],
+		"effect": "pierce_through", "effect_params": {},
+		"tags": ["precision"], "max_rank": 3,
+	},
+	## Trigger "damage_taken" (Podpůrný štít) - cooldown-gated proc, NE
+	## nahromadění k prahu jako ostatní aktivní schopnosti. Aktivuje se AŽ
+	## PO prvním zásahu (ten zásah normálně projde, štít blokuje až
+	## NÁSLEDUJÍCÍ) - explicit user request. "effect_params.cooldown" je
+	## FIXNÍ (60s, dle uživatelova zadání "cooldown třeba 1 minutu") - rank/
+	## rarita škáluje DOBU TRVÁNÍ štítu (trigger_values/skill_trigger_values),
+	## ne frekvenci, protože frekvence (cooldown) je tu záměrně konstantní.
+	"support_shield": {
+		"name": "Podpůrný štít", "short_name": "Štít", "type": "active",
+		"trigger": "damage_taken",
+		"trigger_values": [1.0, 1.5, 2.0, 2.5],
+		"skill_trigger_values": [1.0, 1.5, 2.0],
+		"effect": "damage_shield", "effect_params": {"cooldown": 60.0},
+		"tags": ["support"], "max_rank": 3,
+	},
+	## Trigger "on_kill" (Řetězová detonace) - instant proc s pravděpodobností
+	## (trigger_values/skill_trigger_values = šance 0.0-1.0), spouští se jen
+	## na zabití přímým zásahem HRÁČOVA PROJEKTILU (ne na aoe_strike/debug
+	## kill) - viz projectile.gd's _resolve_hit()/player.gd's
+	## register_projectile_kill(), scope limit proti nekontrolovatelné
+	## kaskádě.
+	"chain_detonation": {
+		"name": "Řetězová detonace", "short_name": "Řetězec", "type": "active",
+		"trigger": "on_kill",
+		"trigger_values": [0.2, 0.35, 0.5, 0.65],
+		"skill_trigger_values": [0.2, 0.35, 0.5],
+		"effect": "chain_explosion", "effect_params": {"damage": 15.0, "radius": 110.0},
+		"tags": ["explosive"], "max_rank": 3,
+	},
+	## Trigger "on_dash" (Nárazový poskok) - deterministický proc vázaný na
+	## úspěšný _try_dash(), žádná vlastní frekvence (ta je už daná
+	## dash_cooldown) - VÝJIMEČNĚ proto trigger_values/skill_trigger_values
+	## škálují přímo POŠKOZENÍ, ne frekvenci jako ostatní aktivní schopnosti.
+	"impact_dash": {
+		"name": "Nárazový poskok", "short_name": "Náraz", "type": "active",
+		"trigger": "on_dash",
+		"trigger_values": [12.0, 20.0, 30.0, 45.0],
+		"skill_trigger_values": [12.0, 20.0, 30.0],
+		"effect": "dash_impact", "effect_params": {"radius": 90.0},
+		"tags": ["mobility"], "max_rank": 3,
+	},
 }
 ## Pořadí schopností v HUD - stejný účel jako SHOP_ITEM_ORDER.
 const ABILITY_ORDER: Array[String] = [
 	"power_core", "rapid_coils", "long_barrel", "split_rounds", "reinforced_plating",
 	"nanite_repair", "kinetic_dampers", "overclock_matrix", "precision_targeting",
-	"double_tap", "orbital_bombardment", "swift_steps", "rapid_recharge",
+	"double_tap", "chain_detonation", "orbital_bombardment", "swift_steps", "impact_dash",
+	"rapid_recharge", "ricochet_shot", "piercing_rounds", "support_shield",
 ]
 ## 5 větví DOVEDNOSTNÍHO stromu (podle tagu), každá OD KOŘENE PO CAPSTONE -
-## viz get_skill_prereq()/is_skill_node_unlocked(). Explozivní a Mobilita
-## jsou záměrně kratší (jen 2 uzly) - strom nevyžaduje stejnou délku všude,
-## jen konzistentní "kořen → ... → capstone" tvar. Netýká se schopností
-## (náhodné nabídky) níže - ta žádný strom nemá.
+## viz get_skill_prereq()/is_skill_node_unlocked(). Každá větev má od
+## 2026-10-02 přesně JEDEN vložený AKTIVNÍ uzel navíc (mezi kořen/druhý uzel
+## a existující capstone, viz komentář u ABILITIES výše) - Explozivní a
+## Mobilita tak rostou ze 2 na 3 uzly, ostatní tři ze 3 na 4. Strom
+## nevyžaduje stejnou délku všude, jen konzistentní "kořen → ... → capstone"
+## tvar. Netýká se schopností (náhodné nabídky) níže - ta žádný strom nemá.
 const SKILL_TREE_BRANCHES: Array[Array] = [
-	["power_core", "split_rounds", "overclock_matrix"],
-	["rapid_coils", "long_barrel", "precision_targeting"],
-	["reinforced_plating", "nanite_repair", "kinetic_dampers"],
-	["double_tap", "orbital_bombardment"],
-	["swift_steps", "rapid_recharge"],
+	["power_core", "split_rounds", "ricochet_shot", "overclock_matrix"],
+	["rapid_coils", "long_barrel", "piercing_rounds", "precision_targeting"],
+	["reinforced_plating", "nanite_repair", "support_shield", "kinetic_dampers"],
+	["double_tap", "chain_detonation", "orbital_bombardment"],
+	["swift_steps", "impact_dash", "rapid_recharge"],
 ]
 
 ## --- Schopnosti (náhodná nabídka) -----------------------------------------
@@ -457,12 +534,14 @@ const SKILL_TREE_BRANCHES: Array[Array] = [
 ## náhodná nabídka `ABILITY_CHOICE_COUNT` (3) karet s rarity+merge mechanikou
 ## sdílenou s obchodem (`ShopRarity` enum/`SHOP_RARITY_NAMES`), nad STEJNÝM
 ## `ABILITIES` katalogem jako dovednostní strom výše - hráč tak může mít
-## třeba "Jádro síly" na dovednostním stupni 2/3 A ZÁROVEŇ vlastnit 1
-## nezávislou Stříbrnou kopii z náhodné nabídky, obojí se sčítá do
-## `get_stat_bonus()`. Spouštěč: po dopadové animaci (jako vždy) a po sebrání
-## kosočtverce, který dropne na dalším prahu zabití (viz "Schopnosti na
-## základě zabití" níže) - NE po level-upu, to je jen dovednostní strom
-## (viz výše).
+## třeba "Dvojitý zásah" na dovednostním stupni 2/3 A ZÁROVEŇ vlastnit 1
+## nezávislou Stříbrnou kopii z náhodné nabídky, obojí se sčítá/spouští
+## nezávisle. **Od 2026-10-02 nabídka draftuje VÝHRADNĚ "type": "active"
+## položky** (viz `_active_ability_ids()` níže) - čistě statové "passive"
+## schopnosti (jako "Jádro síly") se teď dají získat JEN investicí v lobby,
+## ne touhle náhodnou nabídkou (explicit user request - run-scoped nabídka
+## má vždycky znamenat skutečný herní efekt, ne další statové číslo).
+## Spouštěč: po KAŽDÉM run-scoped level-upu (`_level_up()` výše).
 const ABILITY_CHOICE_COUNT: int = 3
 ## Kolik stejných kopií stejné rarity stačí na sloučení do vyšší rarity - míň
 ## než obchodních 3 (viz SHOP_RARITY_* sekce), protože schopnosti se nabízí
@@ -828,8 +907,23 @@ func _level_up() -> void:
 ## `owned_abilities`/rarita a `skill_ranks`/rank jsou dva oddělené stavy
 ## (viz "Schopnosti - DVA SOUBĚŽNÉ..." výše), takže investovaný dovednostní
 ## stupeň nijak neovlivňuje, na jaké raritě se tahle nabídka nabídne.
+## Jen AKTIVNÍ schopnosti (type "active") se nabízí přes náhodnou draft
+## nabídku - čistě statové (pasivní) schopnosti jsou od 2026-10-02
+## VÝHRADNĚ v dovednostním stromu (lobby), aby run-scoped nabídka vždycky
+## znamenala skutečný herní efekt, ne další statové číslo (explicit user
+## request). Filtrováno podle "type" přímo z ABILITIES (ne ruční druhý
+## seznam), ať nejde časem rozejít s daty - stejný princip jako get_skill_prereq()
+## odvozující prerekvizitu z pozice ve SKILL_TREE_BRANCHES místo vlastního pole.
+func _active_ability_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for ability_id in ABILITY_ORDER:
+		if ABILITIES[ability_id]["type"] == "active":
+			ids.append(ability_id)
+	return ids
+
+
 func _roll_ability_options() -> Array[Dictionary]:
-	var pool: Array[String] = ABILITY_ORDER.duplicate()
+	var pool: Array[String] = _active_ability_ids()
 
 	var upgradeable_pool: Array[String] = []
 	for ability_id in pool:
@@ -1049,29 +1143,14 @@ func get_skill_node_value_text(ability_id: String, rank: int) -> String:
 		var value: float = float(definition["value"]) * float(rank)
 		return _format_stat_line(definition["stat"], value)
 
-	var params: Dictionary = definition["effect_params"]
-	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
-		var interval: int = definition["skill_trigger_values"][rank - 1]
-		var mult: float = float(params["multiplier"])
-		return "Každý %d. výstřel: %sx poškození" % [interval, _format_stat_number(mult)]
-
-	if definition["trigger"] == "time_elapsed" and definition["effect"] == "aoe_strike":
-		var charge: float = float(definition["skill_trigger_values"][rank - 1])
-		var damage: float = float(params["damage"])
-		return "Nabíjí %s s, pak %s poškození všem nepřátelům" % [
-			_format_stat_number(charge), _format_stat_number(damage)
-		]
-
-	return definition["name"]
+	return _format_active_ability_value(definition, definition["skill_trigger_values"][rank - 1])
 
 
 ## Popis dovednosti na daném stupni. Pasivní schopnosti mají obecný cyklus
-## (jako get_shop_item_desc()), aktivní jsou zatím natvrdo podle dvou
-## existujících trigger/effect párů - až přibude třetí, přejde i tahle větev
-## na obecnější dispatch podle definition["trigger"]/["effect"]. Každá větev
-## připojí na konec vlastní tag(y) (viz "Tag synergie" v CLAUDE.md) - i
-## nesynergické schopnosti tag ukazují, ať si hráč může předem plánovat, co
-## by k nim v budoucnu pasovalo.
+## (jako get_shop_item_desc()), aktivní jdou přes sdílený
+## _format_active_ability_value() (viz níže). Každá větev připojí na konec
+## vlastní tag(y) (viz "Tag synergie" v CLAUDE.md) - i nesynergické schopnosti
+## tag ukazují, ať si hráč může předem plánovat, co by k nim v budoucnu pasovalo.
 func get_skill_node_desc(ability_id: String, rank: int) -> String:
 	var definition: Dictionary = ABILITIES[ability_id]
 	var tag_suffix: String = _format_tag_suffix(definition.get("tags", []))
@@ -1097,20 +1176,69 @@ func get_ability_value_text(ability_id: String, rarity: int) -> String:
 		var value: float = float(definition["value"]) * PASSIVE_EFFECT_MULTIPLIERS[rarity]
 		return _format_stat_line(definition["stat"], value)
 
-	var params: Dictionary = definition["effect_params"]
-	if definition["trigger"] == "shot_count" and definition["effect"] == "damage_multiplier":
-		var interval: int = definition["trigger_values"][rarity]
-		var mult: float = float(params["multiplier"])
-		return "Každý %d. výstřel: %sx poškození" % [interval, _format_stat_number(mult)]
+	return _format_active_ability_value(definition, definition["trigger_values"][rarity])
 
-	if definition["trigger"] == "time_elapsed" and definition["effect"] == "aoe_strike":
-		var charge: float = float(definition["trigger_values"][rarity])
-		var damage: float = float(params["damage"])
+
+## Sdílený formátovač HODNOTY aktivní schopnosti - společný pro dovednostní
+## strom (rank-indexované skill_trigger_values, volající už vybral
+## SPRÁVNOU jednotlivou hodnotu z pole) i náhodnou nabídku (rarity-indexované
+## trigger_values). Zavedeno 2026-10-02 společně se 4 novými trigger/effect
+## páry (always/pierce_through, always/ricochet, damage_taken/damage_shield,
+## on_kill/chain_explosion, on_dash/dash_impact) - do té doby měly
+## get_skill_node_value_text()/get_ability_value_text() DUPLICITNÍ if-řetězec
+## jen pro 2 existující páry, s komentářem přímo v kódu, že "až přibude
+## třetí, přejde na obecnější dispatch" - s 5 novými páry najednou duplicita
+## už nedávala smysl.
+func _format_active_ability_value(definition: Dictionary, value) -> String:
+	var trigger: String = definition["trigger"]
+	var effect: String = definition["effect"]
+	var params: Dictionary = definition.get("effect_params", {})
+
+	if trigger == "shot_count" and effect == "damage_multiplier":
+		return "Každý %d. výstřel: %sx poškození" % [int(value), _format_stat_number(float(params["multiplier"]))]
+
+	if trigger == "time_elapsed" and effect == "aoe_strike":
 		return "Nabíjí %s s, pak %s poškození všem nepřátelům" % [
-			_format_stat_number(charge), _format_stat_number(damage)
+			_format_stat_number(float(value)), _format_stat_number(float(params["damage"]))
 		]
 
+	if trigger == "always" and effect == "pierce_through":
+		return "Projektily navíc prolétnou skrz %d nepřátel" % int(value)
+
+	if trigger == "always" and effect == "ricochet":
+		return "Zásah se odrazí na %d dalších nepřátel" % int(value)
+
+	if trigger == "damage_taken" and effect == "damage_shield":
+		return "Po prvním zásahu aktivuje %s s neprůstřelnost (cooldown %s s)" % [
+			_format_stat_number(float(value)), _format_stat_number(float(params["cooldown"]))
+		]
+
+	if trigger == "on_kill" and effect == "chain_explosion":
+		return "%s %% šance, že zabití nepřítele vybouchne za %s poškození okolí" % [
+			_format_stat_number(float(value) * 100.0), _format_stat_number(float(params["damage"]))
+		]
+
+	if trigger == "on_dash" and effect == "dash_impact":
+		return "Poskok zasáhne okolní nepřátele za %s poškození" % _format_stat_number(float(value))
+
 	return definition["name"]
+
+
+## Souhrn "stále aktivní" schopnosti (trigger "always", žádné nabíjení k
+## prahu - jen magnituda roste s rankem/raritou) napříč OBĚMA souběžnými
+## zdroji - sčítá dovednostní strom (skill_trigger_values[rank-1]) a
+## náhodnou nabídku (trigger_values[rarity] za KAŽDOU vlastněnou instanci)
+## stejně jako ostatní dual-source funkce výše (get_stat_bonus() apod.).
+## Volá player.gd's get_pierce_count()/get_ricochet_count().
+func get_always_active_magnitude(ability_id: String) -> int:
+	var total: int = 0
+	var rank: int = get_skill_rank(ability_id)
+	if rank > 0:
+		total += int(ABILITIES[ability_id]["skill_trigger_values"][rank - 1])
+	for entry in owned_abilities:
+		if entry["ability_id"] == ability_id:
+			total += int(ABILITIES[ability_id]["trigger_values"][entry["rarity"]])
+	return total
 
 
 ## Popis schopnosti (náhodná nabídka) na dané raritě.
@@ -1483,13 +1611,15 @@ func debug_force_ability_draft() -> void:
 	_try_offer_next_ability_draft()
 
 
-## DEBUG: nastaví každou schopnost (náhodná nabídka) rovnou na 1 kopii
-## nejvyšší rarity (Diamant) - nejrychlejší cesta k "co nejsilnější build"
-## pro testování. Nesahá na skill_ranks (dovednostní strom) - to je
-## debug_max_skill_tree().
+## DEBUG: nastaví každou AKTIVNÍ schopnost (náhodná nabídka) rovnou na 1
+## kopii nejvyšší rarity (Diamant) - nejrychlejší cesta k "co nejsilnější
+## build" pro testování. Jen aktivní (viz _active_ability_ids() - stejný
+## filtr jako skutečná nabídka), ne všechny ABILITY_ORDER - passivky se
+## touhle cestou od 2026-10-02 nedají získat vůbec. Nesahá na skill_ranks
+## (dovednostní strom) - to je debug_max_skill_tree().
 func debug_max_abilities() -> void:
 	owned_abilities.clear()
-	for ability_id in ABILITY_ORDER:
+	for ability_id in _active_ability_ids():
 		owned_abilities.append({"ability_id": ability_id, "rarity": ShopRarity.DIAMOND})
 	ability_inventory_changed.emit()
 

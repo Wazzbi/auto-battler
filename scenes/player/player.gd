@@ -64,6 +64,12 @@ const CRIT_DAMAGE_MULTIPLIER: float = 2.0
 ## efekt "aoe_strike") - stejný script jako impact_effect_scene (ImpactEffect),
 ## jen s větším poloměrem/jinou barvou v samotné .tscn, viz _trigger_aoe_strike().
 @export var orbital_strike_effect_scene: PackedScene
+## Vizuály pro "Řetězová detonace" (trigger "on_kill")/"Nárazový poskok"
+## (trigger "on_dash") - stejný ImpactEffect skript jako orbital_strike_effect_scene
+## výše, jen jiný poloměr/barva v samotné .tscn, viz register_projectile_kill()/
+## _trigger_on_dash_abilities().
+@export var chain_explosion_effect_scene: PackedScene
+@export var dash_impact_effect_scene: PackedScene
 
 ## Nastavení drop-in animace
 @export var fall_height: float = 900.0
@@ -126,6 +132,18 @@ var _skill_progress: Dictionary = {}
 ## poli nemají stabilní identitu napříč sloučeními, takže "zachovat postup"
 ## by vyžadovalo sledovat identitu navíc jen pro tenhle okrajový případ.
 var _ability_progress: Array[float] = []
+## ZBÝVAJÍCÍ cooldown (POČÍTÁ DOLŮ) schopností s triggerem "damage_taken"
+## (Podpůrný štít) - samostatné od _skill_progress/_ability_progress výše,
+## protože ty počítají NAHORU k prahu, kdežto štít se neaktivuje
+## nahromaděním, ale jde po KAŽDÉM spuštění na prostý cooldown. Stejné
+## klíčování/indexování jako _skill_progress (Dictionary, ability_id)/
+## _ability_progress (Array, index-aligned s owned_abilities).
+var _skill_cooldowns: Dictionary = {}
+var _ability_cooldowns: Array[float] = []
+## Zbývající doba aktivního "Podpůrného štítu" (trigger "damage_taken",
+## efekt "damage_shield") - dokud je > 0, take_damage() zásah úplně
+## ignoruje (viz guard na začátku take_damage()). Tiká dolů v _process().
+var _shield_timer: float = 0.0
 ## Poloviční rozměry hráčova VLASTNÍHO vizuálu (Polygon2D, ±20 x ±30 dnes) -
 ## spočítané jednou v _ready() z `visual.polygon` samotného (ne natvrdo
 ## zapsané číslo), ať se automaticky přizpůsobí, kdyby se vizuál hráče někdy
@@ -259,6 +277,19 @@ func get_crit_chance() -> float:
 	return base_crit_chance + GameManager.get_stat_bonus("crit_chance")
 
 
+## Kolik nepřátel navíc projektil prolétne/na kolik dalších se odrazí -
+## trigger "always" schopností "Průbojné střely"/"Rikošet" nemá vlastní
+## nabíjení, jen čte aktuální magnitudu přes GameManager.get_always_active_magnitude()
+## (sčítá dovednostní strom i náhodnou nabídku). Čteno v _shoot(), předáno
+## do projectile.gd's setup().
+func get_pierce_count() -> int:
+	return GameManager.get_always_active_magnitude("piercing_rounds")
+
+
+func get_ricochet_count() -> int:
+	return GameManager.get_always_active_magnitude("ricochet_shot")
+
+
 ## Trvalý zdroj (dovednost "Hbité nohy", viz GameManager.ABILITIES'
 ## swift_steps) se sčítá do základu stejně jako u ostatních statů; dočasný
 ## bonus ze speed_pickup.gd zůstává NÁSOBNÝ NAVRCH toho součtu, beze změny
@@ -320,6 +351,8 @@ func _on_skill_ranks_changed() -> void:
 	for ability_id in GameManager.skill_ranks:
 		if not _skill_progress.has(ability_id):
 			_skill_progress[ability_id] = 0.0
+		if not _skill_cooldowns.has(ability_id):
+			_skill_cooldowns[ability_id] = 0.0
 
 
 ## Pasivní schopnosti (náhodná nabídka) mění staty, aktivní ne - ale obojí
@@ -330,6 +363,8 @@ func _on_ability_inventory_changed() -> void:
 	_apply_progression_changes()
 	_ability_progress.resize(GameManager.owned_abilities.size())
 	_ability_progress.fill(0.0)
+	_ability_cooldowns.resize(GameManager.owned_abilities.size())
+	_ability_cooldowns.fill(0.0)
 
 
 func _apply_progression_changes() -> void:
@@ -346,6 +381,9 @@ func _process(delta: float) -> void:
 		hp_changed.emit(hp, max_hp)
 
 	_process_time_based_abilities(delta)
+	_process_cooldown_based_abilities(delta)
+	_shield_timer = maxf(_shield_timer - delta, 0.0)
+	visual.modulate = Color(0.55, 0.8, 1.0) if _shield_timer > 0.0 else Color.WHITE
 
 	# Pohyb a boj běží NEZÁVISLE na sobě, každý snímek, bez ohledu na stav
 	# toho druhého - na rozdíl od staré "jdi jen když je čisto" logiky hráč
@@ -379,6 +417,7 @@ func _try_dash() -> void:
 	var direction: Vector2 = input_dir.normalized() if input_dir != Vector2.ZERO else _last_move_direction
 	global_position = _resolve_obstacle_collisions(global_position + direction * dash_distance)
 	dash_cooldown_timer = get_dash_cooldown()
+	_trigger_on_dash_abilities()
 
 
 ## Ochranná podlaha jako MIN_DAMAGE_RATIO u brnění (viz take_damage()) - i při
@@ -557,7 +596,7 @@ func _shoot(target: Node2D) -> void:
 	var projectile: Node2D = projectile_scene.instantiate()
 	get_tree().current_scene.add_child(projectile)
 	projectile.global_position = global_position
-	projectile.setup(damage, target)
+	projectile.setup(damage, target, self, get_pierce_count(), get_ricochet_count())
 
 
 ## Každý zavolaný _shoot() je "1 výstřel" pro účely schopností s triggerem
@@ -653,15 +692,145 @@ func _trigger_aoe_strike(effect_params: Dictionary) -> void:
 	for enemy in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(enemy):
 			enemy.take_damage(damage)
-	_spawn_orbital_strike_effect()
+	_spawn_effect_at(orbital_strike_effect_scene, global_position)
 
 
-func _spawn_orbital_strike_effect() -> void:
-	if orbital_strike_effect_scene == null:
+## Sdílený spawn vizuálního efektu NA DANÉ POZICI - vytažené z dřívější
+## _spawn_orbital_strike_effect() (ta vždycky kreslila na global_position
+## hráče), protože "Řetězová detonace" potřebuje efekt na místě ZABITÍ, ne
+## na hráči samotném. Všechny tři scény (orbital_strike_effect_scene,
+## chain_explosion_effect_scene, dash_impact_effect_scene) sdílí stejný
+## ImpactEffect skript, jen jiný poloměr/barvu v samotné .tscn.
+func _spawn_effect_at(scene: PackedScene, at_position: Vector2) -> void:
+	if scene == null:
 		return
-	var effect: Node2D = orbital_strike_effect_scene.instantiate()
+	var effect: Node2D = scene.instantiate()
 	get_tree().current_scene.add_child(effect)
-	effect.global_position = global_position
+	effect.global_position = at_position
+
+
+## Zavolá projectile.gd, když jeho zásah PŘÍMO zabil nepřítele (ne přes
+## aoe_strike/debug_kill_all_enemies - viz projectile.gd's _resolve_hit(),
+## scope limit proti nekontrolovatelné kaskádě explozí). Veřejná (bez
+## podtržítka), protože ji volá jiný skript.
+func register_projectile_kill(position: Vector2) -> void:
+	_try_on_kill_abilities(position)
+
+
+## Trigger "on_kill" (Řetězová detonace) - instant proc s pravděpodobností,
+## žádné nabíjení k prahu. Stejná dvouzdrojová smyčka (dovednostní strom +
+## náhodná nabídka) jako _consume_ability_triggers()/_process_time_based_abilities()
+## výše, jen bez progress trackeru - každý vlastněný zdroj hodí nezávisle.
+func _try_on_kill_abilities(position: Vector2) -> void:
+	for ability_id in GameManager.skill_ranks:
+		var rank: int = GameManager.get_skill_rank(ability_id)
+		if rank <= 0:
+			continue
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
+		if definition["type"] != "active" or definition["trigger"] != "on_kill":
+			continue
+		var chance: float = float(definition["skill_trigger_values"][rank - 1])
+		if randf() < chance and definition["effect"] == "chain_explosion":
+			_trigger_chain_explosion(position, definition["effect_params"])
+
+	for entry in GameManager.owned_abilities:
+		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
+		if definition["type"] != "active" or definition["trigger"] != "on_kill":
+			continue
+		var chance: float = float(definition["trigger_values"][entry["rarity"]])
+		if randf() < chance and definition["effect"] == "chain_explosion":
+			_trigger_chain_explosion(position, definition["effect_params"])
+
+
+## "chain_explosion" zasáhne jen nepřátele v effect_params.radius okolo
+## pozice ZABITÍ (ne okolo hráče, na rozdíl od _trigger_aoe_strike() výše) -
+## přes take_damage(), stejný důvod jako _trigger_aoe_strike() (odměna/XP a
+## double-kill-safe _is_dead pojistka v enemy.gd). Záměrně nevolá
+## register_projectile_kill() znovu pro kily, co tahle exploze způsobí -
+## scope limit proti nekontrolovatelné kaskádě.
+func _trigger_chain_explosion(position: Vector2, effect_params: Dictionary) -> void:
+	var damage: float = float(effect_params["damage"])
+	var radius: float = float(effect_params["radius"])
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(enemy) and position.distance_to(enemy.global_position) <= radius:
+			enemy.take_damage(damage)
+	_spawn_effect_at(chain_explosion_effect_scene, position)
+
+
+## Trigger "damage_taken" (Podpůrný štít) - cooldown-gated proc, NE
+## nahromadění k prahu. Volá se z take_damage() PO aplikování poškození -
+## zásah, co štít spustí, sám normálně projde, štít blokuje až NÁSLEDUJÍCÍ
+## zásahy (explicit user request). maxf() při nastavování _shield_timer pro
+## případ, že by dovednostní I nabídkový zdroj byly ready na STEJNÉM zásahu -
+## použije se delší trvání, žádné se nezahodí.
+func _try_on_hit_taken_abilities() -> void:
+	for ability_id in GameManager.skill_ranks:
+		var rank: int = GameManager.get_skill_rank(ability_id)
+		if rank <= 0:
+			continue
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
+		if definition["type"] != "active" or definition["trigger"] != "damage_taken":
+			continue
+		if float(_skill_cooldowns.get(ability_id, 0.0)) > 0.0:
+			continue
+		_skill_cooldowns[ability_id] = float(definition["effect_params"]["cooldown"])
+		if definition["effect"] == "damage_shield":
+			_shield_timer = maxf(_shield_timer, float(definition["skill_trigger_values"][rank - 1]))
+
+	for i in GameManager.owned_abilities.size():
+		var entry: Dictionary = GameManager.owned_abilities[i]
+		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
+		if definition["type"] != "active" or definition["trigger"] != "damage_taken":
+			continue
+		if i >= _ability_cooldowns.size() or _ability_cooldowns[i] > 0.0:
+			continue
+		_ability_cooldowns[i] = float(definition["effect_params"]["cooldown"])
+		if definition["effect"] == "damage_shield":
+			_shield_timer = maxf(_shield_timer, float(definition["trigger_values"][entry["rarity"]]))
+
+
+## Trigger "on_dash" (Nárazový poskok) - deterministický proc vázaný na
+## úspěšný _try_dash(), žádná vlastní frekvence (ta je už daná
+## dash_cooldown samotným) - volá se AŽ PO přesunu hráče, takže poškozuje
+## okolí CÍLOVÉ pozice poskoku, ne tu, odkud hráč odskočil.
+func _trigger_on_dash_abilities() -> void:
+	for ability_id in GameManager.skill_ranks:
+		var rank: int = GameManager.get_skill_rank(ability_id)
+		if rank <= 0:
+			continue
+		var definition: Dictionary = GameManager.ABILITIES[ability_id]
+		if definition["type"] != "active" or definition["trigger"] != "on_dash":
+			continue
+		if definition["effect"] == "dash_impact":
+			_deal_dash_impact_damage(float(definition["skill_trigger_values"][rank - 1]), definition["effect_params"])
+
+	for entry in GameManager.owned_abilities:
+		var definition: Dictionary = GameManager.ABILITIES[entry["ability_id"]]
+		if definition["type"] != "active" or definition["trigger"] != "on_dash":
+			continue
+		if definition["effect"] == "dash_impact":
+			_deal_dash_impact_damage(float(definition["trigger_values"][entry["rarity"]]), definition["effect_params"])
+
+
+func _deal_dash_impact_damage(damage: float, effect_params: Dictionary) -> void:
+	var radius: float = float(effect_params["radius"])
+	var hit_any: bool = false
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(enemy) and global_position.distance_to(enemy.global_position) <= radius:
+			enemy.take_damage(damage)
+			hit_any = true
+	if hit_any:
+		_spawn_effect_at(dash_impact_effect_scene, global_position)
+
+
+## Tiká DOLŮ cooldowny schopností s triggerem "damage_taken" (Podpůrný
+## štít) - samostatné od _process_time_based_abilities() výše, protože tyhle
+## NEnahromaďují k prahu, jen čekají na vypršení před dalším použitím.
+func _process_cooldown_based_abilities(delta: float) -> void:
+	for ability_id in _skill_cooldowns:
+		_skill_cooldowns[ability_id] = maxf(float(_skill_cooldowns[ability_id]) - delta, 0.0)
+	for i in _ability_cooldowns.size():
+		_ability_cooldowns[i] = maxf(_ability_cooldowns[i] - delta, 0.0)
 
 
 ## Kolik % původního poškození projde i přes libovolně vysoké brnění - brání
@@ -678,11 +847,17 @@ func take_damage(amount: float) -> void:
 		return
 	if debug_invincible:
 		return
+	# Podpůrný štít (trigger "damage_taken") blokuje zásah ÚPLNĚ, dokud
+	# _shield_timer neklesne na 0 - zásah, co štít SPUSTIL, už touhle
+	# větví neprojde (nastavuje se až NÍŽE, po aplikování poškození).
+	if _shield_timer > 0.0:
+		return
 	var reduced_amount: float = maxf(amount - get_armor(), amount * MIN_DAMAGE_RATIO)
 	# Ořez na nulu musí být před emitem - HUD ukazuje HP i číselně a jinak by
 	# na okamžik problikla záporná hodnota
 	hp = maxf(hp - reduced_amount, 0.0)
 	hp_changed.emit(hp, max_hp)
+	_try_on_hit_taken_abilities()
 	if hp <= 0:
 		died.emit()
 		GameManager.trigger_game_over()
