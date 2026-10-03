@@ -26,14 +26,21 @@ const LOCKED_ITEM_MODULATE := Color(0.45, 0.45, 0.52)
 ## explicit user request) - nahrazuje dřívější 170×150 mřížkovou dlaždici s
 ## natvrdo vypsaným popisem. SKILL_WEB_CENTER je střed NodesContaineru
 ## (900×590, viz lobby.tscn) - paprsky z něj vedou k jednotlivým větvím,
-## viz _build_skill_tree_ui(). Nejdelší paprsek (3uzlová větev) dosáhne
-## SKILL_WEB_INNER_RADIUS + 2*SKILL_WEB_RADIUS_STEP = 240px od středu, což se
-## pohodlně vejde do 900×590 (limitující osa je výška: 590/2 - poloviční
-## průměr uzlu - rezerva ≈ 263 > 240).
+## viz _build_skill_tree_ui(). **STALE (2026-10-02): "nejdelší paprsek
+## dosáhne 240px" už neplatí** - 3 z 5 větví dostaly nový vložený aktivní
+## uzel (viz "5 nových schopností" v CLAUDE.md) a vyrostly ze 3 na 4 uzly,
+## takže nejdelší paprsek teď dosáhne SKILL_WEB_INNER_RADIUS +
+## 3*SKILL_WEB_RADIUS_STEP = 70 + 3*62 = 256px od středu - oba konstanty
+## proto zmenšeny (90/75 → 70/62), jinak by capstone Kinetické větve (úhel
+## přímo nahoru, -90°) vyjel nad horní okraj kontejneru (jen větev mířící
+## přímo nahoru/dolů je limitující - ostatní mají při stejném poloměru víc
+## rezervy díky úhlu, viz výpočet v CLAUDE.md). Pohodlně se vejde do 900×590
+## (limitující osa je výška: 590/2 - poloviční průměr uzlu - rezerva ≈ 263
+## > 256).
 const SKILL_NODE_DIAMETER: float = 64.0
 const SKILL_WEB_CENTER: Vector2 = Vector2(450.0, 295.0)
-const SKILL_WEB_INNER_RADIUS: float = 90.0
-const SKILL_WEB_RADIUS_STEP: float = 75.0
+const SKILL_WEB_INNER_RADIUS: float = 70.0
+const SKILL_WEB_RADIUS_STEP: float = 62.0
 ## Barva paprsku/uzlů podle tagu dané větve (všechny uzly jedné větve sdílí
 ## stejný tag, viz GameManager.ABILITIES) - vizuálně "rozsvítí" investovanou
 ## cestu, podobně jako PoE.

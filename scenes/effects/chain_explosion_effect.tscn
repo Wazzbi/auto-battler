@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/effects/impact_effect.gd" id="1_impact_script"]
+
+[node name="ChainExplosionEffect" type="Node2D"]
+script = ExtResource("1_impact_script")
+duration = 0.35
+max_radius = 110.0
+color = Color(0.85, 0.3, 0.3, 0.85)

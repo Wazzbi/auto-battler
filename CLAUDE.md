@@ -954,6 +954,125 @@ vizuál a dvě nové dovednosti):
   point()` beze změny. Vizuální kontrola (kruhy se nepřekrývají, text čitelný, tvar skutečně
   připomíná pavučinu, hover tooltip se opravdu zobrazuje) zatím NEprovedena živě v editoru.
 
+**5 nových AKTIVNÍCH schopností se skutečným herním efektem + oddělení draftu od dovedností
+(2026-10-02)** - explicit user request: z 13 tehdejších `ABILITIES` položek měl skutečný HERNÍ
+EFEKT jen `double_tap` a `orbital_bombardment`, zbytek byly čisté statové přírůstky - a přesto se
+stejně nabízely v run-scoped náhodné draft nabídce (`AbilityDraftPanel`), takže hráč tam dostával
+"jen další číslo" místo rozhodnutí měnícího hru. Řešení má dvě části:
+
+1. **Draft (náhodná nabídka) od teď nabízí VÝHRADNĚ `"type": "active"` položky.**
+   `GameManager._active_ability_ids()` (nový helper, filtruje `ABILITY_ORDER` podle
+   `ABILITIES[id]["type"] == "active"` - žádný ruční druhý seznam, ať se nemůže rozejít s daty) se
+   používá v `_roll_ability_options()` (místo dřívějšího `ABILITY_ORDER.duplicate()`) i
+   `debug_max_abilities()`. **Čistě statové (passive) schopnosti jsou od teď dostupné VÝHRADNĚ
+   investicí v lobby** (dovednostní strom) - nikdy se znovu nenabídnou v běhu. Dovednostní strom
+   samotný je nedotčený - obsahuje OBOJÍ (passive i active uzly), jen draft je teď užší podmnožina.
+2. **5 nových aktivních schopností, jedna vložená jako PROSTŘEDNÍ uzel do KAŽDÉ z 5 větví**
+   dovednostního stromu (mezi kořen/druhý uzel a existující capstone) - existující capstony
+   (`overclock_matrix`, `precision_targeting`, `kinetic_dampers`, `orbital_bombardment`,
+   `rapid_recharge`, všechny `max_rank: 5`) se tím NEMĚNÍ, žádný rebalance. `SKILL_TREE_BRANCHES`
+   tak vypadá takto:
+   ```
+   Kinetická:  power_core → split_rounds → ricochet_shot → overclock_matrix
+   Přesná:     rapid_coils → long_barrel → piercing_rounds → precision_targeting
+   Podpůrná:   reinforced_plating → nanite_repair → support_shield → kinetic_dampers
+   Explozivní: double_tap → chain_detonation → orbital_bombardment
+   Mobilita:   swift_steps → impact_dash → rapid_recharge
+   ```
+   (Explozivní/Mobilita rostly ze 2 na 3 uzly, ostatní 3 ze 3 na 4 - stejný "různě dlouhé větve,
+   jen konzistentní kořen→capstone tvar" precedent jako dřív.)
+
+**Nové `"type": "active"` položky mají NOVÉ hodnoty `"trigger"`** (`"always"`, `"damage_taken"`,
+`"on_kill"`, `"on_dash"`, vedle dřívějších `"shot_count"`/`"time_elapsed"`), každý s jinou
+mechanikou odemykání efektu, všechny pořád s `max_rank: 3` a oba paralelní pole hodnot
+(`trigger_values`/`skill_trigger_values`, jako vždy):
+
+- **`ricochet_shot`** ("Rikošet", Kinetická) a **`piercing_rounds`** ("Průbojné střely", Přesná) -
+  trigger `"always"`: ŽÁDNÉ nabíjení k prahu, jen čtení aktuální MAGNITUDY (počtu odrazů/probití) při
+  každém výstřelu. Nová `GameManager.get_always_active_magnitude(ability_id) -> int` sečte
+  `skill_trigger_values[rank-1]` (dovednostní strom) + `trigger_values[rarity]` za KAŽDOU vlastněnou
+  instanci z náhodné nabídky (stejný dual-source vzor jako `get_stat_bonus()`) - `player.gd`'s
+  `get_pierce_count()`/`get_ricochet_count()` ji čtou v `_shoot()` a předávají do nových nepovinných
+  parametrů `projectile.gd`'s `setup()` (`shooter_node`, `pierce_count`, `ricochet_count`).
+  `projectile.gd` dřív při KAŽDÉM zásahu vždy `take_damage()+queue_free()` - teď to dělá sdílená
+  `_resolve_hit(hit)`, volaná ze dvou míst (přímý `target`, fallback scan), která rozhoduje: zásah
+  destructible objektu (ne "enemies") se chová beze změny; zásah nepřítele s `pierce_remaining > 0`
+  vynuluje `target` a NEVOLÁ `queue_free()` (projektil letí dál rovně, příští snímek ho fallback scan
+  najde znovu, mimo novou `_hit_targets: Array[Node2D]` - brání opakovanému zásahu stejného cíle);
+  zásah s `ricochet_remaining > 0` najde nejbližšího JINÉHO nepřítele uvnitř `RICOCHET_RADIUS`
+  (260px), retarguje se na něj (`damage *= RICOCHET_DAMAGE_FALLOFF`, 0.7 konstanta - odraz je slabší
+  než přímý zásah, ne strictly lepší víc cílů bez trade-off) a NEVOLÁ `queue_free()`; jinak
+  `queue_free()` jako dřív. Pierce se kontroluje PŘED ricochetem (kdyby měl hráč oba, pierce vyhrává
+  dokud se nevyčerpá). Žádný nový vizuál - letící/odrážející se projektil je sám o sobě dost
+  srozumitelná zpětná vazba.
+- **`support_shield`** ("Podpůrný štít", Podpůrná) - trigger `"damage_taken"`: cooldown-gated proc,
+  NE nahromadění k prahu (jiná mechanika než zbytek). Aktivuje se AŽ PO prvním zásahu (ten zásah
+  normálně projde) a blokuje VŠECHNY další zásahy po `trigger_values`/`skill_trigger_values`
+  (= DOBA TRVÁNÍ štítu, roste s rankem/raritou) sekund, pak jde na `effect_params.cooldown` (FIXNÍ
+  60s, dle uživatelova explicitního zadání "cooldown třeba 1 minutu" - VÝJIMEČNĚ je tu fixní
+  frekvence a rank škáluje magnitudu/trvání místo frekvence). `player.gd`'s nové
+  `_skill_cooldowns: Dictionary`/`_ability_cooldowns: Array[float]` (ZBÝVAJÍCÍ cooldown, počítá
+  DOLŮ - samostatné od `_skill_progress`/`_ability_progress`, které počítají NAHORU k prahu, jiná
+  sémantika) tikají v nové `_process_cooldown_based_abilities(delta)`. Nová
+  `_try_on_hit_taken_abilities()` se volá z `take_damage()` PO aplikování poškození a nastaví
+  `_shield_timer` (`maxf()`, ne přepis, kdyby byly OBA souběžné zdroje ready na stejném zásahu).
+  `take_damage()` dostal nový early-return guard na úplném začátku
+  (`if _shield_timer > 0.0: return`), stejné místo jako `debug_invincible`. Vizuální zpětná vazba:
+  `visual.modulate` na hráči se tónuje do modré dokud je štít aktivní (`_process()`), žádná nová
+  scéna potřeba.
+- **`chain_detonation`** ("Řetězová detonace", Explozivní) - trigger `"on_kill"`: instant proc s
+  pravděpodobností (`trigger_values`/`skill_trigger_values` = šance 0.0-1.0, roste s rankem/raritou),
+  žádné nabíjení. Potřebuje vědět, že konkrétní zásah PROJEKTILEM zabil nepřítele -
+  `projectile.gd`'s `_resolve_hit()` po `take_damage()` zkontroluje `hit.is_in_group("enemies") and
+  hit.is_dead()` (nová veřejná `enemy.gd`'s `is_dead() -> bool`, tenká obálka nad `_is_dead`, čistší
+  než sahat na podtržítkovou proměnnou zvenčí) a zavolá `shooter.register_projectile_kill(hit.global_position)`
+  (`shooter` = nový `setup()` parametr, nastavený v `_shoot()` na `self`). `player.gd`'s
+  `register_projectile_kill()` → `_try_on_kill_abilities()` (dvouzdrojová smyčka jako ostatní, bez
+  progress trackeru - každý vlastněný zdroj hodí nezávisle) → na úspěch `_trigger_chain_explosion()`
+  (zasáhne nepřátele v `effect_params.radius`, 110px, kolem POZICE ZABITÍ - ne kolem hráče jako
+  `_trigger_aoe_strike()`, viz `_spawn_effect_at()` níže). **Scope limit (zabraňuje nekontrolovatelné
+  kaskádě explozí): na kill trigguje JEN přímý zásah hráčova projektilu - `_trigger_aoe_strike()`
+  (orbital bombardment) a `_trigger_chain_explosion()` svoje vlastní zabití NEreportují zpátky do
+  `register_projectile_kill()`.** Nová scéna `scenes/effects/chain_explosion_effect.tscn` (červená,
+  110px) - stejný `impact_effect.gd` skript jako `orbital_strike_effect.tscn`, jen jiná barva/
+  poloměr.
+- **`impact_dash`** ("Nárazový poskok", Mobilita) - trigger `"on_dash"`: deterministický proc vázaný
+  na úspěšný `_try_dash()` (volá se AŽ PO přesunu hráče, takže poškozuje okolí CÍLOVÉ pozice
+  poskoku), žádná vlastní frekvence (ta je už daná `dash_cooldown` samotným) - **VÝJIMEČNĚ proto
+  `trigger_values`/`skill_trigger_values` škálují přímo POŠKOZENÍ (12→20→30, respektive
+  12→20→30→45), ne frekvenci jako ostatní aktivní schopnosti** (zdůvodněno komentářem přímo v
+  `player.gd`). Zasáhne nepřátele v `effect_params.radius` (90px) kolem hráčovy nové pozice. Nová
+  scéna `scenes/effects/dash_impact_effect.tscn` (tyrkysová, 90px).
+- **`_spawn_effect_at(scene, at_position)`** (nové, `player.gd`) - obecná verze dřívější
+  `_spawn_orbital_strike_effect()` (ta vždycky kreslila na hráčovu `global_position`) - Řetězová
+  detonace potřebuje efekt na místě ZABITÍ, ne na hráči. `_trigger_aoe_strike()` ji teď taky používá
+  (`_spawn_effect_at(orbital_strike_effect_scene, global_position)`), beze změny výsledného chování.
+
+**`get_skill_node_value_text()`/`get_ability_value_text()` přešly na sdílený dispatch** -
+`_format_active_ability_value(definition, value)` (`game_manager.gd`) teď obsahuje VŠECH 7
+`if trigger == ... and effect == ...` větví (2 staré + 5 nových), volající funkce jen vyberou
+SPRÁVNOU jednotlivou hodnotu (`skill_trigger_values[rank-1]` vs. `trigger_values[rarity]`) a předají
+ji dovnitř. Nahrazuje dřívější duplicitní if-řetězec ve OBOU funkcích zvlášť - přesně ten moment, na
+který komentář v kódu dřív upozorňoval ("až přibude třetí pár, přejde na obecnější dispatch").
+
+**Dovednostní strom "pavučina" potřeboval menší konstanty pro 4. uzel** (`lobby.gd`) -
+`SKILL_WEB_INNER_RADIUS`/`SKILL_WEB_RADIUS_STEP` zmenšeny (90/75 → 70/62), protože 3 větve teď mají
+4 uzly (dřív max 3) a capstone Kinetické větve (úhel přímo nahoru) by jinak vyjel nad horní okraj
+900×590 `NodesContaineru`. `_build_skill_tree_ui()`/`_refresh_skill_tree_ui()` samy jsou beze změny -
+fungují pro libovolný počet uzlů na větev už od svého vzniku (viz výše), jen konstanty.
+
+**Verified with headless tests** (real `main.tscn`): draft (`_roll_ability_options()`/
+`debug_max_abilities()`) nikdy nevrátí passivku; všech 18 schopností má neprázdný popis na každém
+rank/rarity; `get_always_active_magnitude()` správně sčítá oba zdroje; reálná střelba s investovaným
+`piercing_rounds` zasáhne všechny 3 nepřátele v řadě, s `ricochet_shot` se odrazí na druhého
+nepřítele s `×0.7` poškozením; `support_shield` propustí první zásah, zablokuje následující po dobu
+trvání, znovu propustí po vypršení, a NEaktivuje se znovu, dokud běží cooldown; `chain_detonation` s
+vynucenou šancí 1.0 poškodí blízkého nepřítele po zabití projektilem, ale `_trigger_aoe_strike()`
+chain explozi nespustí (scope limit); `impact_dash` poškodí nepřítele u cílové pozice poskoku po
+`_try_dash()`; `lobby.tscn` postaví přesně 18 uzlů + 13 spojnic, všechny uvnitř hranic
+`NodesContaineru`. Živě v editoru (kompletní draft/investice/všech 5 efektů naživo) zatím
+NEodzkoušeno.
+
 **Passive HP regeneration** (`player.gd`): `base_hp_regen` (default 1.0 HP/s, like League of
 Legends' base HP5) ticks continuously in `_process()` whenever `hp < max_hp` and the player is
 alive and `PLAYING` — not just after a loop transition, and not paused by combat. Routed through
@@ -1929,7 +2048,8 @@ DebugPanel's new height fitting inside the window.
 
 ## Key tunables when adjusting gameplay
 
-- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown`/`MIN_DASH_COOLDOWN` (Poskok, see "Poskok (Dash)" above and the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above for the `rapid_recharge` cooldown-reduction floor); `_consume_ability_triggers()`/`_process_time_based_abilities()` are where active-schopnost trigger/effect resolution happens (currently hardcoded for `shot_count`/`damage_multiplier` and `time_elapsed`/`aoe_strike`, see "Schopnosti" above)
+- `scenes/player/player.gd` — `move_speed`, `attack_range`, `base_hp_regen`, `base_armor`, `base_crit_chance`, `CRIT_DAMAGE_MULTIPLIER` (fixed 2x, see "Critical hits" above), `MIN_DAMAGE_RATIO` (armor damage floor), base stats, fall/intro animation params, `dash_distance`/`dash_cooldown`/`MIN_DASH_COOLDOWN` (Poskok, see "Poskok (Dash)" above and the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above for the `rapid_recharge` cooldown-reduction floor); `_consume_ability_triggers()`/`_process_time_based_abilities()` resolve the `shot_count`/`time_elapsed` trigger pairs, `_try_on_hit_taken_abilities()`/`_try_on_kill_abilities()`/`_trigger_on_dash_abilities()` resolve the 3 new trigger kinds added 2026-10-02 (see "5 nových AKTIVNÍCH schopností" above) — all of these, plus the always-active pierce/ricochet getters, go through `GameManager.ABILITIES`' `"trigger"`/`"effect"` fields, never hardcode a stat
+- `scenes/projectiles/projectile.gd` — `RICOCHET_RADIUS`/`RICOCHET_DAMAGE_FALLOFF` (Rikošet's bounce search range/per-bounce damage falloff, see "5 nových AKTIVNÍCH schopností" above); `_resolve_hit()` is where pierce/ricochet/on-kill-report resolution happens on every projectile hit
 - `scenes/camera_follow.gd` — `follow_speed` (camera lag/responsiveness; `camera_left_margin` is GONE, camera centers symmetrically, see "Camera/scrolling model" above)
 - `scenes/main.gd` — `enemies_base_count`/`difficulty_growth`/`seconds_per_wave_equivalent` (continuous target-concurrent-count curve), spawn interval/margin, `max_concurrent_enemies`, `elite_count_per_checkpoint`/`elite_checkpoints_seconds`, `ranged_enemy_chance`, `sniper_enemy_chance`, `variant_ramp_start_time`/`variant_ramp_full_time` (time-based ramp for when ranged/sniper start appearing, applies to the whole run now — see "Kontinuální spawn/obtížnost" above), `loop_duration_seconds` (run ends and sends the player to the lobby once `survival_time` crosses this, see "Lobby a meta-progrese" above), `destructible_spawn_interval`/`indestructible_spawn_interval`/`max_destructibles`/`max_indestructibles`/`object_spawn_margin`/`object_spacing_margin`/`MAX_SPAWN_POSITION_ATTEMPTS` (see "Statické objekty ve světě" above), `heal_pickup_spawn_interval`/`speed_pickup_spawn_interval`/`max_heal_pickups`/`max_speed_pickups` (see "Sebratelné předměty" above — these caps are LIVE-count, not total-ever-spawned, unlike the destructible/indestructible ones)
 - `scenes/world_objects/heal_pickup.tscn` / `speed_pickup.tscn` — `heal_amount` (heal pickup) / `speed_bonus_percent`/`buff_duration` (speed pickup), plus shared `pickup_radius`/`floating_text_color` from `pickup_base.gd` (see "Sebratelné předměty" above)
@@ -1940,6 +2060,6 @@ DebugPanel's new height fitting inside the window.
 - `scenes/enemies/enemy_projectile.gd` — enemy projectile `speed`, `hit_radius`, `cleanup_margin`
 - `scenes/levels/level_01.tscn` — has no `LevelEnd` marker (level is boundless); the X-cap machinery this would feed is dormant (see "Level01 is boundless" above), so adding one alone won't do anything today
 - `scenes/levels/ground.gd` — `tile_size`, tile colors, `tile_margin_count` (redraw buffer beyond the visible camera window, now on both axes)
-- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`, shared by both run-scoped `xp_for_next_level()` and META `meta_xp_for_next_level()`, see "Lobby a meta-progrese" above), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 5 branches, root-to-capstone order — see "Schopnosti" above and the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above for the newest `"mobility"` branch/`swift_steps`/`rapid_recharge`), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above)
+- `scripts/autoload/game_manager.gd` — XP curve (`XP_BASE`, `XP_PER_LEVEL_GROWTH`, shared by both run-scoped `xp_for_next_level()` and META `meta_xp_for_next_level()`, see "Lobby a meta-progrese" above), schopnost definitions (`ABILITIES` — passive entries' `"value"` = PER-RANK stat amount, `"max_rank"` per node, active entries' `"trigger_values"` sized to `"max_rank"`), `ABILITY_ORDER`, `SKILL_TREE_BRANCHES` (the 5 branches, root-to-capstone order — see "Schopnosti" above and the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above for the newest `"mobility"` branch/`swift_steps`/`rapid_recharge`), `ENEMY_HP_GROWTH_PER_MINUTE`/`ABILITY_OFFER_INTERVAL_SECONDS`/`SHOP_OPEN_INTERVAL_SECONDS` (the three continuous time-based milestones — see "Kontinuální spawn/obtížnost" above; `FINAL_WAVE`/`ENEMY_HP_GROWTH_PER_LOOP` are GONE), shop item definitions (`SHOP_ITEMS`, multi-stat), `SHOP_ACTIVE_SLOTS`/`SHOP_STASH_SLOTS`, `SHOP_SELL_REFUND_RATIO`, `SHOP_OFFER_SIZE`, `SHOP_REROLL_BASE_COST`/`SHOP_REROLL_COST_STEP`, `SHOP_RARITY_WEIGHTS` (offer rarity odds), `SHOP_RARITY_MULTIPLIERS`/`SHOP_RARITY_COST_RATIOS` (shop's rarity tier power/cost curves; 3-copy merge threshold is hardcoded in `_try_merge_shop_item()` — schopnosti no longer use `ShopRarity` at all, see "Schopnosti" above), `LEVEL_STAT_GROWTH` (automatic per-level stat floor, small relative to schopnosti/shop), `TAG_DISPLAY_NAMES`/each entry's `"tags"` (tag synergy display categories, see "Tag synergie" above), `ABILITIES["overclock_matrix"]`/`SHOP_ITEMS["resonance_array"]`'s `"synergy"` dicts (per-owned-tagged-thing scaling — `_count_owned_with_tag()` does the counting), `ABILITIES["precision_targeting"]`/`SHOP_ITEMS["precision_scope"]` (flat `crit_chance` sources, see "Critical hits" above), `ABILITIES["ricochet_shot"]`/`["piercing_rounds"]`/`["support_shield"]`/`["chain_detonation"]`/`["impact_dash"]` (the 5 new active abilities, see "5 nových AKTIVNÍCH schopností" above — each one's `trigger_values`/`skill_trigger_values` scales a DIFFERENT thing per trigger kind, documented per-ability there), `_active_ability_ids()` (controls which abilities the random draft can ever offer)
 - `scenes/ui/hud.gd` — `DEBUG_SPEED_STEPS` (Debug panel's speed cycle), `ABILITY_STACK_MAX_ROWS` (schopnost stack column-wrap threshold, see "Hromádka VŠECH vlastněných schopností" above), `META_XP_BAR_SEGMENT_DURATION`/`META_XP_BAR_LEVEL_UP_PAUSE` (Game Over/Victory's meta-XP bar animation pacing, see "Game Over / Victory flow" above — `END_SCREEN_RESTART_DELAY` is GONE, no more auto-restart countdown)
-- `scenes/ui/lobby.gd` — `SKILL_NODE_DIAMETER`/`SKILL_WEB_CENTER`/`SKILL_WEB_INNER_RADIUS`/`SKILL_WEB_RADIUS_STEP`/`TAG_COLORS` (skill tree web layout/coloring, see the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above), `SIDEBAR_SLOT_SIZE`/`SIDEBAR_SLOT_GAP`/`SIDEBAR_GRID_COLUMNS` (postranní panel's item-slot grid, see the 2026-09-30 STALE note in "Lobby a meta-progrese" above)
+- `scenes/ui/lobby.gd` — `SKILL_NODE_DIAMETER`/`SKILL_WEB_CENTER`/`SKILL_WEB_INNER_RADIUS`/`SKILL_WEB_RADIUS_STEP`/`TAG_COLORS` (skill tree web layout/coloring, see the 2026-10-01 skill-tree-web note in "Lobby a meta-progrese" above — `INNER_RADIUS`/`RADIUS_STEP` shrank again 2026-10-02 to fit the new 4-node-deep branches, see "5 nových AKTIVNÍCH schopností" above), `SIDEBAR_SLOT_SIZE`/`SIDEBAR_SLOT_GAP`/`SIDEBAR_GRID_COLUMNS` (postranní panel's item-slot grid, see the 2026-09-30 STALE note in "Lobby a meta-progrese" above)
